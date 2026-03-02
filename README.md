@@ -8,6 +8,12 @@ An AI orchestration tool for managing multiple AI coding agent sessions. Run Cla
 
 ## Features
 
+<img width="1863" height="1028" alt="image" src="https://github.com/user-attachments/assets/3511cf87-f6ac-43dd-a722-584cafee0b9d" />
+<img width="1394" height="886" alt="image" src="https://github.com/user-attachments/assets/23cf25ac-429a-4443-9b43-23765330d3a8" />
+<img width="350" height="278" alt="image" src="https://github.com/user-attachments/assets/6c7a2790-8c52-4e94-aa9d-0cad822b78b6" />
+
+
+
 - **Multiple terminal sessions** - Run Claude Code, Gemini CLI, Codex, or any other AI coding agent installed on your machine in parallel
 - **Git worktree integration** - Create and manage worktrees directly from the sidebar for isolated feature branches
 - **Terminal tabs** - Open multiple terminal tabs per worktree (Claude, Gemini, plain shell, custom presets)
