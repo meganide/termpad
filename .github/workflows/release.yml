@@ -1,0 +1,202 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release (e.g., 1.0.0)'
+        required: true
+        type: string
+
+jobs:
+  publish:
+    strategy:
+      matrix:
+        include:
+          # Windows x64
+          - os: windows-latest
+            platform: win32
+            arch: x64
+          # Windows ARM64
+          - os: windows-11-arm
+            platform: win32
+            arch: arm64
+          # Linux x64
+          - os: ubuntu-latest
+            platform: linux
+            arch: x64
+          # Linux ARM64
+          - os: ubuntu-24.04-arm
+            platform: linux
+            arch: arm64
+          # macOS Apple Silicon (ARM64)
+          - os: macos-latest
+            platform: darwin
+            arch: arm64
+          # macOS Intel (x64)
+          - os: macos-15
+            platform: darwin
+            arch: x64
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Bun doesn't support Windows ARM64 natively, use npm instead
+      - name: Setup bun
+        if: ${{ !(matrix.platform == 'win32' && matrix.arch == 'arm64') }}
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Cache bun dependencies
+        if: ${{ !(matrix.platform == 'win32' && matrix.arch == 'arm64') }}
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-${{ matrix.arch }}-bun-${{ hashFiles('**/bun.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ matrix.arch }}-bun-
+
+      - name: Install dependencies (bun)
+        if: ${{ !(matrix.platform == 'win32' && matrix.arch == 'arm64') }}
+        run: bun install --frozen-lockfile
+
+      - name: Install dependencies (npm - Windows ARM64)
+        if: ${{ matrix.platform == 'win32' && matrix.arch == 'arm64' }}
+        run: npm install
+
+      - name: Cleanup mounted volumes (macOS)
+        if: runner.os == 'macOS'
+        run: hdiutil detach /Volumes/Termpad 2>/dev/null || true
+
+      - name: Build and publish (bun)
+        if: ${{ !(matrix.platform == 'win32' && matrix.arch == 'arm64') }}
+        run: bun run publish -- --arch=${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish (npm - Windows ARM64)
+        if: ${{ matrix.platform == 'win32' && matrix.arch == 'arm64' }}
+        run: npm run publish -- --arch=${{ matrix.arch }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Generate latest-*.yml files for electron-updater after all builds complete
+  generate-update-manifests:
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get version
+        id: version
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            echo "version=${GITHUB_REF#refs/tags/v}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Wait for release assets to be available
+        run: sleep 30
+
+      - name: Download release assets and generate manifests
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # Create temp directory
+          mkdir -p assets
+          cd assets
+
+          # Download all release assets
+          gh release download "v${VERSION}" --repo meganide/termpad --pattern "*.AppImage" || true
+          gh release download "v${VERSION}" --repo meganide/termpad --pattern "*.zip" --skip-existing || true
+          gh release download "v${VERSION}" --repo meganide/termpad --pattern "*.exe" --skip-existing || true
+          gh release download "v${VERSION}" --repo meganide/termpad --pattern "*.nupkg" --skip-existing || true
+          gh release download "v${VERSION}" --repo meganide/termpad --pattern "RELEASES" --skip-existing || true
+
+          # List downloaded files
+          ls -la
+
+          # Generate latest-linux.yml for AppImage
+          if [ -f "Termpad-${VERSION}-x64.AppImage" ]; then
+            SHA512_X64=$(sha512sum "Termpad-${VERSION}-x64.AppImage" | cut -d' ' -f1)
+            SIZE_X64=$(stat -c%s "Termpad-${VERSION}-x64.AppImage")
+
+            cat > latest-linux.yml << EOF
+          version: ${VERSION}
+          files:
+            - url: Termpad-${VERSION}-x64.AppImage
+              sha512: ${SHA512_X64}
+              size: ${SIZE_X64}
+          path: Termpad-${VERSION}-x64.AppImage
+          sha512: ${SHA512_X64}
+          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+          EOF
+            echo "Generated latest-linux.yml"
+            cat latest-linux.yml
+          fi
+
+          # Generate latest-mac.yml for macOS
+          if [ -f "Termpad-darwin-arm64-${VERSION}.zip" ]; then
+            SHA512_ARM64=$(sha512sum "Termpad-darwin-arm64-${VERSION}.zip" | cut -d' ' -f1)
+            SIZE_ARM64=$(stat -c%s "Termpad-darwin-arm64-${VERSION}.zip")
+
+            cat > latest-mac.yml << EOF
+          version: ${VERSION}
+          files:
+            - url: Termpad-darwin-arm64-${VERSION}.zip
+              sha512: ${SHA512_ARM64}
+              size: ${SIZE_ARM64}
+          path: Termpad-darwin-arm64-${VERSION}.zip
+          sha512: ${SHA512_ARM64}
+          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+          EOF
+            echo "Generated latest-mac.yml"
+            cat latest-mac.yml
+          fi
+
+          # Generate latest.yml for Windows (Squirrel uses RELEASES file, but electron-updater also checks latest.yml)
+          if [ -f "Termpad-Setup-${VERSION}-x64.exe" ]; then
+            SHA512_WIN=$(sha512sum "Termpad-Setup-${VERSION}-x64.exe" | cut -d' ' -f1)
+            SIZE_WIN=$(stat -c%s "Termpad-Setup-${VERSION}-x64.exe")
+
+            cat > latest.yml << EOF
+          version: ${VERSION}
+          files:
+            - url: Termpad-Setup-${VERSION}-x64.exe
+              sha512: ${SHA512_WIN}
+              size: ${SIZE_WIN}
+          path: Termpad-Setup-${VERSION}-x64.exe
+          sha512: ${SHA512_WIN}
+          releaseDate: '$(date -u +%Y-%m-%dT%H:%M:%S.000Z)'
+          EOF
+            echo "Generated latest.yml"
+            cat latest.yml
+          fi
+
+      - name: Upload manifest files to release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          cd assets
+          for file in latest-linux.yml latest-mac.yml latest.yml; do
+            if [ -f "$file" ]; then
+              gh release upload "v${VERSION}" "$file" --repo meganide/termpad --clobber
+              echo "Uploaded $file"
+            fi
+          done

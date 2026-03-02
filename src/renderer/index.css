@@ -1,0 +1,728 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/* Custom breakpoint for extra large screens (1920px+) */
+@custom-variant 3xl (@media (width >= 1920px));
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-jetbrains-mono);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-panel: var(--sidebar-panel);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-info: var(--info);
+  --color-info-foreground: var(--info-foreground);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+
+  /* Obsidian Neutrals */
+  --color-obsidian-50: var(--obsidian-50);
+  --color-obsidian-100: var(--obsidian-100);
+  --color-obsidian-200: var(--obsidian-200);
+  --color-obsidian-300: var(--obsidian-300);
+  --color-obsidian-400: var(--obsidian-400);
+  --color-obsidian-500: var(--obsidian-500);
+  --color-obsidian-600: var(--obsidian-600);
+  --color-obsidian-700: var(--obsidian-700);
+  --color-obsidian-800: var(--obsidian-800);
+  --color-obsidian-900: var(--obsidian-900);
+  --color-obsidian-950: var(--obsidian-950);
+
+  /* Primary - Neon Lime (#ccff00) */
+  --color-lime-50: var(--lime-50);
+  --color-lime-100: var(--lime-100);
+  --color-lime-200: var(--lime-200);
+  --color-lime-300: var(--lime-300);
+  --color-lime-400: var(--lime-400);
+  --color-lime-500: var(--lime-500);
+  --color-lime-600: var(--lime-600);
+  --color-lime-700: var(--lime-700);
+  --color-lime-800: var(--lime-800);
+  --color-lime-900: var(--lime-900);
+  --color-lime-950: var(--lime-950);
+
+  /* Secondary - Emerald Glow (#10b981) */
+  --color-emerald-50: var(--emerald-50);
+  --color-emerald-100: var(--emerald-100);
+  --color-emerald-200: var(--emerald-200);
+  --color-emerald-300: var(--emerald-300);
+  --color-emerald-400: var(--emerald-400);
+  --color-emerald-500: var(--emerald-500);
+  --color-emerald-600: var(--emerald-600);
+  --color-emerald-700: var(--emerald-700);
+  --color-emerald-800: var(--emerald-800);
+  --color-emerald-900: var(--emerald-900);
+  --color-emerald-950: var(--emerald-950);
+
+  /* Accent - Red (Destructive) */
+  --color-red-50: var(--red-50);
+  --color-red-100: var(--red-100);
+  --color-red-200: var(--red-200);
+  --color-red-300: var(--red-300);
+  --color-red-400: var(--red-400);
+  --color-red-500: var(--red-500);
+  --color-red-600: var(--red-600);
+  --color-red-700: var(--red-700);
+  --color-red-800: var(--red-800);
+  --color-red-900: var(--red-900);
+  --color-red-950: var(--red-950);
+
+  /* Accent - Yellow (Warning) */
+  --color-yellow-50: var(--yellow-50);
+  --color-yellow-100: var(--yellow-100);
+  --color-yellow-200: var(--yellow-200);
+  --color-yellow-300: var(--yellow-300);
+  --color-yellow-400: var(--yellow-400);
+  --color-yellow-500: var(--yellow-500);
+  --color-yellow-600: var(--yellow-600);
+  --color-yellow-700: var(--yellow-700);
+  --color-yellow-800: var(--yellow-800);
+  --color-yellow-900: var(--yellow-900);
+  --color-yellow-950: var(--yellow-950);
+
+  /* Accent - Blue (Info) */
+  --color-blue-50: var(--blue-50);
+  --color-blue-100: var(--blue-100);
+  --color-blue-200: var(--blue-200);
+  --color-blue-300: var(--blue-300);
+  --color-blue-400: var(--blue-400);
+  --color-blue-500: var(--blue-500);
+  --color-blue-600: var(--blue-600);
+  --color-blue-700: var(--blue-700);
+  --color-blue-800: var(--blue-800);
+  --color-blue-900: var(--blue-900);
+  --color-blue-950: var(--blue-950);
+
+  /* Terminal Status Colors */
+  --color-status-starting: var(--status-starting);
+  --color-status-running: var(--status-running);
+  --color-status-waiting: var(--status-waiting);
+  --color-status-idle: var(--status-idle);
+  --color-status-stopped: var(--status-stopped);
+  --color-status-error: var(--status-error);
+}
+
+:root {
+  --radius: 0.625rem;
+
+  /* Font families */
+  --font-inter: 'Inter', system-ui, sans-serif;
+  --font-jetbrains-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  /* ======================
+     OBSIDIAN & LIME COLOR PALETTE
+     ====================== */
+
+  /* Obsidian Neutrals - Smooth dark gradient for better blending */
+  --obsidian-50: #e8e8e8; /* Light grey for contrast sections */
+  --obsidian-100: #c8c8c8;
+  --obsidian-200: #a0a0a0;
+  --obsidian-300: #787878;
+  --obsidian-400: #505050;
+  --obsidian-500: #363636;
+  --obsidian-600: #262626;
+  --obsidian-700: #1c1c1c;
+  --obsidian-800: #141414; /* Elevated surface */
+  --obsidian-900: #0e0e0e; /* Panel surface */
+  --obsidian-950: #0a0a0a; /* Deep background */
+
+  /* Primary - Neon Lime (#ccff00) - Vibrant, futuristic accent */
+  --lime-50: #f8ffe5;
+  --lime-100: #efffb8;
+  --lime-200: #e2ff85;
+  --lime-300: #d4ff47;
+  --lime-400: #ccff00; /* Pure neon lime */
+  --lime-500: #b8e600; /* Primary accent */
+  --lime-600: #8fb800;
+  --lime-700: #6b8a00;
+  --lime-800: #4a5f00;
+  --lime-900: #2d3a00;
+  --lime-950: #1a2200;
+
+  /* Secondary - Emerald Glow (#10b981) */
+  --emerald-50: #ecfdf5;
+  --emerald-100: #d1fae5;
+  --emerald-200: #a7f3d0;
+  --emerald-300: #6ee7b7;
+  --emerald-400: #34d399;
+  --emerald-500: #10b981; /* Secondary accent */
+  --emerald-600: #059669;
+  --emerald-700: #047857;
+  --emerald-800: #065f46;
+  --emerald-900: #064e3b;
+  --emerald-950: #022c22;
+
+  /* Accent - Red (Destructive) */
+  --red-50: hsl(0, 100%, 97%);
+  --red-100: hsl(0, 100%, 92%);
+  --red-200: hsl(0, 100%, 85%);
+  --red-300: hsl(0, 100%, 76%);
+  --red-400: hsl(0, 100%, 66%);
+  --red-500: hsl(0, 85%, 55%);
+  --red-600: hsl(0, 80%, 48%);
+  --red-700: hsl(0, 75%, 40%);
+  --red-800: hsl(0, 70%, 32%);
+  --red-900: hsl(0, 65%, 24%);
+  --red-950: hsl(0, 60%, 14%);
+
+  /* Accent - Yellow (Warning) */
+  --yellow-50: hsl(48, 100%, 96%);
+  --yellow-100: hsl(48, 100%, 90%);
+  --yellow-200: hsl(48, 100%, 80%);
+  --yellow-300: hsl(48, 100%, 70%);
+  --yellow-400: hsl(48, 100%, 60%);
+  --yellow-500: hsl(45, 95%, 52%);
+  --yellow-600: hsl(42, 90%, 45%);
+  --yellow-700: hsl(40, 85%, 38%);
+  --yellow-800: hsl(38, 80%, 30%);
+  --yellow-900: hsl(36, 75%, 22%);
+  --yellow-950: hsl(34, 70%, 12%);
+
+  /* Accent - Blue (Info) */
+  --blue-50: hsl(214, 100%, 97%);
+  --blue-100: hsl(214, 95%, 92%);
+  --blue-200: hsl(214, 90%, 82%);
+  --blue-300: hsl(214, 85%, 70%);
+  --blue-400: hsl(214, 80%, 58%);
+  --blue-500: hsl(214, 85%, 50%);
+  --blue-600: hsl(214, 90%, 42%);
+  --blue-700: hsl(214, 95%, 34%);
+  --blue-800: hsl(214, 100%, 26%);
+  --blue-900: hsl(214, 100%, 18%);
+  --blue-950: hsl(214, 100%, 10%);
+
+  /* ======================
+     GLASSMORPHISM TOKENS
+     ====================== */
+  --glass-bg: rgba(255, 255, 255, 0.02);
+  --glass-border: rgba(255, 255, 255, 0.06);
+  --glass-blur: 20px;
+
+  /* ======================
+     TEXT COLORS
+     ====================== */
+  --text-primary: #f0f0f0;
+  --text-secondary: rgba(255, 255, 255, 0.65);
+  --text-muted: rgba(255, 255, 255, 0.35);
+
+  /* ======================
+     TERMINAL STATUS COLORS
+     Vibrant, high-visibility indicators
+     ====================== */
+  --status-starting: #60a5fa; /* Blue 400 */
+  --status-running: #4ade80; /* Emerald 400 - vibrant green */
+  --status-waiting: #fbbf24; /* Amber 400 */
+  --status-idle: #737373; /* Neutral 500 */
+  --status-stopped: #525252; /* Neutral 600 */
+  --status-error: #f87171; /* Red 400 */
+
+  /* ======================
+     SHADCN SEMANTIC TOKENS (Dark mode - Obsidian & Lime)
+
+     Visual Hierarchy (darkest to lightest):
+     1. background (#121212) - Terminal area, main canvas
+     2. sidebar (#161616) - Left sidebar panel
+     3. card (#1c1c1c) - Right panel, elevated surfaces
+     4. secondary (#202020) - Headers within panels
+     5. accent (#282828) - Hover/active states
+     ====================== */
+
+  --background: #121212; /* Softer dark, not pure black */
+  --foreground: var(--text-primary);
+  --card: #1c1c1c; /* Elevated panels (right panel) */
+  --card-foreground: var(--text-primary);
+  --popover: #202020;
+  --popover-foreground: var(--text-primary);
+  --primary: var(--lime-500); /* #b8e600 - Primary lime */
+  --primary-foreground: var(--obsidian-950);
+  --secondary: #1a1a1a; /* Panel headers */
+  --secondary-foreground: var(--text-primary);
+  --muted: #181818; /* Slightly elevated from background */
+  --muted-foreground: var(--text-secondary);
+  --accent: #282828; /* Hover/active states */
+  --accent-foreground: var(--text-primary);
+  --destructive: var(--red-500);
+  --destructive-foreground: white;
+  --success: var(--emerald-400);
+  --success-foreground: var(--obsidian-950);
+  --warning: var(--yellow-400);
+  --warning-foreground: var(--obsidian-950);
+  --info: var(--blue-400);
+  --info-foreground: var(--obsidian-950);
+  --border: rgba(255, 255, 255, 0.06);
+  --input: #1e1e1e;
+  --ring: var(--lime-500);
+  --chart-1: var(--lime-500);
+  --chart-2: var(--emerald-400);
+  --chart-3: var(--blue-400);
+  --chart-4: var(--yellow-400);
+  --chart-5: var(--red-400);
+  --sidebar: #161616; /* Sidebar - slightly lighter than bg */
+  --sidebar-panel: #131313; /* Slightly darker for screen panels */
+  --sidebar-foreground: var(--text-primary);
+  --sidebar-primary: var(--lime-500);
+  --sidebar-primary-foreground: var(--obsidian-950);
+  --sidebar-accent: #242424; /* Hover in sidebar */
+  --sidebar-accent-foreground: var(--text-primary);
+  --sidebar-border: rgba(255, 255, 255, 0.05);
+  --sidebar-ring: var(--lime-500);
+}
+
+/* ============================================
+   Base Styles
+   ============================================ */
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  /* Global focus ring - smaller and more subtle */
+  *:focus-visible {
+    --tw-ring-offset-width: 0px;
+    --tw-ring-width: 1px;
+    --tw-ring-opacity: 0.4;
+  }
+  html,
+  body {
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family:
+      'Inter',
+      system-ui,
+      -apple-system,
+      sans-serif;
+  }
+  #root {
+    height: 100vh;
+    width: 100vw;
+    overflow: hidden;
+  }
+
+  /* Code/monospace elements */
+  code,
+  pre,
+  .font-mono {
+    font-family: 'JetBrains Mono', 'Consolas', monospace;
+  }
+}
+
+/* ======================
+   GLASSMORPHISM UTILITIES
+   ====================== */
+@layer utilities {
+  .glass {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+  }
+
+  .glass-card {
+    background: var(--glass-bg);
+    backdrop-filter: blur(var(--glass-blur));
+    border: 1px solid var(--glass-border);
+    border-radius: 1.5rem;
+  }
+
+  .text-secondary {
+    color: var(--text-secondary);
+  }
+
+  .text-muted-custom {
+    color: var(--text-muted);
+  }
+}
+
+/* ======================
+   ANIMATIONS
+   ====================== */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-10px);
+  }
+}
+
+@keyframes glow-pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.7;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes pulse-glow {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes fade-in-up {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-glow {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  .glow-lime {
+    box-shadow:
+      0 0 20px rgba(204, 255, 0, 0.25),
+      0 0 40px rgba(204, 255, 0, 0.15);
+  }
+
+  .glow-lime-lg {
+    box-shadow:
+      0 0 40px rgba(204, 255, 0, 0.35),
+      0 0 80px rgba(204, 255, 0, 0.2),
+      0 0 120px rgba(204, 255, 0, 0.1);
+  }
+
+  .glow-lime-subtle {
+    box-shadow: 0 0 10px rgba(204, 255, 0, 0.12);
+  }
+
+  .glow-emerald {
+    box-shadow:
+      0 0 20px rgba(16, 185, 129, 0.25),
+      0 0 40px rgba(16, 185, 129, 0.15);
+  }
+
+  .animate-fade-in-up {
+    animation: fade-in-up 0.6s ease-out forwards;
+  }
+
+  /* Text gradient utilities */
+  .text-gradient-lime {
+    background: linear-gradient(135deg, var(--lime-400), var(--lime-500), var(--emerald-400));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  /* Grid pattern */
+  .grid-pattern {
+    background-image:
+      linear-gradient(rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(255, 255, 255, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+  }
+
+  /* Selection color */
+  ::selection {
+    background: var(--lime-500);
+    color: var(--obsidian-950);
+  }
+
+  /* Focus ring - subtle */
+  *:focus-visible {
+    outline: 1px solid var(--lime-400);
+    outline-offset: 0;
+  }
+
+  /* No focus ring on command inputs (they're inside popovers) */
+  [data-slot='command-input']:focus-visible {
+    outline: none;
+  }
+}
+
+/* ============================================
+   Highlight.js Overrides
+   ============================================ */
+.hljs {
+  background: var(--color-card) !important;
+  border: none !important;
+  padding: 1rem !important;
+  border-radius: var(--radius-lg) !important;
+}
+
+pre:has(.hljs) {
+  background: transparent !important;
+  border: none !important;
+  padding: 0 !important;
+  margin: 0 !important;
+}
+
+pre,
+code,
+.prose pre,
+.prose code {
+  border: none !important;
+}
+
+/* ============================================
+   Scrollbar Styles
+   ============================================ */
+
+/* Ghost scrollbar - Radix ScrollArea */
+[data-slot='scroll-area-scrollbar'] {
+  width: 6px !important;
+}
+
+[data-slot='scroll-area-thumb'] {
+  background: var(--obsidian-500) !important;
+  border-radius: var(--radius-md);
+  opacity: 0.25;
+}
+
+/* Native scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+  margin: 2px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--obsidian-600);
+  border-radius: 4px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--obsidian-500);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* ============================================
+   Prose/Markdown Styles
+   ============================================ */
+.prose {
+  color: inherit;
+}
+
+.prose pre {
+  background: var(--color-card);
+  border-radius: var(--radius-lg);
+  padding: 1rem;
+  overflow-x: auto;
+}
+
+.prose code {
+  color: inherit;
+  font-size: 0.875em;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+}
+
+.prose pre code {
+  color: var(--color-foreground);
+}
+
+/* Inline code */
+.prose :not(pre) > code {
+  background: var(--color-accent);
+  padding: 0.125rem 0.375rem;
+  border-radius: var(--radius-sm);
+}
+
+.prose p {
+  margin-top: 0.75em;
+  margin-bottom: 0.75em;
+}
+
+.prose p:first-child {
+  margin-top: 0;
+}
+
+.prose p:last-child {
+  margin-bottom: 0;
+}
+
+.prose ul,
+.prose ol {
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  padding-left: 1.25em;
+}
+
+.prose li {
+  margin-top: 0.25em;
+  margin-bottom: 0.25em;
+}
+
+.prose h1,
+.prose h2,
+.prose h3,
+.prose h4 {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+
+.prose h1:first-child,
+.prose h2:first-child,
+.prose h3:first-child,
+.prose h4:first-child {
+  margin-top: 0;
+}
+
+.prose strong {
+  font-weight: 600;
+}
+
+/* Links */
+.prose a {
+  color: var(--color-primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.prose a:hover {
+  opacity: 0.8;
+}
+
+/* Blockquotes */
+.prose blockquote {
+  border-left: 3px solid var(--color-primary);
+  padding-left: 1rem;
+  margin: 1rem 0;
+  color: var(--color-muted-foreground);
+  font-style: italic;
+}
+
+/* Horizontal rules */
+.prose hr {
+  border-color: var(--color-border);
+  margin: 1.5rem 0;
+}
+
+/* ============================================
+   Terminal (xterm.js) Styles
+   ============================================ */
+.xterm-helper-textarea {
+  opacity: 0 !important;
+  position: absolute !important;
+}
+
+.xterm {
+  height: 100% !important;
+  padding: 0 !important;
+}
+
+.xterm-scrollable-element {
+  height: 100% !important;
+}
+
+.xterm-viewport {
+  height: 100% !important;
+  overflow-y: auto !important;
+}
+
+.xterm-screen {
+  height: 100% !important;
+}
+
+/* Terminal scrollbar */
+.xterm-viewport::-webkit-scrollbar {
+  width: 4px !important;
+}
+
+.xterm-viewport::-webkit-scrollbar-thumb {
+  background: var(--obsidian-600) !important;
+  border-radius: var(--radius-md);
+  opacity: 0.15;
+}
+
+/* User terminal tabs scrollbar */
+.user-terminal-tabs-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: var(--obsidian-600) var(--obsidian-900);
+}
+
+.user-terminal-tabs-scrollbar::-webkit-scrollbar {
+  height: 6px;
+}
+
+.user-terminal-tabs-scrollbar::-webkit-scrollbar-track {
+  background: var(--obsidian-900);
+  border-radius: 3px;
+}
+
+.user-terminal-tabs-scrollbar::-webkit-scrollbar-thumb {
+  background: var(--obsidian-600);
+  border-radius: 3px;
+}
+
+.user-terminal-tabs-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: var(--obsidian-500);
+}
+
+/* Diff content wrapping */
+.diff-line-content {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
