@@ -376,26 +376,30 @@ export const TerminalView = memo(
     // Main terminals respond to 'mainTerminal', user terminals respond to 'userTerminal'
     const expectedFocusArea = terminalType === 'main' ? 'mainTerminal' : 'userTerminal';
 
-    // Fit and focus when visibility changes
-    // Only auto-focus if the focusArea matches this terminal's type
+    // Track previous visibility to detect transitions
+    const prevIsVisibleRef = useRef(isVisible);
+
+    // Fit and focus when terminal becomes visible (session/tab switch)
     useEffect(() => {
+      const becameVisible = isVisible && !prevIsVisibleRef.current;
+      prevIsVisibleRef.current = isVisible;
+
       if (isVisible && fitAddonRef.current && terminalRef.current) {
-        // Delay to ensure dialogs have closed and container is laid out
-        // Dialog animations take ~200ms, so we wait a bit longer
+        // Delay to ensure container is laid out
         const timeoutId = setTimeout(() => {
           fitAddonRef.current?.fit();
           if (terminalRef.current) {
             resize(terminalRef.current.cols, terminalRef.current.rows);
-            // Only focus if the focusArea matches this terminal's expected focus area
-            if (focusArea === expectedFocusArea) {
+            // Always focus when terminal becomes visible (user switched to it)
+            if (becameVisible) {
               terminalRef.current.focus();
             }
           }
-        }, 250);
+        }, 50);
 
         return () => clearTimeout(timeoutId);
       }
-    }, [isVisible, resize, focusArea, expectedFocusArea]);
+    }, [isVisible, resize]);
 
     // Focus terminal when focus area changes to this terminal's type (e.g., from sidebar via Ctrl+Space)
     const prevFocusAreaRef = useRef<FocusArea>(focusArea);
