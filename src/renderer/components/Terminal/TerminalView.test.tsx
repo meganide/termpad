@@ -271,7 +271,7 @@ describe('TerminalView', () => {
 
       // Advance timers to trigger the delayed fit
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(50);
       });
 
       expect(mockFitAddonInstance.fit).toHaveBeenCalled();
@@ -288,14 +288,15 @@ describe('TerminalView', () => {
       rerender(<TerminalView {...defaultProps} isVisible={true} />);
 
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(50);
       });
 
       expect(mockTerminalInstance.focus).toHaveBeenCalled();
     });
 
-    it('does not focus terminal when becoming visible but focusArea does not match', async () => {
-      // Set focusArea to sidebar so the terminal will NOT focus when becoming visible
+    it('focuses terminal when becoming visible regardless of focusArea', async () => {
+      // Even if focusArea is 'sidebar', terminal should focus when becoming visible
+      // because the user explicitly switched to this terminal
       useAppStore.setState({ focusArea: 'sidebar' });
 
       const { rerender } = render(<TerminalView {...defaultProps} isVisible={false} />);
@@ -305,10 +306,10 @@ describe('TerminalView', () => {
       rerender(<TerminalView {...defaultProps} isVisible={true} />);
 
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(50);
       });
 
-      expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+      expect(mockTerminalInstance.focus).toHaveBeenCalled();
     });
 
     it('resizes terminal when becoming visible', async () => {
@@ -319,7 +320,7 @@ describe('TerminalView', () => {
       rerender(<TerminalView {...defaultProps} isVisible={true} />);
 
       await act(async () => {
-        vi.advanceTimersByTime(250);
+        vi.advanceTimersByTime(50);
       });
 
       expect(mockUseTerminalReturn.resize).toHaveBeenCalledWith(80, 24);
