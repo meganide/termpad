@@ -506,6 +506,7 @@ export interface TerminalAPI {
   killAllForWorktree(worktreeSessionId: string): Promise<void>;
   waitForReady(terminalId: string, timeoutMs?: number): Promise<void>;
   getBuffer(terminalId: string): Promise<string>;
+  saveClipboardImage(imageData: number[], format: string): Promise<string | null>;
 
   // Events
   onData(sessionId: string, callback: (data: string) => void): () => void;
