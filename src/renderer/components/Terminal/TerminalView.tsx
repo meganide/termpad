@@ -164,6 +164,8 @@ export const TerminalView = memo(
         cursorBlink: true,
         theme: buildTheme(),
         allowProposedApi: true,
+        macOptionIsMeta: true,
+        macOptionClickForcesSelection: true,
       });
 
       const fitAddon = new FitAddon();
@@ -262,20 +264,59 @@ export const TerminalView = memo(
           return false; // Don't let xterm handle it, let it bubble to window
         }
 
-        // Handle Ctrl+V / Cmd+V paste
         const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+
+        // macOS: Cmd+Backspace → delete to beginning of line (Ctrl+U)
+        if (
+          isMac &&
+          e.metaKey &&
+          !e.ctrlKey &&
+          !e.shiftKey &&
+          !e.altKey &&
+          e.key === 'Backspace' &&
+          e.type === 'keydown'
+        ) {
+          e.preventDefault();
+          write('\x15');
+          return false;
+        }
+
+        // Handle Ctrl+V / Cmd+V paste
         const isPaste = isMac
           ? e.metaKey && !e.ctrlKey && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'v'
           : e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'v';
 
         if (isPaste && e.type === 'keydown') {
           e.preventDefault();
-          // Handle paste asynchronously
+          // Handle paste asynchronously - check for both text and image data
           (async () => {
             try {
               const text = await navigator.clipboard.readText();
               if (text) {
                 write(text);
+                return;
+              }
+              // No text in clipboard - check for image data
+              try {
+                const items = await navigator.clipboard.read();
+                for (const item of items) {
+                  const imageType = item.types.find((t) => t.startsWith('image/'));
+                  if (imageType) {
+                    const blob = await item.getType(imageType);
+                    const arrayBuffer = await blob.arrayBuffer();
+                    const uint8Array = new Uint8Array(arrayBuffer);
+                    const filePath = await window.terminal.saveClipboardImage(
+                      Array.from(uint8Array),
+                      imageType.replace('image/', '')
+                    );
+                    if (filePath) {
+                      write(filePath);
+                    }
+                    break;
+                  }
+                }
+              } catch {
+                // Clipboard image read not supported or denied
               }
             } catch (err) {
               console.error('Paste failed:', err);
