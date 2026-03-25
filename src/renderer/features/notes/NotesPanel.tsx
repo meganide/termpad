@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Undo2,
   Redo2,
@@ -43,20 +43,56 @@ function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
   return debouncedSave;
 }
 
+interface FormatState {
+  bold: boolean;
+  italic: boolean;
+  strikethrough: boolean;
+  code: boolean;
+  block: string;
+  list: boolean;
+}
+
+function getFormatState(editorEl: HTMLElement | null): FormatState {
+  const block = document.queryCommandValue('formatBlock').toLowerCase();
+
+  let code = false;
+  const selection = window.getSelection();
+  if (selection && selection.rangeCount > 0 && editorEl) {
+    let node: Node | null = selection.getRangeAt(0).commonAncestorContainer;
+    while (node && node !== editorEl) {
+      if (node instanceof HTMLElement && node.tagName === 'CODE') {
+        code = true;
+        break;
+      }
+      node = node.parentNode;
+    }
+  }
+
+  return {
+    bold: document.queryCommandState('bold'),
+    italic: document.queryCommandState('italic'),
+    strikethrough: document.queryCommandState('strikethrough'),
+    code,
+    block,
+    list: document.queryCommandState('insertUnorderedList'),
+  };
+}
+
 interface ToolbarButtonProps {
   icon: React.ReactNode;
   tooltip: string;
+  active?: boolean;
   onClick: () => void;
 }
 
-function ToolbarButton({ icon, tooltip, onClick }: ToolbarButtonProps) {
+function ToolbarButton({ icon, tooltip, active, onClick }: ToolbarButtonProps) {
   return (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
           variant="ghost"
           size="icon"
-          className="h-7 w-7 text-muted-foreground hover:text-foreground"
+          className={`h-7 w-7 ${active ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
           onMouseDown={(e) => e.preventDefault()}
           onClick={onClick}
         >
@@ -104,6 +140,31 @@ function NoteEditor({
   const editorRef = useRef<HTMLDivElement>(null);
   const debouncedSave = useDebouncedSave(onChange);
   const prevIdentityRef = useRef('');
+  const [fmt, setFmt] = useState<FormatState>({
+    bold: false,
+    italic: false,
+    strikethrough: false,
+    code: false,
+    block: '',
+    list: false,
+  });
+
+  const updateFormatState = useCallback(() => {
+    setFmt(getFormatState(editorRef.current));
+  }, []);
+
+  useEffect(() => {
+    const handler = () => {
+      if (
+        editorRef.current?.contains(document.activeElement) ||
+        document.activeElement === editorRef.current
+      ) {
+        updateFormatState();
+      }
+    };
+    document.addEventListener('selectionchange', handler);
+    return () => document.removeEventListener('selectionchange', handler);
+  }, [updateFormatState]);
 
   useEffect(() => {
     if (prevIdentityRef.current !== identity && editorRef.current) {
@@ -121,8 +182,9 @@ function NoteEditor({
       editorRef.current?.focus();
       richTextCommand(command, val);
       saveContent();
+      updateFormatState();
     },
-    [saveContent]
+    [saveContent, updateFormatState]
   );
 
   const toggleBlock = useCallback(
@@ -131,8 +193,9 @@ function NoteEditor({
       const current = document.queryCommandValue('formatBlock').toLowerCase();
       richTextCommand('formatBlock', current === tag ? 'div' : tag);
       saveContent();
+      updateFormatState();
     },
-    [saveContent]
+    [saveContent, updateFormatState]
   );
 
   const toggleCode = useCallback(() => {
@@ -166,7 +229,8 @@ function NoteEditor({
       }
     }
     saveContent();
-  }, [saveContent]);
+    updateFormatState();
+  }, [saveContent, updateFormatState]);
 
   const iconSize = 'h-3.5 w-3.5';
 
@@ -190,48 +254,57 @@ function NoteEditor({
         <ToolbarButton
           icon={<Heading1 className={iconSize} />}
           tooltip="Heading 1"
+          active={fmt.block === 'h1'}
           onClick={() => toggleBlock('h1')}
         />
         <ToolbarButton
           icon={<Heading2 className={iconSize} />}
           tooltip="Heading 2"
+          active={fmt.block === 'h2'}
           onClick={() => toggleBlock('h2')}
         />
         <ToolbarButton
           icon={<Heading3 className={iconSize} />}
           tooltip="Heading 3"
+          active={fmt.block === 'h3'}
           onClick={() => toggleBlock('h3')}
         />
         <ToolbarDivider />
         <ToolbarButton
           icon={<Bold className={iconSize} />}
           tooltip="Bold (Ctrl+B)"
+          active={fmt.bold}
           onClick={() => run('bold')}
         />
         <ToolbarButton
           icon={<Italic className={iconSize} />}
           tooltip="Italic (Ctrl+I)"
+          active={fmt.italic}
           onClick={() => run('italic')}
         />
         <ToolbarButton
           icon={<Strikethrough className={iconSize} />}
           tooltip="Strikethrough"
+          active={fmt.strikethrough}
           onClick={() => run('strikethrough')}
         />
         <ToolbarButton
           icon={<Code className={iconSize} />}
           tooltip="Inline code"
+          active={fmt.code}
           onClick={toggleCode}
         />
         <ToolbarDivider />
         <ToolbarButton
           icon={<List className={iconSize} />}
           tooltip="Bullet list"
+          active={fmt.list}
           onClick={() => run('insertUnorderedList')}
         />
         <ToolbarButton
           icon={<Quote className={iconSize} />}
           tooltip="Blockquote"
+          active={fmt.block === 'blockquote'}
           onClick={() => toggleBlock('blockquote')}
         />
       </div>
@@ -250,13 +323,17 @@ function NoteEditor({
           '[&_ol]:list-decimal [&_ol]:pl-5',
           '[&_code]:bg-obsidian-950 [&_code]:text-lime-500 [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-lime-500/20',
         ].join(' ')}
-        onInput={saveContent}
+        onInput={() => {
+          saveContent();
+          updateFormatState();
+        }}
         onKeyDown={(e) => {
           if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
             e.preventDefault();
             richTextCommand('redo');
           }
         }}
+        onKeyUp={updateFormatState}
       />
     </div>
   );
