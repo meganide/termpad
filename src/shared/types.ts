@@ -133,6 +133,7 @@ export interface WorktreeSession {
   customShortcut?: CustomShortcut; // Custom keyboard shortcut object
   portOffset?: number; // Offset within repo's port range (0-99), assigned on creation
   isMainWorktree?: boolean; // True if this is the main worktree session (always first, cannot be deleted)
+  notes?: string; // User notes for this worktree
 }
 
 // Individual terminal tab within a worktree
@@ -164,6 +165,7 @@ export interface Repository {
   createdAt: string;
   scriptsConfig?: RepositoryScriptsConfig; // Optional scripts configuration
   portRangeStart?: number; // Base port for this repo (e.g., 10000), assigned on creation
+  notes?: string; // User notes for this repository
 }
 
 export interface WindowState {

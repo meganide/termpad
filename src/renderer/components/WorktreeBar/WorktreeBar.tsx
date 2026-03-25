@@ -1,4 +1,6 @@
-import { GitBranch } from 'lucide-react';
+import { GitBranch, NotebookPen } from 'lucide-react';
+import { Button } from '../ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { SplitButton, SplitButtonItem } from '../ui/split-button';
 import { useAppStore } from '../../stores/appStore';
 
@@ -6,10 +8,19 @@ interface WorktreeBarProps {
   sessionId: string | null;
   sessionPath?: string;
   branchName?: string;
+  notesOpen?: boolean;
+  onToggleNotes?: () => void;
   onError?: (message: string) => void;
 }
 
-export function WorktreeBar({ sessionId, sessionPath, branchName, onError }: WorktreeBarProps) {
+export function WorktreeBar({
+  sessionId,
+  sessionPath,
+  branchName,
+  notesOpen,
+  onToggleNotes,
+  onError,
+}: WorktreeBarProps) {
   const { settings, updateSettings } = useAppStore();
   const preferredEditor = settings.preferredEditor;
 
@@ -76,15 +87,31 @@ export function WorktreeBar({ sessionId, sessionPath, branchName, onError }: Wor
         )}
       </div>
 
-      {/* Right side: Split button for editor selection */}
-      <SplitButton
-        label={`Open in ${editorLabel}`}
-        onClick={handleOpenPreferred}
-        disabled={!sessionId}
-        items={editorItems}
-        onItemSelect={handleItemSelect}
-        showCheckmark={true}
-      />
+      {/* Right side: Notes toggle + Split button for editor selection */}
+      <div className="flex items-center gap-2">
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className={`h-8 w-8 ${notesOpen ? 'bg-primary/20 text-primary' : 'text-muted-foreground hover:text-foreground'}`}
+              onClick={onToggleNotes}
+              disabled={!sessionId}
+            >
+              <NotebookPen className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Notes</TooltipContent>
+        </Tooltip>
+        <SplitButton
+          label={`Open in ${editorLabel}`}
+          onClick={handleOpenPreferred}
+          disabled={!sessionId}
+          items={editorItems}
+          onItemSelect={handleItemSelect}
+          showCheckmark={true}
+        />
+      </div>
     </div>
   );
 }

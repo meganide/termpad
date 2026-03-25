@@ -134,6 +134,7 @@ interface AppStore extends AppState {
     scriptsConfig: Partial<RepositoryScriptsConfig>
   ) => void;
   reorderRepositories: (fromIndex: number, toIndex: number) => void;
+  updateRepositoryNotes: (repositoryId: string, notes: string) => void;
 
   // Worktree session actions
   addWorktreeSession: (projectId: string, worktreeSession: WorktreeSession) => void;
@@ -143,6 +144,7 @@ interface AppStore extends AppState {
     shortcut: CustomShortcut | undefined
   ) => void;
   reorderWorktreeSessions: (projectId: string, fromIndex: number, toIndex: number) => void;
+  updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
   // Terminal actions
   setActiveTerminal: (worktreeSessionId: string | null) => void;
@@ -685,6 +687,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
     persistState(get());
   },
 
+  updateRepositoryNotes: (repositoryId, notes) => {
+    set((state) => ({
+      repositories: state.repositories.map((r) => (r.id === repositoryId ? { ...r, notes } : r)),
+    }));
+    persistState(get());
+  },
+
   // Worktree session actions
   addWorktreeSession: (repositoryId, worktreeSession) => {
     set((state) => {
@@ -764,6 +773,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
         worktreeSessions.splice(toIndex, 0, moved);
         return { ...p, worktreeSessions };
       }),
+    }));
+    persistState(get());
+  },
+
+  updateWorktreeNotes: (worktreeSessionId, notes) => {
+    set((state) => ({
+      repositories: state.repositories.map((r) => ({
+        ...r,
+        worktreeSessions: r.worktreeSessions.map((ws) =>
+          ws.id === worktreeSessionId ? { ...ws, notes } : ws
+        ),
+      })),
     }));
     persistState(get());
   },

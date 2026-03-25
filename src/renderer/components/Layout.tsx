@@ -27,6 +27,7 @@ import { TerminalView, type TerminalViewHandle } from './Terminal/TerminalView';
 import { TitleBar } from './TitleBar';
 import { UpdateNotification } from './UpdateNotification';
 import { WorktreeBar } from './WorktreeBar/WorktreeBar';
+import { NotesPanel } from '../features/notes/NotesPanel';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 
 export function Layout() {
@@ -148,6 +149,7 @@ export function Layout() {
 
   // Start with home screen on app launch
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'home' });
+  const [notesOpen, setNotesOpen] = useState(false);
 
   // Callback to close overlay screens when session is selected via keyboard
   const handleKeyboardSessionSelect = useCallback(() => {
@@ -905,6 +907,8 @@ export function Layout() {
                   sessionId={activeTerminalId}
                   sessionPath={activeSession?.path}
                   branchName={activeSession?.branchName}
+                  notesOpen={notesOpen}
+                  onToggleNotes={() => setNotesOpen((prev) => !prev)}
                   onError={(message) => toast.error(message)}
                 />
 
@@ -929,6 +933,16 @@ export function Layout() {
 
                 {/* Terminal area */}
                 <div className="flex-1 relative min-h-0 p-2 bg-muted rounded-xl mx-3 mb-3 mt-2">
+                  {/* Notes panel - overlay on top of terminal */}
+                  {notesOpen && activeSessionInfo && (
+                    <NotesPanel
+                      repositoryId={activeSessionInfo.repository.id}
+                      worktreeSessionId={activeSessionInfo.session.id}
+                      repositoryName={activeSessionInfo.repository.name}
+                      worktreeLabel={activeSessionInfo.session.label}
+                    />
+                  )}
+
                   {/* Render terminals for each tab across all worktrees */}
                   {allTerminalConfigs.map((config) => {
                     const isActiveWorktree = config.sessionId === activeTerminalId;
