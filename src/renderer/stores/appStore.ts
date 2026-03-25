@@ -795,6 +795,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       activeTerminalId: worktreeSessionId,
       activeTabId: activeTabIdToRestore,
       activeUserTabId: activeUserTabIdToRestore,
+      focusArea: 'mainTerminal',
     });
   },
 
@@ -1329,6 +1330,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
     set((state) => ({
       activeTabId: tabId,
+      focusArea: 'mainTerminal',
       worktreeTabs: (state.worktreeTabs || []).map((wt) =>
         wt.worktreeSessionId === worktreeSessionId ? { ...wt, activeTabId: tabId } : wt
       ),

@@ -20,6 +20,7 @@ export function resetAllStores(): void {
     activeUserTabId: null,
     worktreeTabs: [],
     userTerminalTabs: [],
+    focusArea: 'app',
     isInitialized: false,
   });
 
