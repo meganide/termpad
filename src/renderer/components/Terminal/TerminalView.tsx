@@ -19,6 +19,14 @@ import { Copy, ClipboardPaste, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FocusArea } from '../../../shared/types';
 
+function cleanTerminalText(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => line.trim())
+    .join('\n')
+    .trimEnd();
+}
+
 interface TerminalViewProps {
   sessionId: string;
   terminalId?: string; // Optional separate terminal ID (for tabs: worktreeSessionId:tabId)
@@ -102,7 +110,7 @@ export const TerminalView = memo(
           }
         }
 
-        const text = lines.join('\n').trimEnd();
+        const text = cleanTerminalText(lines.join('\n'));
         if (text) {
           await navigator.clipboard.writeText(text);
         }
@@ -291,7 +299,7 @@ export const TerminalView = memo(
 
         if (isCopy && e.type === 'keydown' && terminal.hasSelection()) {
           e.preventDefault();
-          const selection = terminal.getSelection();
+          const selection = cleanTerminalText(terminal.getSelection());
           navigator.clipboard.writeText(selection);
           return false; // Don't let xterm handle it
         }
@@ -481,7 +489,7 @@ export const TerminalView = memo(
       const terminal = terminalRef.current;
       if (!terminal || !terminal.hasSelection()) return;
 
-      const selection = terminal.getSelection();
+      const selection = cleanTerminalText(terminal.getSelection());
       await navigator.clipboard.writeText(selection);
       terminal.clearSelection();
       setContextMenu((prev) => ({ ...prev, isOpen: false }));
