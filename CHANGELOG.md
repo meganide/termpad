@@ -1,5 +1,11 @@
 # termpad
 
+## 0.3.2
+
+### Patch Changes
+
+- [#4](https://github.com/meganide/termpad/pull/4) [`ac7c0d9`](https://github.com/meganide/termpad/commit/ac7c0d9b79a90e0acfe1ef88576ae3c8c8f0bfed) Thanks [@meganide](https://github.com/meganide)! - Strip leading and trailing whitespace from each line when copying terminal text to clipboard
+
 ## 0.3.1
 
 ### Patch Changes
