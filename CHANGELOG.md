@@ -1,5 +1,16 @@
 # termpad
 
+## 0.5.0
+
+### Minor Changes
+
+- [#8](https://github.com/meganide/termpad/pull/8) [`6141c6a`](https://github.com/meganide/termpad/commit/6141c6a930f33f3571d64cdc9e07f52fe30446d8) Thanks [@meganide](https://github.com/meganide)! - Add shared termpad.json config for team script sharing
+  - Add support for a `termpad.json` file at the repository root with shared setup, run, and cleanup scripts
+  - Detects the config file on project open and shows a sync button with badge on the Scripts settings page
+  - Scripts are never auto-applied; users must explicitly click sync to apply
+  - Watches the file for changes (e.g., after git pull) and updates the badge
+  - Fix state corruption when saving full store state with non-serializable Set/Map fields
+
 ## 0.4.0
 
 ### Minor Changes
