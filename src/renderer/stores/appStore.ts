@@ -495,6 +495,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         activeTabId: null,
         activeUserTabId: null,
         isInitialized: true,
+        // Reset runtime Sets (loaded JSON may contain {} instead of Set)
+        deletingPaths: new Set(),
+        termpadConfigAvailable: new Set<string>(),
+        termpadConfigUpdates: new Set<string>(),
       });
     } catch (error) {
       console.error('[Store] Failed to initialize:', error);

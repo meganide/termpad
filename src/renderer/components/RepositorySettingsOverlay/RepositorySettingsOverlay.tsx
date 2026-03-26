@@ -61,8 +61,9 @@ function RepositorySettingsForm({ repositoryId, onClose }: RepositorySettingsOve
         ),
       }));
 
-      // Persist to storage
-      window.storage.saveState(useAppStore.getState());
+      // Persist to storage (extract only AppState fields to avoid serializing Sets/Maps)
+      const { version, settings, repositories, window: windowState } = useAppStore.getState();
+      window.storage.saveState({ version, settings, repositories, window: windowState });
     },
     [repository, repositoryId, scriptsConfig]
   );
