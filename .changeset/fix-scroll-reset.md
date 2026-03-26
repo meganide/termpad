@@ -1,5 +1,5 @@
 ---
-'termpad-dev': patch
+'termpad': patch
 ---
 
 Fix terminal scroll position jumping to top during resize/reflow
