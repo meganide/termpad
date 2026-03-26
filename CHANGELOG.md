@@ -1,5 +1,13 @@
 # termpad
 
+## 0.5.1
+
+### Patch Changes
+
+- [#10](https://github.com/meganide/termpad/pull/10) [`6c544bf`](https://github.com/meganide/termpad/commit/6c544bfcdb6fd26ae98f83fce11a0fc460577229) Thanks [@meganide](https://github.com/meganide)! - Fix terminal scroll position jumping to top during resize/reflow
+
+  When xterm.js reflows content (e.g., due to a container resize triggering `fitAddon.fit()`), the viewport scroll position could reset to line 0. This caused the terminal to jump to the top when the user had scrolled up, particularly noticeable when Claude Code was producing lots of output. The scroll position is now saved before fit and restored afterward, preserving the user's scroll position.
+
 ## 0.5.0
 
 ### Minor Changes
