@@ -330,6 +330,9 @@ Object.defineProperty(window, 'terminal', {
     runScript: vi.fn().mockResolvedValue({ success: true, output: '' }),
     getFileLines: vi.fn().mockResolvedValue({ lines: [] }),
     getFileLineCount: vi.fn().mockResolvedValue({ lineCount: 0 }),
+
+    // Termpad config
+    loadTermpadConfig: vi.fn().mockResolvedValue(null),
   },
   configurable: true,
   writable: true,
@@ -354,6 +357,7 @@ Object.defineProperty(window, 'watcher', {
     onGitRemoved: vi.fn().mockReturnValue(vi.fn()),
     onGitRestored: vi.fn().mockReturnValue(vi.fn()),
     onRepositoryDeleted: vi.fn().mockReturnValue(vi.fn()),
+    onConfigChanged: vi.fn().mockReturnValue(vi.fn()),
   },
   configurable: true,
   writable: true,

@@ -29,6 +29,7 @@ import { UpdateNotification } from './UpdateNotification';
 import { WorktreeBar } from './WorktreeBar/WorktreeBar';
 import { NotesPanel } from '../features/notes/NotesPanel';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
+import { useTermpadConfig } from '../hooks/useTermpadConfig';
 
 export function Layout() {
   const {
@@ -74,6 +75,9 @@ export function Layout() {
 
   // Start watchers for live worktree changes
   useWorktreeWatchers();
+
+  // Load and watch termpad.json files
+  useTermpadConfig();
 
   // Start polling for PR statuses (gh CLI)
   usePRStatusPolling();

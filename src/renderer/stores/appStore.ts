@@ -5,6 +5,8 @@ import type {
   AppSettings,
   Repository,
   RepositoryScriptsConfig,
+  RepositoryScript,
+  TermpadConfigFile,
   WorktreeSession,
   TerminalState,
   TerminalStatus,
@@ -119,6 +121,9 @@ interface AppStore extends AppState {
   prStatusLoading: boolean;
   prStatusLastUpdated: number | null; // Timestamp of last successful fetch
   prStatusFetchId: number; // Increments on each fetch to detect stale responses
+  // Termpad config state (runtime, not persisted)
+  termpadConfigAvailable: Set<string>; // repos that have a termpad.json file
+  termpadConfigUpdates: Set<string>; // repos with pending termpad.json changes
 
   // Initialization
   initialize: () => Promise<void>;
@@ -223,6 +228,11 @@ interface AppStore extends AppState {
   setPRStatuses: (statuses: PRStatusMap) => void;
   setPRStatusLoading: (loading: boolean) => void;
   fetchPRStatuses: () => Promise<void>;
+
+  // Termpad config actions
+  setTermpadConfigAvailable: (repositoryId: string, available: boolean) => void;
+  setTermpadConfigUpdate: (repositoryId: string, hasUpdate: boolean) => void;
+  applyTermpadConfig: (repositoryId: string, config: TermpadConfigFile) => void;
 }
 
 const defaultState = getDefaultAppState();
@@ -289,6 +299,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
   prStatusLoading: false,
   prStatusLastUpdated: null,
   prStatusFetchId: 0,
+  // Termpad config state (runtime, not persisted)
+  termpadConfigAvailable: new Set<string>(),
+  termpadConfigUpdates: new Set<string>(),
 
   // Initialize store from main process storage
   initialize: async () => {
@@ -482,6 +495,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         activeTabId: null,
         activeUserTabId: null,
         isInitialized: true,
+        // Reset runtime Sets (loaded JSON may contain {} instead of Set)
+        deletingPaths: new Set(),
+        termpadConfigAvailable: new Set<string>(),
+        termpadConfigUpdates: new Set<string>(),
       });
     } catch (error) {
       console.error('[Store] Failed to initialize:', error);
@@ -1762,5 +1779,66 @@ export const useAppStore = create<AppStore>((set, get) => ({
         set({ prStatusLoading: false });
       }
     }
+  },
+
+  // Termpad config actions
+  setTermpadConfigAvailable: (repositoryId, available) => {
+    set((state) => {
+      const termpadConfigAvailable = new Set(state.termpadConfigAvailable);
+      if (available) {
+        termpadConfigAvailable.add(repositoryId);
+      } else {
+        termpadConfigAvailable.delete(repositoryId);
+      }
+      return { termpadConfigAvailable };
+    });
+  },
+
+  setTermpadConfigUpdate: (repositoryId, hasUpdate) => {
+    set((state) => {
+      const termpadConfigUpdates = new Set(state.termpadConfigUpdates);
+      if (hasUpdate) {
+        termpadConfigUpdates.add(repositoryId);
+      } else {
+        termpadConfigUpdates.delete(repositoryId);
+      }
+      return { termpadConfigUpdates };
+    });
+  },
+
+  applyTermpadConfig: (repositoryId, config) => {
+    set((state) => {
+      const repository = state.repositories.find((r) => r.id === repositoryId);
+      if (!repository) return state;
+
+      const runScripts: RepositoryScript[] = (config.runScripts ?? []).map((s) => ({
+        id: s.id ?? crypto.randomUUID(),
+        name: s.name,
+        command: s.command,
+      }));
+
+      const newScriptsConfig: RepositoryScriptsConfig = {
+        setupScript: config.setupScript ?? null,
+        runScripts,
+        cleanupScript: config.cleanupScript ?? null,
+        exclusiveMode: config.exclusiveMode ?? false,
+        // Preserve user's lastUsedRunScriptId if the script still exists, otherwise reset
+        lastUsedRunScriptId:
+          runScripts.find((s) => s.id === repository.scriptsConfig?.lastUsedRunScriptId)?.id ??
+          runScripts[0]?.id ??
+          null,
+      };
+
+      const termpadConfigUpdates = new Set(state.termpadConfigUpdates);
+      termpadConfigUpdates.delete(repositoryId);
+
+      return {
+        repositories: state.repositories.map((r) =>
+          r.id === repositoryId ? { ...r, scriptsConfig: newScriptsConfig } : r
+        ),
+        termpadConfigUpdates,
+      };
+    });
+    persistState(get());
   },
 }));

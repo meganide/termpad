@@ -61,8 +61,9 @@ function RepositorySettingsForm({ repositoryId, onClose }: RepositorySettingsOve
         ),
       }));
 
-      // Persist to storage
-      window.storage.saveState(useAppStore.getState());
+      // Persist to storage (extract only AppState fields to avoid serializing Sets/Maps)
+      const { version, settings, repositories, window: windowState } = useAppStore.getState();
+      window.storage.saveState({ version, settings, repositories, window: windowState });
     },
     [repository, repositoryId, scriptsConfig]
   );
@@ -124,7 +125,11 @@ function RepositorySettingsForm({ repositoryId, onClose }: RepositorySettingsOve
         <div className="flex-1 overflow-y-auto p-6">
           <div className="max-w-2xl">
             {activeTab === 'scripts' && (
-              <ScriptsSection scriptsConfig={scriptsConfig} onUpdate={updateScriptsConfig} />
+              <ScriptsSection
+                repositoryId={repositoryId}
+                scriptsConfig={scriptsConfig}
+                onUpdate={updateScriptsConfig}
+              />
             )}
             {activeTab === 'advanced' && (
               <AdvancedSection scriptsConfig={scriptsConfig} onUpdate={updateScriptsConfig} />
