@@ -49,17 +49,12 @@ function currentConfigToComparableString(
 /**
  * Hook that manages termpad.json loading and change detection.
  *
- * On init: for each repository, loads termpad.json. If the repo has never
- * had scriptsConfig set (undefined), auto-applies it once. After that,
- * user changes always take precedence.
- *
- * On file change: compares new config with current scripts config and marks
- * the repository as having updates if they differ.
+ * Never auto-applies. Always requires explicit user action via the sync button.
+ * On init and file change: checks for diffs and shows a badge if they differ.
  */
 export function useTermpadConfig() {
   const repositories = useAppStore((state) => state.repositories);
   const isInitialized = useAppStore((state) => state.isInitialized);
-  const applyTermpadConfig = useAppStore((state) => state.applyTermpadConfig);
   const setTermpadConfigUpdate = useAppStore((state) => state.setTermpadConfigUpdate);
   const setTermpadConfigAvailable = useAppStore((state) => state.setTermpadConfigAvailable);
 
@@ -82,18 +77,10 @@ export function useTermpadConfig() {
         const currentRepo = useAppStore.getState().repositories.find((r) => r.id === repository.id);
         if (!currentRepo) return;
 
-        // Only auto-apply if scriptsConfig has never been set (first time ever).
-        // Once scriptsConfig exists (even if user cleared everything), never overwrite.
-        if (!currentRepo.scriptsConfig) {
-          console.log(`[useTermpadConfig] Auto-applying termpad.json for ${repository.name}`);
-          applyTermpadConfig(repository.id, config);
-        } else {
-          // Check if current config differs from the file
-          const fileStr = configToComparableString(config);
-          const currentStr = currentConfigToComparableString(currentRepo.scriptsConfig);
-          if (fileStr !== currentStr) {
-            setTermpadConfigUpdate(repository.id, true);
-          }
+        const fileStr = configToComparableString(config);
+        const currentStr = currentConfigToComparableString(currentRepo.scriptsConfig);
+        if (fileStr !== currentStr) {
+          setTermpadConfigUpdate(repository.id, true);
         }
       });
     }
@@ -104,13 +91,7 @@ export function useTermpadConfig() {
         initializedReposRef.current.delete(repoId);
       }
     }
-  }, [
-    repositories,
-    isInitialized,
-    applyTermpadConfig,
-    setTermpadConfigUpdate,
-    setTermpadConfigAvailable,
-  ]);
+  }, [repositories, isInitialized, setTermpadConfigUpdate, setTermpadConfigAvailable]);
 
   // Listen for config file changes
   useEffect(() => {
