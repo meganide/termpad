@@ -1,4 +1,5 @@
-import { GitBranch, NotebookPen } from 'lucide-react';
+import { useCallback } from 'react';
+import { GitBranch, NotebookPen, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { SplitButton, SplitButtonItem } from '../ui/split-button';
@@ -8,6 +9,7 @@ interface WorktreeBarProps {
   sessionId: string | null;
   sessionPath?: string;
   branchName?: string;
+  repositoryId?: string;
   notesOpen?: boolean;
   onToggleNotes?: () => void;
   onError?: (message: string) => void;
@@ -17,12 +19,29 @@ export function WorktreeBar({
   sessionId,
   sessionPath,
   branchName,
+  repositoryId,
   notesOpen,
   onToggleNotes,
   onError,
 }: WorktreeBarProps) {
   const { settings, updateSettings } = useAppStore();
   const preferredEditor = settings.preferredEditor;
+
+  const hasConfigUpdate = useAppStore((state) =>
+    repositoryId ? state.termpadConfigUpdates.has(repositoryId) : false
+  );
+  const applyTermpadConfig = useAppStore((state) => state.applyTermpadConfig);
+  const repository = useAppStore((state) =>
+    repositoryId ? state.repositories.find((r) => r.id === repositoryId) : undefined
+  );
+
+  const handleRefreshConfig = useCallback(async () => {
+    if (!repositoryId || !repository) return;
+    const config = await window.terminal.loadTermpadConfig(repository.path);
+    if (config) {
+      applyTermpadConfig(repositoryId, config);
+    }
+  }, [repositoryId, repository, applyTermpadConfig]);
 
   const labelMap: Record<string, string> = {
     cursor: 'Cursor',
@@ -87,8 +106,25 @@ export function WorktreeBar({
         )}
       </div>
 
-      {/* Right side: Notes toggle + Split button for editor selection */}
+      {/* Right side: Config refresh + Notes toggle + Split button for editor selection */}
       <div className="flex items-center gap-2">
+        {hasConfigUpdate && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-muted-foreground hover:text-foreground relative"
+                onClick={handleRefreshConfig}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span className="text-xs">Sync Config</span>
+                <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-lime-500" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>termpad.json has new changes</TooltipContent>
+          </Tooltip>
+        )}
         <Tooltip>
           <TooltipTrigger asChild>
             <Button

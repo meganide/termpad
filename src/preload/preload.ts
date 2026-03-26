@@ -229,6 +229,9 @@ const terminalAPI: TerminalAPI = {
   runScript: (cwd, script, envVars, timeoutMs) =>
     ipcRenderer.invoke('fs:runScript', cwd, script, envVars, timeoutMs),
 
+  // Termpad config
+  loadTermpadConfig: (repoPath: string) => ipcRenderer.invoke('config:loadTermpadConfig', repoPath),
+
   // App
   getAppDataPath: () => ipcRenderer.invoke('app:getDataPath'),
   showNotification: (title, body) => ipcRenderer.send('app:showNotification', title, body),
@@ -295,6 +298,14 @@ const watcherAPI: WatcherAPI = {
     };
     ipcRenderer.on('watcher:repositoryDeleted', handler);
     return () => ipcRenderer.removeListener('watcher:repositoryDeleted', handler);
+  },
+  // termpad.json change watcher
+  onConfigChanged: (callback: (repositoryId: string) => void) => {
+    const handler = (_: unknown, repositoryId: string) => {
+      callback(repositoryId);
+    };
+    ipcRenderer.on('watcher:configChanged', handler);
+    return () => ipcRenderer.removeListener('watcher:configChanged', handler);
   },
 };
 

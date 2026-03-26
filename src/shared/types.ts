@@ -48,6 +48,14 @@ export interface RepositoryScriptsConfig {
   lastUsedRunScriptId: string | null;
 }
 
+// Shared termpad.json file format (checked into repo root)
+export interface TermpadConfigFile {
+  setupScript?: string | null;
+  runScripts?: Array<{ id?: string; name: string; command: string }>;
+  cleanupScript?: string | null;
+  exclusiveMode?: boolean;
+}
+
 // Persisted user terminal tab state per worktree (parallel to WorktreeTabState)
 export interface UserTerminalTabState {
   worktreeSessionId: string;
@@ -617,6 +625,9 @@ export interface TerminalAPI {
   checkGhAuth(): Promise<CheckGhAuthResult>;
   listGitHubRepos(): Promise<ListGitHubReposResult>;
 
+  // Termpad config
+  loadTermpadConfig(repoPath: string): Promise<TermpadConfigFile | null>;
+
   // App
   getAppDataPath(): Promise<string>;
   showNotification(title: string, body: string): void;
@@ -646,6 +657,8 @@ export interface WatcherAPI {
   onBranchesChanged(callback: (repositoryId: string) => void): () => void;
   // Repository deletion watcher (triggered when repo folder is deleted externally)
   onRepositoryDeleted(callback: (repositoryId: string, repoPath: string) => void): () => void;
+  // termpad.json change watcher
+  onConfigChanged(callback: (repositoryId: string) => void): () => void;
 }
 
 // Import ReviewData for the API

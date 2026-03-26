@@ -2,7 +2,7 @@ import { app } from 'electron';
 import type { IpcMain } from 'electron';
 import fs from 'fs/promises';
 import path from 'path';
-import type { AppState } from '../shared/types';
+import type { AppState, TermpadConfigFile } from '../shared/types';
 import { getDefaultAppState } from '../shared/types';
 
 const DATA_FILE = 'projects.json';
@@ -110,6 +110,18 @@ export async function saveAppState(state: AppState): Promise<void> {
   return savePromise;
 }
 
+const CONFIG_FILENAME = 'termpad.json';
+
+export async function loadTermpadConfig(repoPath: string): Promise<TermpadConfigFile | null> {
+  try {
+    const configPath = path.join(repoPath, CONFIG_FILENAME);
+    const data = await fs.readFile(configPath, 'utf-8');
+    return JSON.parse(data) as TermpadConfigFile;
+  } catch {
+    return null;
+  }
+}
+
 export function setupStorageIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle('app:getDataPath', async () => {
     return app.getPath('userData');
@@ -121,5 +133,9 @@ export function setupStorageIpcHandlers(ipcMain: IpcMain): void {
 
   ipcMain.handle('storage:saveState', async (_, state: AppState) => {
     await saveAppState(state);
+  });
+
+  ipcMain.handle('config:loadTermpadConfig', async (_, repoPath: string) => {
+    return loadTermpadConfig(repoPath);
   });
 }
