@@ -911,7 +911,6 @@ export function Layout() {
                   sessionId={activeTerminalId}
                   sessionPath={activeSession?.path}
                   branchName={activeSession?.branchName}
-                  repositoryId={activeSessionInfo?.repository.id}
                   notesOpen={notesOpen}
                   onToggleNotes={() => setNotesOpen((prev) => !prev)}
                   onError={(message) => toast.error(message)}

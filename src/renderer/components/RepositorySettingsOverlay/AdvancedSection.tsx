@@ -30,7 +30,7 @@ export function AdvancedSection({ scriptsConfig, onUpdate }: AdvancedSectionProp
             id="exclusive-mode"
             checked={scriptsConfig.exclusiveMode}
             onCheckedChange={(checked) => onUpdate({ exclusiveMode: checked === true })}
-            className="mt-0.5"
+            className="mt-0.5 border-muted-foreground/60"
             data-testid="exclusive-mode-checkbox"
           />
           <div className="space-y-1">

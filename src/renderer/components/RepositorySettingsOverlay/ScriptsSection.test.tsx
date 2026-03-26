@@ -45,7 +45,13 @@ describe('ScriptsSection', () => {
   describe('rendering', () => {
     it('renders scripts section with heading', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText('Scripts')).toBeInTheDocument();
       expect(screen.getByTestId('scripts-section')).toBeInTheDocument();
@@ -53,7 +59,13 @@ describe('ScriptsSection', () => {
 
     it('renders setup script section with description', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText('Setup Script')).toBeInTheDocument();
       expect(
@@ -64,7 +76,13 @@ describe('ScriptsSection', () => {
 
     it('renders run scripts section with description', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText('Run Scripts')).toBeInTheDocument();
       expect(screen.getByText(/Execute common tasks with one click/)).toBeInTheDocument();
@@ -73,7 +91,13 @@ describe('ScriptsSection', () => {
 
     it('renders cleanup script section with description', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText('Cleanup Script')).toBeInTheDocument();
       expect(screen.getByText(/Runs after worktree deletion/)).toBeInTheDocument();
@@ -82,7 +106,13 @@ describe('ScriptsSection', () => {
 
     it('renders environment variables helper text', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText('Available Environment Variables')).toBeInTheDocument();
       // Check all environment variables are listed
@@ -93,7 +123,13 @@ describe('ScriptsSection', () => {
 
     it('renders descriptions for each environment variable', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       expect(screen.getByText(/Workspace name/)).toBeInTheDocument();
       expect(screen.getByText(/Workspace path/)).toBeInTheDocument();
@@ -107,14 +143,22 @@ describe('ScriptsSection', () => {
     it('displays the setup script value', () => {
       const onUpdate = vi.fn();
       const config = { ...createDefaultConfig(), setupScript: 'npm install' };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       expect(screen.getByTestId('setup-script-input')).toHaveValue('npm install');
     });
 
     it('calls onUpdate when setup script changes', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       fireEvent.change(screen.getByTestId('setup-script-input'), {
         target: { value: 'npm install && npm run build' },
@@ -128,7 +172,9 @@ describe('ScriptsSection', () => {
     it('sets setupScript to null when value is empty', () => {
       const onUpdate = vi.fn();
       const config = { ...createDefaultConfig(), setupScript: 'npm install' };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.change(screen.getByTestId('setup-script-input'), {
         target: { value: '' },
@@ -150,7 +196,9 @@ describe('ScriptsSection', () => {
           { id: 'script-2', name: 'Test', command: 'npm test' },
         ],
       };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       expect(screen.getByTestId('run-script-0')).toBeInTheDocument();
       expect(screen.getByTestId('run-script-1')).toBeInTheDocument();
@@ -162,7 +210,13 @@ describe('ScriptsSection', () => {
 
     it('adds a new run script when clicking add button and sets it as default for first script', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       fireEvent.click(screen.getByTestId('add-run-script-button'));
 
@@ -184,7 +238,9 @@ describe('ScriptsSection', () => {
         ...createDefaultConfig(),
         runScripts: [{ id: 'script-1', name: 'Dev', command: 'npm run dev' }],
       };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.change(screen.getByTestId('run-script-name-0'), {
         target: { value: 'Development' },
@@ -201,7 +257,9 @@ describe('ScriptsSection', () => {
         ...createDefaultConfig(),
         runScripts: [{ id: 'script-1', name: 'Dev', command: 'npm run dev' }],
       };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.change(screen.getByTestId('run-script-command-0'), {
         target: { value: 'npm run start' },
@@ -222,7 +280,9 @@ describe('ScriptsSection', () => {
         ],
         lastUsedRunScriptId: 'script-1',
       };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.click(screen.getByTestId('run-script-delete-0'));
 
@@ -239,7 +299,9 @@ describe('ScriptsSection', () => {
         runScripts: [{ id: 'script-1', name: 'Dev', command: 'npm run dev' }],
         lastUsedRunScriptId: 'script-1',
       };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.click(screen.getByTestId('run-script-delete-0'));
 
@@ -254,14 +316,22 @@ describe('ScriptsSection', () => {
     it('displays the cleanup script value', () => {
       const onUpdate = vi.fn();
       const config = { ...createDefaultConfig(), cleanupScript: 'docker-compose down' };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       expect(screen.getByTestId('cleanup-script-input')).toHaveValue('docker-compose down');
     });
 
     it('calls onUpdate when cleanup script changes', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       fireEvent.change(screen.getByTestId('cleanup-script-input'), {
         target: { value: 'rm -rf node_modules' },
@@ -275,7 +345,9 @@ describe('ScriptsSection', () => {
     it('sets cleanupScript to null when value is empty', () => {
       const onUpdate = vi.fn();
       const config = { ...createDefaultConfig(), cleanupScript: 'docker-compose down' };
-      render(<ScriptsSection scriptsConfig={config} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection repositoryId="test-repo" scriptsConfig={config} onUpdate={onUpdate} />
+      );
 
       fireEvent.change(screen.getByTestId('cleanup-script-input'), {
         target: { value: '' },
@@ -290,7 +362,13 @@ describe('ScriptsSection', () => {
   describe('accessibility', () => {
     it('has proper labels for script inputs', () => {
       const onUpdate = vi.fn();
-      render(<ScriptsSection scriptsConfig={createDefaultConfig()} onUpdate={onUpdate} />);
+      render(
+        <ScriptsSection
+          repositoryId="test-repo"
+          scriptsConfig={createDefaultConfig()}
+          onUpdate={onUpdate}
+        />
+      );
 
       // Labels exist
       expect(screen.getByText('Setup Script')).toBeInTheDocument();

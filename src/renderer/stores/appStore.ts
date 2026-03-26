@@ -122,8 +122,8 @@ interface AppStore extends AppState {
   prStatusLastUpdated: number | null; // Timestamp of last successful fetch
   prStatusFetchId: number; // Increments on each fetch to detect stale responses
   // Termpad config state (runtime, not persisted)
-  // Tracks which repositories have pending termpad.json updates
-  termpadConfigUpdates: Set<string>; // repositoryId set
+  termpadConfigAvailable: Set<string>; // repos that have a termpad.json file
+  termpadConfigUpdates: Set<string>; // repos with pending termpad.json changes
 
   // Initialization
   initialize: () => Promise<void>;
@@ -230,9 +230,9 @@ interface AppStore extends AppState {
   fetchPRStatuses: () => Promise<void>;
 
   // Termpad config actions
+  setTermpadConfigAvailable: (repositoryId: string, available: boolean) => void;
   setTermpadConfigUpdate: (repositoryId: string, hasUpdate: boolean) => void;
   applyTermpadConfig: (repositoryId: string, config: TermpadConfigFile) => void;
-  hasTermpadConfigUpdate: (repositoryId: string) => boolean;
 }
 
 const defaultState = getDefaultAppState();
@@ -300,6 +300,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   prStatusLastUpdated: null,
   prStatusFetchId: 0,
   // Termpad config state (runtime, not persisted)
+  termpadConfigAvailable: new Set<string>(),
   termpadConfigUpdates: new Set<string>(),
 
   // Initialize store from main process storage
@@ -1777,6 +1778,18 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // Termpad config actions
+  setTermpadConfigAvailable: (repositoryId, available) => {
+    set((state) => {
+      const termpadConfigAvailable = new Set(state.termpadConfigAvailable);
+      if (available) {
+        termpadConfigAvailable.add(repositoryId);
+      } else {
+        termpadConfigAvailable.delete(repositoryId);
+      }
+      return { termpadConfigAvailable };
+    });
+  },
+
   setTermpadConfigUpdate: (repositoryId, hasUpdate) => {
     set((state) => {
       const termpadConfigUpdates = new Set(state.termpadConfigUpdates);
@@ -1823,9 +1836,5 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
     persistState(get());
-  },
-
-  hasTermpadConfigUpdate: (repositoryId) => {
-    return get().termpadConfigUpdates.has(repositoryId);
   },
 }));

@@ -1,5 +1,7 @@
-import { Plus, Trash2, Terminal } from 'lucide-react';
+import { useCallback } from 'react';
+import { Plus, Trash2, Terminal, RefreshCw } from 'lucide-react';
 import { Button } from '../ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { ScriptInput, TERMPAD_VARIABLES } from './ScriptInput';
 import { SETUP_SCRIPT_PLACEHOLDER } from './RepositorySettingsOverlay';
 import { useAppStore } from '../../stores/appStore';
@@ -29,6 +31,7 @@ function getShellDisplayName(
 }
 
 interface ScriptsSectionProps {
+  repositoryId: string;
   scriptsConfig: RepositoryScriptsConfig;
   onUpdate: (updates: Partial<RepositoryScriptsConfig>) => void;
 }
@@ -43,9 +46,24 @@ interface ScriptsSectionProps {
  *
  * Uses ScriptInput for all script fields to highlight environment variables.
  */
-export function ScriptsSection({ scriptsConfig, onUpdate }: ScriptsSectionProps) {
+export function ScriptsSection({ repositoryId, scriptsConfig, onUpdate }: ScriptsSectionProps) {
   const settings = useAppStore((state) => state.settings);
   const shellDisplayName = getShellDisplayName(settings.defaultShell, settings.customShells);
+
+  const hasConfigFile = useAppStore((state) => state.termpadConfigAvailable.has(repositoryId));
+  const hasConfigUpdate = useAppStore((state) => state.termpadConfigUpdates.has(repositoryId));
+  const applyTermpadConfig = useAppStore((state) => state.applyTermpadConfig);
+  const repoPath = useAppStore(
+    (state) => state.repositories.find((r) => r.id === repositoryId)?.path
+  );
+
+  const handleSyncConfig = useCallback(async () => {
+    if (!repoPath) return;
+    const config = await window.terminal.loadTermpadConfig(repoPath);
+    if (config) {
+      applyTermpadConfig(repositoryId, config);
+    }
+  }, [repoPath, repositoryId, applyTermpadConfig]);
 
   const handleAddRunScript = () => {
     const newScript: RepositoryScript = {
@@ -87,7 +105,32 @@ export function ScriptsSection({ scriptsConfig, onUpdate }: ScriptsSectionProps)
 
   return (
     <section data-testid="scripts-section">
-      <h2 className="text-lg font-semibold mb-4">Scripts</h2>
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-lg font-semibold">Scripts</h2>
+        {hasConfigFile && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-8 gap-1.5 text-muted-foreground hover:text-foreground relative"
+                onClick={handleSyncConfig}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                <span className="text-xs">Sync from termpad.json</span>
+                {hasConfigUpdate && (
+                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-lime-500" />
+                )}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {hasConfigUpdate
+                ? 'termpad.json has new changes'
+                : 'Overwrite scripts with termpad.json'}
+            </TooltipContent>
+          </Tooltip>
+        )}
+      </div>
       <p className="text-sm text-muted-foreground mb-4">
         Configure scripts that run automatically during worktree lifecycle events.
       </p>

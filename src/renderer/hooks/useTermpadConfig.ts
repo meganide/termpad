@@ -49,8 +49,9 @@ function currentConfigToComparableString(
 /**
  * Hook that manages termpad.json loading and change detection.
  *
- * On init: for each repository, loads termpad.json. If the repo has
- * no scripts config, auto-applies it. Otherwise stores a snapshot for diff detection.
+ * On init: for each repository, loads termpad.json. If the repo has never
+ * had scriptsConfig set (undefined), auto-applies it once. After that,
+ * user changes always take precedence.
  *
  * On file change: compares new config with current scripts config and marks
  * the repository as having updates if they differ.
@@ -60,6 +61,7 @@ export function useTermpadConfig() {
   const isInitialized = useAppStore((state) => state.isInitialized);
   const applyTermpadConfig = useAppStore((state) => state.applyTermpadConfig);
   const setTermpadConfigUpdate = useAppStore((state) => state.setTermpadConfigUpdate);
+  const setTermpadConfigAvailable = useAppStore((state) => state.setTermpadConfigAvailable);
 
   // Track which repos we've already done the initial load for
   const initializedReposRef = useRef<Set<string>>(new Set());
@@ -72,21 +74,17 @@ export function useTermpadConfig() {
       if (initializedReposRef.current.has(repository.id)) continue;
       initializedReposRef.current.add(repository.id);
 
-      // Load config file asynchronously
       window.terminal.loadTermpadConfig(repository.path).then((config) => {
         if (!config) return;
+
+        setTermpadConfigAvailable(repository.id, true);
 
         const currentRepo = useAppStore.getState().repositories.find((r) => r.id === repository.id);
         if (!currentRepo) return;
 
-        // If repo has no scripts config at all, auto-apply the shared config
-        const hasScripts =
-          currentRepo.scriptsConfig &&
-          (currentRepo.scriptsConfig.setupScript ||
-            currentRepo.scriptsConfig.runScripts.length > 0 ||
-            currentRepo.scriptsConfig.cleanupScript);
-
-        if (!hasScripts) {
+        // Only auto-apply if scriptsConfig has never been set (first time ever).
+        // Once scriptsConfig exists (even if user cleared everything), never overwrite.
+        if (!currentRepo.scriptsConfig) {
           console.log(`[useTermpadConfig] Auto-applying termpad.json for ${repository.name}`);
           applyTermpadConfig(repository.id, config);
         } else {
@@ -106,7 +104,13 @@ export function useTermpadConfig() {
         initializedReposRef.current.delete(repoId);
       }
     }
-  }, [repositories, isInitialized, applyTermpadConfig, setTermpadConfigUpdate]);
+  }, [
+    repositories,
+    isInitialized,
+    applyTermpadConfig,
+    setTermpadConfigUpdate,
+    setTermpadConfigAvailable,
+  ]);
 
   // Listen for config file changes
   useEffect(() => {
@@ -116,13 +120,14 @@ export function useTermpadConfig() {
       const repository = useAppStore.getState().repositories.find((r) => r.id === repositoryId);
       if (!repository) return;
 
-      // Reload the config file and check for diffs
       window.terminal.loadTermpadConfig(repository.path).then((config) => {
         if (!config) {
-          // Config file was deleted, clear any pending update
+          setTermpadConfigAvailable(repositoryId, false);
           setTermpadConfigUpdate(repositoryId, false);
           return;
         }
+
+        setTermpadConfigAvailable(repositoryId, true);
 
         const currentRepo = useAppStore.getState().repositories.find((r) => r.id === repositoryId);
         if (!currentRepo) return;
@@ -137,5 +142,5 @@ export function useTermpadConfig() {
     return () => {
       unsubConfigChanged();
     };
-  }, [isInitialized, setTermpadConfigUpdate]);
+  }, [isInitialized, setTermpadConfigUpdate, setTermpadConfigAvailable]);
 }
