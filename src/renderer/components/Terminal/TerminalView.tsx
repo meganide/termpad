@@ -361,13 +361,34 @@ export const TerminalView = memo(
       }
     }, [matchSystemBackground]);
 
+    // Fit the terminal while preserving the user's scroll position.
+    // xterm.js reflow (triggered by column/row changes) can reset the
+    // viewport to line 0. We save the position before fit and restore it.
+    const fitPreservingScroll = useCallback(() => {
+      const terminal = terminalRef.current;
+      const fitAddon = fitAddonRef.current;
+      if (!terminal || !fitAddon) return;
+
+      const buffer = terminal.buffer.active;
+      const wasAtBottom = buffer.viewportY >= buffer.baseY;
+      const savedViewportY = buffer.viewportY;
+
+      fitAddon.fit();
+
+      if (wasAtBottom) {
+        terminal.scrollToBottom();
+      } else {
+        terminal.scrollToLine(Math.min(savedViewportY, buffer.baseY));
+      }
+    }, []);
+
     // Handle resize
     useEffect(() => {
       if (!containerRef.current) return;
 
       const handleResize = () => {
         if (fitAddonRef.current && terminalRef.current && isVisible) {
-          fitAddonRef.current.fit();
+          fitPreservingScroll();
           resize(terminalRef.current.cols, terminalRef.current.rows);
         }
       };
@@ -378,7 +399,7 @@ export const TerminalView = memo(
       return () => {
         resizeObserver.disconnect();
       };
-    }, [isVisible, resize]);
+    }, [isVisible, resize, fitPreservingScroll]);
 
     // Define expected focus area for this terminal type
     // Main terminals respond to 'mainTerminal', user terminals respond to 'userTerminal'
@@ -391,7 +412,7 @@ export const TerminalView = memo(
         // Delay to ensure dialogs have closed and container is laid out
         // Dialog animations take ~200ms, so we wait a bit longer
         const timeoutId = setTimeout(() => {
-          fitAddonRef.current?.fit();
+          fitPreservingScroll();
           if (terminalRef.current) {
             resize(terminalRef.current.cols, terminalRef.current.rows);
             // Only focus if the focusArea matches this terminal's expected focus area
@@ -403,7 +424,7 @@ export const TerminalView = memo(
 
         return () => clearTimeout(timeoutId);
       }
-    }, [isVisible, resize, focusArea, expectedFocusArea]);
+    }, [isVisible, resize, focusArea, expectedFocusArea, fitPreservingScroll]);
 
     // Focus terminal when focus area changes to this terminal's type (e.g., from sidebar via Ctrl+Space)
     const prevFocusAreaRef = useRef<FocusArea>(focusArea);

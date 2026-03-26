@@ -21,6 +21,9 @@ const createMockTerminalInstance = () => ({
   hasSelection: vi.fn().mockReturnValue(false),
   getSelection: vi.fn().mockReturnValue(''),
   clearSelection: vi.fn(),
+  scrollToBottom: vi.fn(),
+  scrollToLine: vi.fn(),
+  buffer: { active: { viewportY: 0, baseY: 0 } },
   cols: 80,
   rows: 24,
   options: {
@@ -60,6 +63,9 @@ vi.mock('@xterm/xterm', () => {
       hasSelection = vi.fn().mockReturnValue(false);
       getSelection = vi.fn().mockReturnValue('');
       clearSelection = vi.fn();
+      scrollToBottom = vi.fn();
+      scrollToLine = vi.fn();
+      buffer = { active: { viewportY: 0, baseY: 0 } };
       cols = 80;
       rows = 24;
       options = { theme: {} };
@@ -81,6 +87,9 @@ vi.mock('@xterm/xterm', () => {
           this.hasSelection = mock.hasSelection;
           this.getSelection = mock.getSelection;
           this.clearSelection = mock.clearSelection;
+          this.scrollToBottom = mock.scrollToBottom;
+          this.scrollToLine = mock.scrollToLine;
+          this.buffer = mock.buffer;
           this.cols = mock.cols;
           this.rows = mock.rows;
           this.options = mock.options;
