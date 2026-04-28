@@ -222,8 +222,8 @@ describe('TerminalView', () => {
 
     it('loads addons via loadAddon', () => {
       render(<TerminalView {...defaultProps} />);
-      // loadAddon is called twice - once for FitAddon, once for WebLinksAddon
-      expect(mockTerminalInstance.loadAddon).toHaveBeenCalledTimes(2);
+      // FitAddon, WebLinksAddon, ClipboardAddon
+      expect(mockTerminalInstance.loadAddon).toHaveBeenCalledTimes(3);
     });
 
     it('does not call fit on initialization when container has no dimensions', () => {

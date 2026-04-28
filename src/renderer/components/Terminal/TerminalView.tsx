@@ -10,6 +10,7 @@ import {
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { ClipboardAddon } from '@xterm/addon-clipboard';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../../hooks/useTerminal';
 import { useAppStore } from '../../stores/appStore';
@@ -181,6 +182,7 @@ export const TerminalView = memo(
 
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(webLinksAddon);
+      terminal.loadAddon(new ClipboardAddon());
       terminal.open(containerRef.current);
 
       // Only fit if the container is visible (has dimensions)
