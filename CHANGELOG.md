@@ -1,5 +1,11 @@
 # termpad
 
+## 0.5.2
+
+### Patch Changes
+
+- [#12](https://github.com/meganide/termpad/pull/12) [`76524ef`](https://github.com/meganide/termpad/commit/76524efc1d7ce012121e1cb7b9f940094d00128f) Thanks [@meganide](https://github.com/meganide)! - Enable OSC52 clipboard support in the terminal so programs running inside a session (e.g. Claude Code, vim, tmux) can write to the system clipboard.
+
 ## 0.5.1
 
 ### Patch Changes
