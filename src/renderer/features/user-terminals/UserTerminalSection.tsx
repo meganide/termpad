@@ -503,25 +503,17 @@ export function UserTerminalSection({
           </Tooltip>
 
           {/* Run SplitButton */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <div>
-                <SplitButton
-                  label="Run"
-                  icon={<Play className="h-3.5 w-3.5" />}
-                  onClick={handleRunClick}
-                  items={runScriptItems}
-                  onItemSelect={handleScriptSelect}
-                  disabled={false}
-                  dropdownDisabled={runScripts.length === 0}
-                  data-testid="user-terminal-run-button"
-                />
-              </div>
-            </TooltipTrigger>
-            <TooltipContent side="bottom" sideOffset={5}>
-              Run a preconfigured script
-            </TooltipContent>
-          </Tooltip>
+          <SplitButton
+            label="Run"
+            icon={<Play className="h-3.5 w-3.5" />}
+            onClick={handleRunClick}
+            items={runScriptItems}
+            onItemSelect={handleScriptSelect}
+            disabled={false}
+            dropdownDisabled={runScripts.length === 0}
+            tooltip="Run a preconfigured script"
+            data-testid="user-terminal-run-button"
+          />
         </div>
       </div>
 
