@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from './dropdown-menu';
+import { Tooltip, TooltipContent, TooltipTrigger } from './tooltip';
 import { cn } from '@/lib/utils';
 
 export interface SplitButtonItem {
@@ -34,6 +35,8 @@ export interface SplitButtonProps {
   showCheckmark?: boolean;
   /** Additional class names for the container */
   className?: string;
+  /** Optional tooltip content shown on the main button only (not the dropdown trigger) */
+  tooltip?: React.ReactNode;
 }
 
 export function SplitButton({
@@ -46,20 +49,34 @@ export function SplitButton({
   onItemSelect,
   showCheckmark = true,
   className,
+  tooltip,
 }: SplitButtonProps) {
+  const mainButton = (
+    <Button
+      variant="outline"
+      size="sm"
+      className="rounded-r-none border-r-0"
+      disabled={disabled}
+      onClick={onClick}
+      data-testid="split-button-main"
+    >
+      {icon && <span className="mr-1">{icon}</span>}
+      {label}
+    </Button>
+  );
+
   return (
     <div className={cn('flex items-center', className)} data-testid="split-button">
-      <Button
-        variant="outline"
-        size="sm"
-        className="rounded-r-none border-r-0"
-        disabled={disabled}
-        onClick={onClick}
-        data-testid="split-button-main"
-      >
-        {icon && <span className="mr-1">{icon}</span>}
-        {label}
-      </Button>
+      {tooltip ? (
+        <Tooltip>
+          <TooltipTrigger asChild>{mainButton}</TooltipTrigger>
+          <TooltipContent side="bottom" sideOffset={5}>
+            {tooltip}
+          </TooltipContent>
+        </Tooltip>
+      ) : (
+        mainButton
+      )}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <Button
