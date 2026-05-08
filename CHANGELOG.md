@@ -1,5 +1,11 @@
 # termpad
 
+## 0.5.3
+
+### Patch Changes
+
+- [#14](https://github.com/meganide/termpad/pull/14) [`72777c2`](https://github.com/meganide/termpad/commit/72777c269402712330d3a5572ea5e015ff565e4b) Thanks [@meganide](https://github.com/meganide)! - Fix Run button tooltip covering dropdown options. The tooltip on the Run split button stayed visible while the dropdown was open, overlapping the script options. The tooltip now applies only to the main button, not the dropdown chevron.
+
 ## 0.5.2
 
 ### Patch Changes
