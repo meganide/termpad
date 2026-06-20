@@ -231,6 +231,7 @@ Object.defineProperty(window, 'terminal', {
     killAllForWorktree: vi.fn().mockResolvedValue(undefined),
     waitForReady: vi.fn().mockResolvedValue(undefined),
     getBuffer: vi.fn().mockResolvedValue(''),
+    saveClipboardImage: vi.fn().mockResolvedValue(null),
 
     // Events - return unsubscribe functions
     onData: vi.fn().mockReturnValue(vi.fn()),

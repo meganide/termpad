@@ -2,6 +2,9 @@ import type { IpcMain, BrowserWindow, IpcMainEvent, IpcMainInvokeEvent } from 'e
 import { app, shell, BrowserWindow as ElectronBrowserWindow } from 'electron';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { writeFile } from 'fs/promises';
+import { join } from 'path';
+import { tmpdir } from 'os';
 import TerminalManager from '../terminalManager';
 import { setupGitIpcHandlers } from '../gitOperations';
 import { setupStorageIpcHandlers } from '../storage';
@@ -155,6 +158,23 @@ export function registerIpcHandlers(
         const message = error instanceof Error ? error.message : 'Unknown error';
         console.error(`[IPC] Failed to open folder: ${message}`);
         return { success: false, error: message };
+      }
+    }
+  );
+
+  // Clipboard image save handler
+  ipcMain.handle(
+    'clipboard:saveImage',
+    async (_event, imageData: number[], format: string): Promise<string | null> => {
+      try {
+        const ext = format === 'jpeg' ? 'jpg' : format || 'png';
+        const fileName = `termpad-clipboard-${Date.now()}.${ext}`;
+        const filePath = join(tmpdir(), fileName);
+        await writeFile(filePath, Buffer.from(imageData));
+        return filePath;
+      } catch (error) {
+        console.error('[IPC] Failed to save clipboard image:', error);
+        return null;
       }
     }
   );

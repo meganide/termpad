@@ -90,6 +90,8 @@ const terminalAPI: TerminalAPI = {
   waitForReady: (terminalId, timeoutMs) =>
     ipcRenderer.invoke('terminal:waitForReady', terminalId, timeoutMs),
   getBuffer: (terminalId) => ipcRenderer.invoke('terminal:getBuffer', terminalId),
+  saveClipboardImage: (imageData, format) =>
+    ipcRenderer.invoke('clipboard:saveImage', imageData, format),
 
   // Events
   onData: (sessionId, callback) => {
