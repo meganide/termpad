@@ -45,6 +45,46 @@ const execFileAsync = promisify(execFile);
 // Cache for simple-git instances to avoid creating new ones on every operation
 const simpleGitCache = new Map<string, SimpleGit>();
 
+// Short-TTL result cache with in-flight dedup for the polled read-only git
+// operations. Three renderer pollers (useGitStatus, useSourceControl,
+// useWorkingTreeDiff) hit the same repo at overlapping 2-30s cadences;
+// sharing results collapses their subprocess fan-out into one execution.
+const GIT_OP_CACHE_TTL_MS = 1000;
+const gitOpCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+
+function cachedGitOp<T>(op: string, repoPath: string, run: () => Promise<T>): Promise<T> {
+  const key = `${op}\0${repoPath}`;
+  const entry = gitOpCache.get(key);
+  if (entry && entry.expiresAt > Date.now()) {
+    return entry.promise as Promise<T>;
+  }
+  const promise = run();
+  gitOpCache.set(key, { expiresAt: Date.now() + GIT_OP_CACHE_TTL_MS, promise });
+  promise.catch(() => {
+    // Don't serve cached failures
+    if (gitOpCache.get(key)?.promise === promise) {
+      gitOpCache.delete(key);
+    }
+  });
+  return promise;
+}
+
+/**
+ * Drop cached read results after a mutating operation so the UI refresh that
+ * follows a stage/commit/pull sees fresh state instead of a <1s stale entry.
+ */
+export function invalidateGitOpCache(repoPath?: string): void {
+  if (!repoPath) {
+    gitOpCache.clear();
+    return;
+  }
+  for (const key of gitOpCache.keys()) {
+    if (key.endsWith(`\0${repoPath}`)) {
+      gitOpCache.delete(key);
+    }
+  }
+}
+
 // Track active operations per repo for cancellation support
 const activeOperations = new Map<string, { process: ChildProcess; aborted: boolean }>();
 
@@ -3740,6 +3780,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   // Note: For commitWithOutput, we use event.sender.send to stream output back to renderer
   ipcMain.handle('git:clearCache', (_, repoPath: string) => {
     clearSimpleGitCache(repoPath);
+    invalidateGitOpCache(repoPath);
   });
 
   ipcMain.handle('git:isRepo', async (_, folderPath: string) => {
@@ -3751,7 +3792,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getStatus', async (_, repoPath: string) => {
-    return getGitStatus(repoPath);
+    return cachedGitOp('status', repoPath, () => getGitStatus(repoPath));
   });
 
   ipcMain.handle('git:listBranches', async (_, repoPath: string) => {
@@ -3759,7 +3800,10 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:fetchBranches', async (_, repoPath: string) => {
-    return fetchBranches(repoPath);
+    const result = await fetchBranches(repoPath);
+    // Fetch updates remote refs, which feed ahead/behind
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle(
@@ -3771,14 +3815,18 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
       basePath: string | null,
       sourceBranch?: string
     ) => {
-      return createWorktree(repoPath, taskName, basePath, sourceBranch);
+      const result = await createWorktree(repoPath, taskName, basePath, sourceBranch);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
   ipcMain.handle(
     'git:removeWorktree',
     async (_, worktreePath: string, prune: boolean, branchName?: string) => {
-      return removeWorktree(worktreePath, prune, branchName);
+      const result = await removeWorktree(worktreePath, prune, branchName);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
@@ -3805,7 +3853,9 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     'git:forceRemoveWorktree',
     async (_, repoPath: string, worktreePath: string, branchName?: string) => {
-      return forceRemoveWorktree(repoPath, worktreePath, branchName);
+      const result = await forceRemoveWorktree(repoPath, worktreePath, branchName);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
@@ -3851,7 +3901,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getCurrentBranch', async (_, repoPath: string) => {
-    return getCurrentBranch(repoPath);
+    return cachedGitOp('currentBranch', repoPath, () => getCurrentBranch(repoPath));
   });
 
   ipcMain.handle('git:getWorkingTreeDiff', async (_, repoPath: string) => {
@@ -3859,7 +3909,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getWorkingTreeStats', async (_, repoPath: string) => {
-    return getWorkingTreeStats(repoPath);
+    return cachedGitOp('workingTreeStats', repoPath, () => getWorkingTreeStats(repoPath));
   });
 
   ipcMain.handle(
@@ -3871,58 +3921,80 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
 
   // Source control operations
   ipcMain.handle('git:getFileStatuses', async (_, repoPath: string) => {
-    return getFileStatuses(repoPath);
+    return cachedGitOp('fileStatuses', repoPath, () => getFileStatuses(repoPath));
   });
 
   ipcMain.handle('git:stageFiles', async (_, repoPath: string, files: string[]) => {
-    return stageFiles(repoPath, files);
+    const result = await stageFiles(repoPath, files);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:stageAll', async (_, repoPath: string) => {
-    return stageAll(repoPath);
+    const result = await stageAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:unstageFiles', async (_, repoPath: string, files: string[]) => {
-    return unstageFiles(repoPath, files);
+    const result = await unstageFiles(repoPath, files);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:unstageAll', async (_, repoPath: string) => {
-    return unstageAll(repoPath);
+    const result = await unstageAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle(
     'git:discardFiles',
     async (_, repoPath: string, files: string[], untracked: string[]) => {
-      return discardFiles(repoPath, files, untracked);
+      const result = await discardFiles(repoPath, files, untracked);
+      invalidateGitOpCache(repoPath);
+      return result;
     }
   );
 
   ipcMain.handle('git:discardAll', async (_, repoPath: string) => {
-    return discardAll(repoPath);
+    const result = await discardAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:commit', async (_, repoPath: string, message: string) => {
-    return commit(repoPath, message);
+    const result = await commit(repoPath, message);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:push', async (_, repoPath: string) => {
-    return push(repoPath);
+    const result = await push(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:pull', async (_, repoPath: string) => {
-    return pull(repoPath);
+    const result = await pull(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:getAheadBehind', async (_, repoPath: string) => {
-    return getAheadBehind(repoPath);
+    return cachedGitOp('aheadBehind', repoPath, () => getAheadBehind(repoPath));
   });
 
   ipcMain.handle('git:getRemoteUrl', async (_, repoPath: string, remoteName?: string) => {
-    return getRemoteUrl(repoPath, remoteName);
+    return cachedGitOp(`remoteUrl:${remoteName ?? ''}`, repoPath, () =>
+      getRemoteUrl(repoPath, remoteName)
+    );
   });
 
   ipcMain.handle('git:addRemote', async (_, repoPath: string, name: string, url: string) => {
-    return addRemote(repoPath, name, url);
+    const result = await addRemote(repoPath, name, url);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:hasPreCommitHooks', async (_, repoPath: string) => {
@@ -3934,24 +4006,30 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:commitWithOutput', async (event, repoPath: string, message: string) => {
-    return commitWithOutput(repoPath, message, (line) => {
+    const result = await commitWithOutput(repoPath, message, (line) => {
       // Stream each line of output back to the renderer, scoped by repoPath
       event.sender.send('git:commit-output', repoPath, line);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:commitWithHooks', async (event, repoPath: string, message: string) => {
-    return commitWithHooks(repoPath, message, (line, phase, hook) => {
+    const result = await commitWithHooks(repoPath, message, (line, phase, hook) => {
       // Stream each line of output with phase and hook info back to the renderer
       event.sender.send('git:operation-output', repoPath, line, phase, hook);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:pushWithHooks', async (event, repoPath: string) => {
-    return pushWithHooks(repoPath, (line, phase, hook) => {
+    const result = await pushWithHooks(repoPath, (line, phase, hook) => {
       // Stream each line of output with phase and hook info back to the renderer
       event.sender.send('git:operation-output', repoPath, line, phase, hook);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:abortOperation', async (_, repoPath: string) => {
