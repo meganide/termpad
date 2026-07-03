@@ -398,21 +398,31 @@ export const TerminalView = memo(
       }
     }, []);
 
-    // Handle resize
+    // Handle resize. fit() reflows (rewraps) the whole scrollback buffer,
+    // so coalesce observer callbacks to at most one fit per animation frame
+    // instead of one per raw resize event during splitter drags.
     useEffect(() => {
       if (!containerRef.current) return;
 
+      let rafId: number | null = null;
       const handleResize = () => {
-        if (fitAddonRef.current && terminalRef.current && isVisible) {
-          fitPreservingScroll();
-          resize(terminalRef.current.cols, terminalRef.current.rows);
-        }
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (fitAddonRef.current && terminalRef.current && isVisible) {
+            fitPreservingScroll();
+            resize(terminalRef.current.cols, terminalRef.current.rows);
+          }
+        });
       };
 
       const resizeObserver = new ResizeObserver(handleResize);
       resizeObserver.observe(containerRef.current);
 
       return () => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
         resizeObserver.disconnect();
       };
     }, [isVisible, resize, fitPreservingScroll]);
