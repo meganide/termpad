@@ -32,7 +32,12 @@ export function useGitStatus({
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const previousStatusRef = useRef<GitStatus | undefined>(undefined);
   const isFetchingRef = useRef(false);
-  const { terminals, updateGitStatus, settings, isPathDeleting } = useAppStore();
+  // Narrow selectors: this hook is mounted once per session, so subscribing to
+  // the whole store would re-render every session row on unrelated changes.
+  const updateGitStatus = useAppStore((s) => s.updateGitStatus);
+  const isPathDeleting = useAppStore((s) => s.isPathDeleting);
+  const gitPollIntervalMs = useAppStore((s) => s.settings.gitPollIntervalMs);
+  const gitStatus = useAppStore((s) => s.terminals.get(sessionId)?.gitStatus);
 
   // Track window focus state to throttle polling when in background
   const [isFocused, setIsFocused] = useState(document.hasFocus());
@@ -85,7 +90,7 @@ export function useGitStatus({
     const pollInterval = !isFocused
       ? BACKGROUND_POLL_INTERVAL_MS
       : isActive
-        ? settings.gitPollIntervalMs
+        ? gitPollIntervalMs
         : INACTIVE_POLL_INTERVAL_MS;
     intervalRef.current = setInterval(fetchGitStatus, pollInterval);
 
@@ -100,11 +105,11 @@ export function useGitStatus({
     path,
     enabled,
     isActive,
-    settings.gitPollIntervalMs,
+    gitPollIntervalMs,
     updateGitStatus,
     isPathDeleting,
     isFocused,
   ]);
 
-  return terminals.get(sessionId)?.gitStatus;
+  return gitStatus;
 }

@@ -9,6 +9,7 @@ import { UserTerminalSection } from '../features/user-terminals';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { usePRStatusPolling } from '../hooks/usePRStatusPolling';
 import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
 import { useReviewStore } from '../stores/reviewStore';
 import { AddRepositoryScreen } from './AddRepositoryScreen';
@@ -66,7 +67,40 @@ export function Layout() {
     getUserTerminalIdForTab,
     userTerminalTabs,
     activeUserTabId,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      settings: s.settings,
+      updateSettings: s.updateSettings,
+      repositories: s.repositories,
+      activeTerminalId: s.activeTerminalId,
+      activeTabId: s.activeTabId,
+      window: s.window,
+      updateSidebarWidth: s.updateSidebarWidth,
+      updateFileChangesPaneWidth: s.updateFileChangesPaneWidth,
+      updateUserTerminalPanelRatio: s.updateUserTerminalPanelRatio,
+      terminals: s.terminals,
+      isInitialized: s.isInitialized,
+      initialize: s.initialize,
+      setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      setActiveTerminal: s.setActiveTerminal,
+      setFocusArea: s.setFocusArea,
+      unregisterTerminal: s.unregisterTerminal,
+      createTab: s.createTab,
+      closeTab: s.closeTab,
+      renameTab: s.renameTab,
+      reorderTabs: s.reorderTabs,
+      setActiveTab: s.setActiveTab,
+      getTabsForWorktree: s.getTabsForWorktree,
+      getTerminalIdForTab: s.getTerminalIdForTab,
+      worktreeTabs: s.worktreeTabs,
+      updateTabScrollPosition: s.updateTabScrollPosition,
+      getTabScrollPosition: s.getTabScrollPosition,
+      getUserTabsForWorktree: s.getUserTabsForWorktree,
+      getUserTerminalIdForTab: s.getUserTerminalIdForTab,
+      userTerminalTabs: s.userTerminalTabs,
+      activeUserTabId: s.activeUserTabId,
+    }))
+  );
 
   // Initialize store from main process storage
   useEffect(() => {

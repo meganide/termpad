@@ -1,4 +1,4 @@
-import { useState, Fragment, useRef } from 'react';
+import { useState, Fragment, useMemo, useRef } from 'react';
 import { ChevronRight, Plus, GripVertical, GitBranch, Settings, Trash2, Home } from 'lucide-react';
 import { GitPullRequestIcon } from '@primer/octicons-react';
 import { cn } from '../../lib/utils';
@@ -253,6 +253,18 @@ function RepositoryItem({
   const [isHovered, setIsHovered] = useState(false);
   const isDraggingSessionFromThisRepository = sessionDragState?.repositoryId === repository.id;
 
+  // Sort tabs once per worktreeTabs change instead of per session per render
+  const sortedTabsBySession = useMemo(() => {
+    const map = new Map<string, TerminalTab[]>();
+    for (const tabState of worktreeTabs) {
+      map.set(
+        tabState.worktreeSessionId,
+        [...tabState.tabs].sort((a, b) => a.order - b.order)
+      );
+    }
+    return map;
+  }, [worktreeTabs]);
+
   // Track if dragging started from the drag handle
   const isRepositoryDragHandleRef = useRef(false);
 
@@ -394,9 +406,7 @@ function RepositoryItem({
               Add Worktree
             </Button>
             {repository.worktreeSessions.map((session, index) => {
-              // Get tabs for this worktree session, sorted by order
-              const tabState = worktreeTabs.find((wt) => wt.worktreeSessionId === session.id);
-              const tabs = tabState ? [...tabState.tabs].sort((a, b) => a.order - b.order) : [];
+              const tabs = sortedTabsBySession.get(session.id) ?? [];
               return (
                 <SessionItem
                   key={session.id}
@@ -501,9 +511,11 @@ function SessionItem({
     isActive, // Active sessions poll faster (5s), inactive ones slower (15s)
   });
 
-  // Get PR status for this branch
-  const prStatuses = useAppStore((state) => state.prStatuses);
-  const prStatus = session.branchName ? prStatuses[session.branchName] : undefined;
+  // Get PR status for this branch (narrow selector so other branches' updates
+  // don't re-render this session row)
+  const prStatus = useAppStore((state) =>
+    session.branchName ? state.prStatuses[session.branchName] : undefined
+  );
   const isMerged = prStatus?.state === 'MERGED';
   const isOpenPR = prStatus?.state === 'OPEN';
 
