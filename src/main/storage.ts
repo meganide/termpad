@@ -10,6 +10,11 @@ const DATA_FILE = 'projects.json';
 // Track pending saves to prevent concurrent writes
 let savePromise: Promise<void> | null = null;
 
+// In-memory mirror of the persisted state. The file is owned exclusively by
+// this app, so once loaded (or saved) the memory copy is authoritative and
+// spawn-path readers skip the disk read + JSON parse entirely.
+let lastKnownState: AppState | null = null;
+
 function getDataFilePath(): string {
   return path.join(app.getPath('userData'), DATA_FILE);
 }
@@ -20,6 +25,9 @@ export async function loadAppState(): Promise<AppState> {
   if (pending) {
     return pending;
   }
+  if (lastKnownState) {
+    return lastKnownState;
+  }
   try {
     const filePath = getDataFilePath();
     const data = await fs.readFile(filePath, 'utf-8');
@@ -27,7 +35,7 @@ export async function loadAppState(): Promise<AppState> {
     const defaults = getDefaultAppState();
     // Merge with defaults to ensure all required fields exist
     // Note: Old stored data may contain worktreeTabs/userTerminalTabs which will be ignored
-    return {
+    const loaded: AppState = {
       ...defaults,
       ...parsed,
       // Ensure arrays exist (don't let undefined override defaults)
@@ -35,6 +43,8 @@ export async function loadAppState(): Promise<AppState> {
       settings: { ...defaults.settings, ...parsed.settings },
       window: { ...defaults.window, ...parsed.window },
     };
+    lastKnownState = loaded;
+    return loaded;
   } catch (error) {
     console.log('[Storage] No existing state found, using defaults');
     return getDefaultAppState();
@@ -62,6 +72,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function saveAppState(state: AppState): Promise<void> {
+  lastKnownState = state;
   const doSave = async () => {
     const filePath = getDataFilePath();
     const tempPath = `${filePath}.tmp`;
@@ -124,6 +135,7 @@ let debouncedState: AppState | null = null;
 let debounceTimer: NodeJS.Timeout | null = null;
 
 function scheduleSaveAppState(state: AppState): void {
+  lastKnownState = state;
   debouncedState = state;
   if (debounceTimer) return;
   debounceTimer = setTimeout(() => {

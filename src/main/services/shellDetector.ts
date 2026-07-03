@@ -306,15 +306,26 @@ async function detectUnixShells(): Promise<ShellInfo[]> {
   return shells;
 }
 
+// Shell detection probes the filesystem (and WSL on Windows) and runs on
+// every terminal spawn. Cache briefly so restoring many terminals at once
+// detects once, while newly installed shells still show up quickly.
+const SHELL_DETECTION_TTL_MS = 10_000;
+let shellDetectionCache: { expiresAt: number; promise: Promise<ShellInfo[]> } | null = null;
+
 /**
  * Detect available shells based on the current platform.
  * Returns an array of ShellInfo objects representing shells that can be used.
  */
 export async function detectAvailableShells(): Promise<ShellInfo[]> {
-  if (process.platform === 'win32') {
-    return detectWindowsShells();
+  if (shellDetectionCache && shellDetectionCache.expiresAt > Date.now()) {
+    return shellDetectionCache.promise;
   }
-  return detectUnixShells();
+  const promise = process.platform === 'win32' ? detectWindowsShells() : detectUnixShells();
+  shellDetectionCache = { expiresAt: Date.now() + SHELL_DETECTION_TTL_MS, promise };
+  promise.catch(() => {
+    shellDetectionCache = null;
+  });
+  return promise;
 }
 
 /**
@@ -351,7 +362,10 @@ export async function validateShellPath(shellPath: string): Promise<ShellValidat
       const ext = path.extname(shellPath).toLowerCase();
       const executableExtensions = ['.exe', '.cmd', '.bat', '.com'];
       if (!executableExtensions.includes(ext)) {
-        return { valid: false, error: 'File does not have an executable extension (.exe, .cmd, .bat, .com)' };
+        return {
+          valid: false,
+          error: 'File does not have an executable extension (.exe, .cmd, .bat, .com)',
+        };
       }
     }
 
