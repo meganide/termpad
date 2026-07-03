@@ -103,13 +103,22 @@ function normalizePath(filePath: string): string {
   return normalized;
 }
 
+// Worktrees usually share one parent directory, so existence watching is
+// grouped: one chokidar watcher per parent dir tracking all worktree
+// basenames under it, instead of one watcher per worktree.
+interface ParentDirWatchGroup {
+  watcher: chokidar.FSWatcher;
+  worktrees: Map<string, string>; // basename -> original worktree path
+}
+
 interface WatcherEntry {
   repositoryId: string;
   repoPath: string;
   watcher: chokidar.FSWatcher;
   branchWatcher: chokidar.FSWatcher | null;
   repoExistenceWatcher: chokidar.FSWatcher | null;
-  worktreeExistenceWatchers: Map<string, chokidar.FSWatcher>; // path -> watcher
+  worktreeExistenceWatchers: Map<string, ParentDirWatchGroup>; // normalized parent dir -> group
+  worktreeExistenceIndex: Map<string, string>; // normalized worktree path -> normalized parent dir
   debounceTimeout: NodeJS.Timeout | null;
   branchDebounceTimeout: NodeJS.Timeout | null;
   lastWorktrees: Map<string, WorktreeInfo>;
@@ -184,6 +193,7 @@ class WorktreeWatcherService {
         branchWatcher: null,
         repoExistenceWatcher: null,
         worktreeExistenceWatchers: new Map(),
+        worktreeExistenceIndex: new Map(),
         debounceTimeout: null,
         branchDebounceTimeout: null,
         lastWorktrees: worktreeMap,
@@ -193,10 +203,19 @@ class WorktreeWatcherService {
       // Note: Callers should filter out main worktrees before calling this function.
       const startWorktreeExistenceWatch = async (worktreePath: string) => {
         const normalizedPath = normalizePath(worktreePath);
-        if (entry.worktreeExistenceWatchers.has(normalizedPath)) return;
+        if (entry.worktreeExistenceIndex.has(normalizedPath)) return;
 
         const parentDir = path.dirname(worktreePath);
+        const normalizedParent = normalizePath(parentDir);
         const worktreeBasename = path.basename(worktreePath);
+
+        // Reuse an existing watcher on the same parent directory
+        const existingGroup = entry.worktreeExistenceWatchers.get(normalizedParent);
+        if (existingGroup) {
+          existingGroup.worktrees.set(worktreeBasename, worktreePath);
+          entry.worktreeExistenceIndex.set(normalizedPath, normalizedParent);
+          return;
+        }
 
         try {
           await fs.access(parentDir);
@@ -210,30 +229,45 @@ class WorktreeWatcherService {
             interval: usePollingForWorktree ? 1000 : undefined,
           });
 
-          entry.worktreeExistenceWatchers.set(normalizedPath, existenceWatcher);
+          const group: ParentDirWatchGroup = {
+            watcher: existenceWatcher,
+            worktrees: new Map([[worktreeBasename, worktreePath]]),
+          };
+          entry.worktreeExistenceWatchers.set(normalizedParent, group);
+          entry.worktreeExistenceIndex.set(normalizedPath, normalizedParent);
 
           existenceWatcher.on('error', (error) => {
-            console.error(`[WorktreeWatcher] Existence watcher error for ${worktreePath}:`, error);
+            console.error(`[WorktreeWatcher] Existence watcher error for ${parentDir}:`, error);
             existenceWatcher.close().catch((err) => {
               console.error('[WorktreeWatcher] Error closing existence watcher:', err);
             });
-            entry.worktreeExistenceWatchers.delete(normalizedPath);
+            entry.worktreeExistenceWatchers.delete(normalizedParent);
+            for (const watchedPath of group.worktrees.values()) {
+              entry.worktreeExistenceIndex.delete(normalizePath(watchedPath));
+            }
           });
 
           existenceWatcher.on('unlinkDir', (deletedPath) => {
             const deletedBasename = path.basename(deletedPath);
-            if (deletedBasename === worktreeBasename) {
+            const watchedPath = group.worktrees.get(deletedBasename);
+            if (watchedPath) {
               console.log(
-                `[WorktreeWatcher] Worktree directory deleted externally: ${worktreePath}`
+                `[WorktreeWatcher] Worktree directory deleted externally: ${watchedPath}`
               );
-              win.webContents.send('watcher:worktreeRemoved', repositoryId, worktreePath, true);
+              win.webContents.send('watcher:worktreeRemoved', repositoryId, watchedPath, true);
 
-              // Clean up this watcher
-              existenceWatcher.close().catch((err) => {
-                console.error('[WorktreeWatcher] Error closing existence watcher:', err);
-              });
-              entry.worktreeExistenceWatchers.delete(normalizedPath);
-              entry.lastWorktrees.delete(normalizedPath);
+              const normalizedWatched = normalizePath(watchedPath);
+              group.worktrees.delete(deletedBasename);
+              entry.worktreeExistenceIndex.delete(normalizedWatched);
+              entry.lastWorktrees.delete(normalizedWatched);
+
+              // Last worktree under this parent gone - close the watcher
+              if (group.worktrees.size === 0) {
+                existenceWatcher.close().catch((err) => {
+                  console.error('[WorktreeWatcher] Error closing existence watcher:', err);
+                });
+                entry.worktreeExistenceWatchers.delete(normalizedParent);
+              }
             }
           });
         } catch (error) {
@@ -258,10 +292,21 @@ class WorktreeWatcherService {
 
       // Helper to stop watching a worktree directory
       const stopWorktreeExistenceWatch = async (normalizedPath: string) => {
-        const existenceWatcher = entry.worktreeExistenceWatchers.get(normalizedPath);
-        if (existenceWatcher) {
-          await existenceWatcher.close();
-          entry.worktreeExistenceWatchers.delete(normalizedPath);
+        const normalizedParent = entry.worktreeExistenceIndex.get(normalizedPath);
+        if (!normalizedParent) return;
+        entry.worktreeExistenceIndex.delete(normalizedPath);
+
+        const group = entry.worktreeExistenceWatchers.get(normalizedParent);
+        if (!group) return;
+        for (const [basename, watchedPath] of group.worktrees) {
+          if (normalizePath(watchedPath) === normalizedPath) {
+            group.worktrees.delete(basename);
+            break;
+          }
+        }
+        if (group.worktrees.size === 0) {
+          entry.worktreeExistenceWatchers.delete(normalizedParent);
+          await group.watcher.close();
         }
       };
 
@@ -444,10 +489,11 @@ class WorktreeWatcherService {
         closePromises.push(entry.repoExistenceWatcher.close());
       }
       // Close all worktree existence watchers
-      for (const existenceWatcher of entry.worktreeExistenceWatchers.values()) {
-        closePromises.push(existenceWatcher.close());
+      for (const group of entry.worktreeExistenceWatchers.values()) {
+        closePromises.push(group.watcher.close());
       }
       entry.worktreeExistenceWatchers.clear();
+      entry.worktreeExistenceIndex.clear();
       await Promise.all(closePromises);
       this.watchers.delete(repositoryId);
 
