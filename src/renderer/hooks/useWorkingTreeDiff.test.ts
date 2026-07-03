@@ -52,6 +52,7 @@ describe('useWorkingTreeDiff', () => {
     // Reset mocks
     vi.mocked(window.terminal.getWorkingTreeStats).mockReset();
     vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockReset();
+    vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockReset();
 
     // Re-establish default behavior
     vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue({
@@ -60,6 +61,7 @@ describe('useWorkingTreeDiff', () => {
       isDirty: false,
     });
     vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValue(null);
+    vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -72,9 +74,9 @@ describe('useWorkingTreeDiff', () => {
       const mockStatsResult = createMockStatsResult(mockStats);
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValueOnce(mockStatsResult);
 
-      // Mock single file diff for auto-loading (small file)
+      // Mock batched file diffs for auto-loading (small file)
       const mockDiffFile = createMockDiffFile('src/index.ts');
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValueOnce(mockDiffFile);
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValueOnce([mockDiffFile]);
 
       const { result } = renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
 
@@ -132,16 +134,15 @@ describe('useWorkingTreeDiff', () => {
       );
 
       const mockDiffFile = createMockDiffFile('src/small.ts', 10, 5);
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValueOnce(mockDiffFile);
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValueOnce([mockDiffFile]);
 
       const { result } = renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
 
       await flushPromises();
 
-      expect(window.terminal.getSingleWorkingTreeFileDiff).toHaveBeenCalledWith(
-        '/test/repo',
-        'src/small.ts'
-      );
+      expect(window.terminal.getWorkingTreeFileDiffs).toHaveBeenCalledWith('/test/repo', [
+        'src/small.ts',
+      ]);
       expect(result.current.files[0].hunksLoaded).toBe(true);
       expect(result.current.files[0].hunks.length).toBeGreaterThan(0);
     });
@@ -157,8 +158,8 @@ describe('useWorkingTreeDiff', () => {
 
       await flushPromises();
 
-      // Should not call getSingleWorkingTreeFileDiff for large file
-      expect(window.terminal.getSingleWorkingTreeFileDiff).not.toHaveBeenCalled();
+      // Should not fetch hunks for large file
+      expect(window.terminal.getWorkingTreeFileDiffs).not.toHaveBeenCalled();
       expect(result.current.files[0].hunksLoaded).toBe(false);
       expect(result.current.files[0].hunks).toEqual([]);
     });
@@ -201,9 +202,9 @@ describe('useWorkingTreeDiff', () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult(mockStats)
       );
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValue(
-        createMockDiffFile('src/index.ts')
-      );
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([
+        createMockDiffFile('src/index.ts'),
+      ]);
 
       const { result } = renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
 
@@ -230,9 +231,9 @@ describe('useWorkingTreeDiff', () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult(mockStats)
       );
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValue(
-        createMockDiffFile('src/index.ts')
-      );
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([
+        createMockDiffFile('src/index.ts'),
+      ]);
 
       renderHook(() =>
         useWorkingTreeDiff({
@@ -311,9 +312,9 @@ describe('useWorkingTreeDiff', () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult([createMockDiffFileStat('src/index.ts')])
       );
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValue(
-        createMockDiffFile('src/index.ts')
-      );
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([
+        createMockDiffFile('src/index.ts'),
+      ]);
 
       const { unmount } = renderHook(() =>
         useWorkingTreeDiff({
@@ -346,9 +347,9 @@ describe('useWorkingTreeDiff', () => {
       vi.mocked(window.terminal.getWorkingTreeStats)
         .mockResolvedValueOnce(createMockStatsResult(mockStats1, 'commit1'))
         .mockResolvedValueOnce(createMockStatsResult(mockStats2, 'commit2'));
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff)
-        .mockResolvedValueOnce(createMockDiffFile('src/file1.ts'))
-        .mockResolvedValueOnce(createMockDiffFile('src/file2.ts'));
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs)
+        .mockResolvedValueOnce([createMockDiffFile('src/file1.ts')])
+        .mockResolvedValueOnce([createMockDiffFile('src/file2.ts')]);
 
       const { result, rerender } = renderHook(({ repoPath }) => useWorkingTreeDiff({ repoPath }), {
         initialProps: { repoPath: '/test/repo1' },
@@ -377,9 +378,9 @@ describe('useWorkingTreeDiff', () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult(mockStats)
       );
-      vi.mocked(window.terminal.getSingleWorkingTreeFileDiff).mockResolvedValue(
-        createMockDiffFile('src/index.ts')
-      );
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([
+        createMockDiffFile('src/index.ts'),
+      ]);
 
       const { result, rerender } = renderHook(
         ({ enabled }) => useWorkingTreeDiff({ repoPath: '/test/repo', enabled }),

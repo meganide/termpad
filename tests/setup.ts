@@ -275,6 +275,7 @@ Object.defineProperty(window, 'terminal', {
       .fn()
       .mockResolvedValue({ files: [], headCommit: 'abc123', isDirty: false }),
     getSingleWorkingTreeFileDiff: vi.fn().mockResolvedValue(null),
+    getWorkingTreeFileDiffs: vi.fn().mockResolvedValue([]),
 
     // Clone
     cloneRepository: vi.fn().mockResolvedValue({ success: true, path: '/test/cloned' }),

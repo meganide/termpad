@@ -168,6 +168,8 @@ const terminalAPI: TerminalAPI = {
   getWorkingTreeStats: (repoPath) => ipcRenderer.invoke('git:getWorkingTreeStats', repoPath),
   getSingleWorkingTreeFileDiff: (repoPath, filePath) =>
     ipcRenderer.invoke('git:getSingleWorkingTreeFileDiff', repoPath, filePath),
+  getWorkingTreeFileDiffs: (repoPath, filePaths) =>
+    ipcRenderer.invoke('git:getWorkingTreeFileDiffs', repoPath, filePaths),
 
   // Source control operations
   getFileStatuses: (repoPath) => ipcRenderer.invoke('git:getFileStatuses', repoPath),

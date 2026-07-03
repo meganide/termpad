@@ -1384,6 +1384,54 @@ export async function getSingleWorkingTreeFileDiff(
   return null;
 }
 
+// git diff HEAD across many changed files can be large; the default 1MB
+// exec buffer would reject with ENOBUFS.
+const DIFF_MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
+ * Get full diffs (with hunks) for many working-tree files at once.
+ * Runs a single `git diff HEAD` and picks the requested files from the
+ * parsed result, instead of one git process + IPC round-trip per file.
+ * Untracked files (absent from diff output) get a synthetic diff.
+ */
+export async function getWorkingTreeFileDiffs(
+  repoPath: string,
+  filePaths: string[]
+): Promise<DiffFile[]> {
+  if (filePaths.length === 0) return [];
+
+  let diffOutput: string;
+  if (isWslPath(repoPath)) {
+    const { stdout } = await execAsync('git diff HEAD', {
+      cwd: repoPath,
+      maxBuffer: DIFF_MAX_BUFFER,
+    });
+    diffOutput = stdout;
+  } else {
+    const git = getSimpleGit(repoPath);
+    diffOutput = await git.diff(['HEAD']);
+  }
+
+  const parsedByPath = new Map<string, DiffFile>();
+  if (diffOutput.trim()) {
+    for (const file of parseDiff(diffOutput)) {
+      parsedByPath.set(file.path, file);
+    }
+  }
+
+  const results = await Promise.all(
+    filePaths.map(async (filePath) => {
+      const parsed = parsedByPath.get(filePath);
+      if (parsed) return parsed;
+      // Not in diff output - untracked file gets a synthetic all-additions diff
+      const isUntracked = await isFileUntracked(repoPath, filePath);
+      return isUntracked ? generateUntrackedFileDiff(repoPath, filePath) : null;
+    })
+  );
+
+  return results.filter((file): file is DiffFile => file !== null);
+}
+
 /**
  * Check if a file is untracked (not in git index).
  */
@@ -3916,6 +3964,13 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
     'git:getSingleWorkingTreeFileDiff',
     async (_, repoPath: string, filePath: string) => {
       return getSingleWorkingTreeFileDiff(repoPath, filePath);
+    }
+  );
+
+  ipcMain.handle(
+    'git:getWorkingTreeFileDiffs',
+    async (_, repoPath: string, filePaths: string[]) => {
+      return getWorkingTreeFileDiffs(repoPath, filePaths);
     }
   );
 

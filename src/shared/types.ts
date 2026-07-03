@@ -572,6 +572,7 @@ export interface TerminalAPI {
   getWorkingTreeDiff(repoPath: string): Promise<WorkingTreeDiffResult>;
   getWorkingTreeStats(repoPath: string): Promise<WorkingTreeStatsResult>;
   getSingleWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<DiffFile | null>;
+  getWorkingTreeFileDiffs(repoPath: string, filePaths: string[]): Promise<DiffFile[]>;
 
   // File system
   selectFolder(): Promise<string | null>;

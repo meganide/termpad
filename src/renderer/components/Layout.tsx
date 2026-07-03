@@ -749,20 +749,16 @@ export function Layout() {
         ? [...new Set([...smallFiles.map((f) => f.path), clickedFilePath])]
         : smallFiles.map((f) => f.path);
 
-      // Load hunks for small files + clicked file in parallel
+      // Load hunks for small files + clicked file with a single git diff
       const hunksMap = new Map<string, DiffFile['hunks']>();
-      await Promise.all(
-        filesToLoad.map(async (filePath) => {
-          try {
-            const diffFile = await window.terminal.getSingleWorkingTreeFileDiff(repoPath, filePath);
-            if (diffFile) {
-              hunksMap.set(filePath, diffFile.hunks);
-            }
-          } catch {
-            // Ignore errors for individual files
-          }
-        })
-      );
+      try {
+        const diffFiles = await window.terminal.getWorkingTreeFileDiffs(repoPath, filesToLoad);
+        for (const diffFile of diffFiles) {
+          hunksMap.set(diffFile.path, diffFile.hunks);
+        }
+      } catch {
+        // Ignore errors; files render without hunks
+      }
 
       // Build the final files array with hunks where available
       const files: DiffFile[] = statsResult.files.map((stat: DiffFileStat) => {
