@@ -78,6 +78,50 @@ const electronAPI: ElectronAPI = {
     ipcRenderer.invoke('shell:openFolder', folderPath),
 };
 
+// One shared IPC listener per channel dispatching by session id, instead of
+// one filtered listener per terminal: with all terminals mounted, per-terminal
+// listeners mean O(N) handler invocations per output chunk plus
+// MaxListenersExceededWarning past 10 terminals.
+const terminalDataCallbacks = new Map<string, Set<(data: string) => void>>();
+const terminalExitCallbacks = new Map<string, Set<(code: number, signal?: number) => void>>();
+let terminalDispatchersAttached = false;
+
+function ensureTerminalDispatchers(): void {
+  if (terminalDispatchersAttached) return;
+  terminalDispatchersAttached = true;
+  ipcRenderer.on('terminal:data', (_: unknown, id: string, data: string) => {
+    const callbacks = terminalDataCallbacks.get(id);
+    if (callbacks) {
+      for (const callback of callbacks) callback(data);
+    }
+  });
+  ipcRenderer.on('terminal:exit', (_: unknown, id: string, code: number, signal?: number) => {
+    const callbacks = terminalExitCallbacks.get(id);
+    if (callbacks) {
+      for (const callback of callbacks) callback(code, signal);
+    }
+  });
+}
+
+function subscribe<T>(map: Map<string, Set<T>>, key: string, callback: T): () => void {
+  ensureTerminalDispatchers();
+  let callbacks = map.get(key);
+  if (!callbacks) {
+    callbacks = new Set();
+    map.set(key, callbacks);
+  }
+  callbacks.add(callback);
+  return () => {
+    const current = map.get(key);
+    if (current) {
+      current.delete(callback);
+      if (current.size === 0) {
+        map.delete(key);
+      }
+    }
+  };
+}
+
 const terminalAPI: TerminalAPI = {
   // Lifecycle
   spawn: (sessionId, cwd, initialCommand) =>
@@ -92,20 +136,8 @@ const terminalAPI: TerminalAPI = {
   getBuffer: (terminalId) => ipcRenderer.invoke('terminal:getBuffer', terminalId),
 
   // Events
-  onData: (sessionId, callback) => {
-    const handler = (_: unknown, id: string, data: string) => {
-      if (id === sessionId) callback(data);
-    };
-    ipcRenderer.on('terminal:data', handler);
-    return () => ipcRenderer.removeListener('terminal:data', handler);
-  },
-  onExit: (sessionId, callback) => {
-    const handler = (_: unknown, id: string, code: number, signal?: number) => {
-      if (id === sessionId) callback(code, signal);
-    };
-    ipcRenderer.on('terminal:exit', handler);
-    return () => ipcRenderer.removeListener('terminal:exit', handler);
-  },
+  onData: (sessionId, callback) => subscribe(terminalDataCallbacks, sessionId, callback),
+  onExit: (sessionId, callback) => subscribe(terminalExitCallbacks, sessionId, callback),
   onDistroSwitched: (
     callback: (payload: {
       sessionId: string;
