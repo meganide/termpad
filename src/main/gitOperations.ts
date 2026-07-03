@@ -208,6 +208,7 @@ function getSimpleGit(repoPath: string): SimpleGit {
  */
 export function clearSimpleGitCache(repoPath: string): void {
   simpleGitCache.delete(repoPath);
+  defaultBranchCache.delete(repoPath);
 }
 
 /**
@@ -1122,13 +1123,40 @@ export async function getCommitHash(repoPath: string, branch: string): Promise<s
   return commit.trim();
 }
 
+// The default branch almost never changes, but getAheadBehind resolves it on
+// every poll for unpushed branches. Cache per repo; cleared via clearSimpleGitCache.
+const defaultBranchCache = new Map<string, string>();
+
 /**
  * Get the default branch name (main or master).
  */
 export async function getDefaultBranch(repoPath: string): Promise<string> {
+  const cached = defaultBranchCache.get(repoPath);
+  if (cached) {
+    return cached;
+  }
+  const branch = await resolveDefaultBranch(repoPath);
+  defaultBranchCache.set(repoPath, branch);
+  return branch;
+}
+
+async function resolveDefaultBranch(repoPath: string): Promise<string> {
+  // Fast path: origin/HEAD symbolic ref is resolved locally, no network
+  try {
+    const { stdout } = await execAsync('git symbolic-ref refs/remotes/origin/HEAD', {
+      cwd: repoPath,
+    });
+    const match = stdout.trim().match(/^refs\/remotes\/origin\/(.+)$/);
+    if (match) {
+      return match[1];
+    }
+  } catch {
+    // origin/HEAD not set locally; fall through to remote query
+  }
+
   try {
     if (isWslPath(repoPath)) {
-      // Try to get the default branch from origin
+      // Try to get the default branch from origin (network round-trip)
       const { stdout } = await execAsync('git remote show origin', { cwd: repoPath });
       const match = stdout.match(/HEAD branch: (\S+)/);
       if (match) {
@@ -1136,7 +1164,7 @@ export async function getDefaultBranch(repoPath: string): Promise<string> {
       }
     } else {
       const git = getSimpleGit(repoPath);
-      // Try to get the default branch from origin
+      // Try to get the default branch from origin (network round-trip)
       const remotes = await git.remote(['show', 'origin']);
       if (remotes) {
         const match = remotes.match(/HEAD branch: (\S+)/);
