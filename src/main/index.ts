@@ -10,7 +10,7 @@ import {
 import path from 'path';
 import started from 'electron-squirrel-startup';
 import { registerIpcHandlers, getTerminalManager, setCloseCallback } from './ipc/handlers';
-import { loadAppState, saveAppState } from './storage';
+import { loadAppState, saveAppState, flushPendingSave } from './storage';
 import { getConstrainedWindowSize } from './utils/windowUtils';
 import { initShellPath } from './utils/shellEnv';
 import type { AppState } from '../shared/types';
@@ -415,6 +415,8 @@ app.on('activate', () => {
 app.on('before-quit', () => {
   console.log('[Main] before-quit: cleaning up terminals');
   getTerminalManager()?.killAll();
+  // Write any debounced state so the last mutations survive quit
+  void flushPendingSave();
 });
 
 // Cleanup terminals on SIGINT (Ctrl+C in dev mode)
