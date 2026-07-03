@@ -447,40 +447,15 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
         console.debug(`[Git] Failed to get diff numstat for ${repoPath}:`, error);
       }
 
-      // Get line counts for untracked files using git diff --no-index
+      // Count lines of untracked files by reading them directly (no git spawns)
       // Limit to first 50 files to avoid performance issues with many untracked files
       const filesToCount = untrackedFiles.slice(0, 50);
       if (filesToCount.length > 0) {
-        // Use /dev/null for Linux/WSL, NUL for native Windows
-        const nullDevice =
-          process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-        const lineCountPromises = filesToCount.map(async (filePath) => {
-          try {
-            // Use execFileAsync to avoid shell injection with file paths
-            const { stdout } = await execFileAsync(
-              'git',
-              ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-              { cwd: repoPath }
-            ).catch((err) => {
-              // git diff --no-index exits with code 1 when files differ (expected)
-              if (err.stdout) return { stdout: err.stdout };
-              throw err;
-            });
-
-            const match = stdout.trim().match(/^(\d+|-)\s+/);
-            if (match && match[1] !== '-') {
-              return parseInt(match[1], 10) || 0;
-            }
-            return 0;
-          } catch (error) {
-            console.debug(`[Git] Failed to count lines for ${filePath}:`, error);
-            return 0;
-          }
-        });
-
-        const lineCounts = await Promise.all(lineCountPromises);
-        for (const count of lineCounts) {
-          additions += count;
+        const lineCounts = await Promise.all(
+          filesToCount.map((filePath) => countUntrackedFileLines(repoPath, filePath))
+        );
+        for (const { lineCount } of lineCounts) {
+          additions += lineCount;
         }
       }
     }
@@ -489,6 +464,59 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
   } catch (error) {
     console.error(`[Git] Failed to get git status for ${repoPath}:`, error);
     return null;
+  }
+}
+
+// Bounds for untracked-file line counting: read in chunks to keep memory flat
+// and stop after a generous cap since the count only feeds a status badge.
+const UNTRACKED_COUNT_CHUNK_BYTES = 64 * 1024;
+const UNTRACKED_COUNT_MAX_BYTES = 32 * 1024 * 1024;
+const BINARY_PROBE_BYTES = 8000;
+
+/**
+ * Count the lines of an untracked file by reading it directly.
+ * Replaces spawning `git diff --no-index` per file, which forked up to 100
+ * git processes per status poll. Uses git's binary heuristic (NUL byte near
+ * the start of the file).
+ */
+async function countUntrackedFileLines(
+  repoPath: string,
+  filePath: string
+): Promise<{ lineCount: number; isBinary: boolean }> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(path.join(repoPath, filePath), 'r');
+    const buffer = Buffer.alloc(UNTRACKED_COUNT_CHUNK_BYTES);
+    let lineCount = 0;
+    let totalRead = 0;
+    let lastByte = -1;
+
+    while (totalRead < UNTRACKED_COUNT_MAX_BYTES) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, totalRead);
+      if (bytesRead === 0) break;
+
+      if (totalRead === 0) {
+        const probe = buffer.subarray(0, Math.min(BINARY_PROBE_BYTES, bytesRead));
+        if (probe.includes(0)) {
+          return { lineCount: 0, isBinary: true };
+        }
+      }
+
+      for (let i = 0; i < bytesRead; i++) {
+        if (buffer[i] === 10) lineCount++;
+      }
+      lastByte = buffer[bytesRead - 1];
+      totalRead += bytesRead;
+    }
+
+    // Git counts a trailing partial line as a line
+    if (totalRead > 0 && lastByte !== 10) lineCount++;
+    return { lineCount, isBinary: false };
+  } catch {
+    // Unreadable, deleted, or a directory - report zero lines
+    return { lineCount: 0, isBinary: false };
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -1252,40 +1280,16 @@ export async function getWorkingTreeStats(repoPath: string): Promise<WorkingTree
     }
   }
 
-  // Get line counts for untracked files using git diff --no-index
-  // This is efficient: git counts lines without us loading files into memory
+  // Count lines of untracked files by reading them directly (no git spawns)
   // Limit to first 100 files to avoid performance issues with many untracked files
   const filesToCount = untrackedFiles.slice(0, 100);
   if (filesToCount.length > 0) {
-    // Use /dev/null for Linux/WSL, NUL for native Windows
-    const nullDevice = process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-    const lineCountPromises = filesToCount.map(async (filePath) => {
-      try {
-        // Use execFileAsync to avoid shell injection with file paths
-        const { stdout } = await execFileAsync(
-          'git',
-          ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-          { cwd: repoPath }
-        ).catch((err) => {
-          // git diff --no-index exits with code 1 when files differ (expected for new files)
-          if (err.stdout) return { stdout: err.stdout };
-          throw err;
-        });
-
-        // Parse numstat output: "42    0    path/to/file"
-        const match = stdout.trim().match(/^(\d+|-)\s+(\d+|-)\s+/);
-        if (match) {
-          const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-          const isBinary = match[1] === '-'; // Binary files show "-" for line counts
-          return { filePath, lineCount: additions, isBinary };
-        }
-        return { filePath, lineCount: 0, isBinary: false };
-      } catch {
-        return { filePath, lineCount: 0, isBinary: false };
-      }
-    });
-
-    const lineCountResults = await Promise.all(lineCountPromises);
+    const lineCountResults = await Promise.all(
+      filesToCount.map(async (filePath) => ({
+        filePath,
+        ...(await countUntrackedFileLines(repoPath, filePath)),
+      }))
+    );
     for (const lineResult of lineCountResults) {
       files.push({
         path: lineResult.filePath,
@@ -1616,41 +1620,16 @@ export async function getFileStatuses(repoPath: string): Promise<FileStatusResul
       }
     }
 
-    // Get line counts for untracked files using git diff --no-index
-    // This is efficient: git counts lines without us loading files into memory
+    // Count lines of untracked files by reading them directly (no git spawns)
     // Limit to first 100 files to avoid performance issues with many untracked files
     const filesToCount = untrackedFilePaths.slice(0, 100);
     if (filesToCount.length > 0) {
-      // Use /dev/null for Linux/WSL, NUL for native Windows
-      const nullDevice = process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-      const lineCountPromises = filesToCount.map(async (filePath) => {
-        try {
-          // Use execFileAsync to avoid shell injection with file paths
-          const { stdout } = await execFileAsync(
-            'git',
-            ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-            { cwd: repoPath }
-          ).catch((err) => {
-            // git diff --no-index exits with code 1 when files differ (which is always for new files)
-            // but still outputs the numstat, so we capture stdout from the error
-            if (err.stdout) return { stdout: err.stdout };
-            throw err;
-          });
-
-          // Parse numstat output: "42    0    path/to/file" (additions, deletions, path)
-          const match = stdout.trim().match(/^(\d+|-)\s+(\d+|-)\s+/);
-          if (match) {
-            const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-            return { filePath, lineCount: additions };
-          }
-          return { filePath, lineCount: 0 };
-        } catch {
-          // Could be binary, unreadable, or deleted
-          return { filePath, lineCount: 0 };
-        }
-      });
-
-      const lineCountResults = await Promise.all(lineCountPromises);
+      const lineCountResults = await Promise.all(
+        filesToCount.map(async (filePath) => ({
+          filePath,
+          lineCount: (await countUntrackedFileLines(repoPath, filePath)).lineCount,
+        }))
+      );
       for (const lineResult of lineCountResults) {
         result.untracked.push({
           path: lineResult.filePath,
