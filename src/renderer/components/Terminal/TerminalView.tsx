@@ -10,6 +10,7 @@ import {
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../../hooks/useTerminal';
@@ -184,6 +185,19 @@ export const TerminalView = memo(
       terminal.loadAddon(webLinksAddon);
       terminal.loadAddon(new ClipboardAddon());
       terminal.open(containerRef.current);
+
+      // WebGL renderer: markedly faster than the default DOM renderer under
+      // high-throughput output. Fall back to the DOM renderer if the GPU
+      // context is unavailable or gets lost (xterm reverts on addon dispose).
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+        });
+        terminal.loadAddon(webglAddon);
+      } catch (error) {
+        console.warn('[TerminalView] WebGL renderer unavailable, using DOM renderer:', error);
+      }
 
       // Only fit if the container is visible (has dimensions)
       if (containerRef.current.offsetWidth > 0 && containerRef.current.offsetHeight > 0) {
