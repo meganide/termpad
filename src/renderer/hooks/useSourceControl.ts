@@ -732,11 +732,13 @@ export function useSourceControl({
     };
   }, [enabled, repoPath, pollIntervalMs, fetchData, isPathDeleting, isFocused]);
 
-  // Periodic fetch from remote to keep ahead/behind accurate
+  // Periodic fetch from remote to keep ahead/behind accurate.
+  // This is a network round-trip to the remote, so keep the cadence low and
+  // skip entirely while the window is unfocused.
   useEffect(() => {
-    if (!enabled || !repoPath || !aheadBehind.hasRemote) return;
+    if (!enabled || !repoPath || !aheadBehind.hasRemote || !isFocused) return;
 
-    const FETCH_INTERVAL_MS = 5000;
+    const FETCH_INTERVAL_MS = 120_000;
     let isFetching = false;
     let isCleanedUp = false;
 
@@ -762,7 +764,7 @@ export function useSourceControl({
       isCleanedUp = true;
       clearInterval(intervalId);
     };
-  }, [enabled, repoPath, aheadBehind.hasRemote, fetchData, isPathDeleting]);
+  }, [enabled, repoPath, aheadBehind.hasRemote, fetchData, isPathDeleting, isFocused]);
 
   return {
     // File statuses
