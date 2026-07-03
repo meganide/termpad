@@ -18,6 +18,9 @@ interface DiffReviewModalProps {
   onClose: () => void;
 }
 
+// Stable empty set so unselected FileDiff rows keep identical prop identity
+const EMPTY_LINE_SET = new Set<number>();
+
 export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
   const {
     currentReview,
@@ -333,47 +336,51 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
                 </div>
               ) : (
                 unviewedFiles.map((file) => (
-                  <FileDiff
+                  <div
                     key={file.path}
-                    ref={(el) => {
-                      if (el) {
-                        fileRefs.current.set(file.path, el);
-                      } else {
-                        fileRefs.current.delete(file.path);
+                    className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]"
+                  >
+                    <FileDiff
+                      ref={(el) => {
+                        if (el) {
+                          fileRefs.current.set(file.path, el);
+                        } else {
+                          fileRefs.current.delete(file.path);
+                        }
+                      }}
+                      file={file}
+                      viewMode={currentReview.viewMode}
+                      isExpanded={expandedFiles.has(file.path)}
+                      isViewed={isFileViewed(file.path)}
+                      selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
+                      linesWithComments={getLinesWithComments(file.path)}
+                      comments={getFileComments(file.path)}
+                      commentingOnLine={
+                        commentingOnLine && commentingOnLine.filePath === file.path
+                          ? {
+                              lineStart: commentingOnLine.lineStart,
+                              lineEnd: commentingOnLine.lineEnd,
+                              side: commentingOnLine.side,
+                            }
+                          : null
                       }
-                    }}
-                    file={file}
-                    viewMode={currentReview.viewMode}
-                    isExpanded={expandedFiles.has(file.path)}
-                    isViewed={isFileViewed(file.path)}
-                    selectedLines={selectedFile === file.path ? selectedLines : new Set()}
-                    linesWithComments={getLinesWithComments(file.path)}
-                    comments={getFileComments(file.path)}
-                    commentingOnLine={
-                      commentingOnLine && commentingOnLine.filePath === file.path
-                        ? {
-                            lineStart: commentingOnLine.lineStart,
-                            lineEnd: commentingOnLine.lineEnd,
-                            side: commentingOnLine.side,
-                          }
-                        : null
-                    }
-                    projectPath={projectPath ?? undefined}
-                    onToggleExpand={() => handleToggleExpand(file.path)}
-                    onMarkViewed={() => handleMarkViewed(file.path)}
-                    onCommentClick={(lineNumber, side) =>
-                      handleCommentClick(file.path, lineNumber, side)
-                    }
-                    onLineMouseDown={(lineNumber, side) => {
-                      setSelectedFile(file.path);
-                      handleLineMouseDown(lineNumber, side);
-                    }}
-                    onLineMouseEnter={handleLineMouseEnter}
-                    onCommentSubmit={handleCommentSubmit}
-                    onCommentCancel={handleCommentCancel}
-                    onCommentDelete={deleteComment}
-                    onCommentUpdate={updateComment}
-                  />
+                      projectPath={projectPath ?? undefined}
+                      onToggleExpand={() => handleToggleExpand(file.path)}
+                      onMarkViewed={() => handleMarkViewed(file.path)}
+                      onCommentClick={(lineNumber, side) =>
+                        handleCommentClick(file.path, lineNumber, side)
+                      }
+                      onLineMouseDown={(lineNumber, side) => {
+                        setSelectedFile(file.path);
+                        handleLineMouseDown(lineNumber, side);
+                      }}
+                      onLineMouseEnter={handleLineMouseEnter}
+                      onCommentSubmit={handleCommentSubmit}
+                      onCommentCancel={handleCommentCancel}
+                      onCommentDelete={deleteComment}
+                      onCommentUpdate={updateComment}
+                    />
+                  </div>
                 ))
               )}
             </div>

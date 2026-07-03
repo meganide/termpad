@@ -113,6 +113,7 @@ describe('DiffReviewModal', () => {
     isFileViewed: mockIsFileViewed,
     addExpandedRange: mockAddExpandedRange,
     getExpandedRanges: mockGetExpandedRanges,
+    expandedRanges: new Map(),
     clearExpansions: mockClearExpansions,
     getLineComments: mockGetLineComments,
     exportToJson: mockExportToJson,

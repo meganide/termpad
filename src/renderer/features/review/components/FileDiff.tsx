@@ -23,6 +23,8 @@ const EXPAND_INCREMENT = 20;
 /** Threshold for considering a diff "large" - diffs with more lines will be collapsed by default */
 const LARGE_DIFF_THRESHOLD = 500;
 
+const EMPTY_EXPANDED_RANGES: ExpandedRange[] = [];
+
 /**
  * Get the last line number of a hunk (from the new file perspective for consistency)
  */
@@ -175,9 +177,11 @@ export const FileDiff = forwardRef<HTMLDivElement, FileDiffProps>(
 
     const isLargeDiff = totalLineCount > LARGE_DIFF_THRESHOLD;
 
-    // Get expansion state and actions from store
-    const { addExpandedRange, getExpandedRanges } = useReviewStore();
-    const expandedRanges = getExpandedRanges(file.path);
+    // Narrow store selectors: subscribing to the whole review store would
+    // re-render every FileDiff on any comment or expansion change
+    const addExpandedRange = useReviewStore((s) => s.addExpandedRange);
+    const expandedRanges =
+      useReviewStore((s) => s.expandedRanges.get(file.path)) ?? EMPTY_EXPANDED_RANGES;
 
     /**
      * Load lines from file via IPC and store in expansion state.
