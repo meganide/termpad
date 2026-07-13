@@ -177,7 +177,15 @@ function createApplicationMenu(): Menu {
   return Menu.buildFromTemplate(template);
 }
 
+// Guards against concurrent window creation: on macOS 'activate' can fire
+// while whenReady is still awaiting startup work, and both call createWindow
+let isCreatingWindow = false;
+let ipcHandlersRegistered = false;
+
 async function createWindow(): Promise<void> {
+  if (isCreatingWindow || (mainWindow && !mainWindow.isDestroyed())) return;
+  isCreatingWindow = true;
+
   const preloadPath = path.join(__dirname, 'preload.js');
   console.log('[Main] Creating window with preload:', preloadPath);
 
@@ -229,6 +237,8 @@ async function createWindow(): Promise<void> {
     show: false,
     icon: appIcon,
   });
+  // From here on the mainWindow existence check covers re-entry
+  isCreatingWindow = false;
 
   // Graceful show to prevent white flash
   mainWindow.once('ready-to-show', () => {
@@ -341,7 +351,13 @@ async function createWindow(): Promise<void> {
     mainWindow.loadFile(path.join(__dirname, `../renderer/${MAIN_WINDOW_VITE_NAME}/index.html`));
   }
 
-  registerIpcHandlers(ipcMain, () => mainWindow);
+  // IPC handlers are global; registering twice throws on ipcMain.handle.
+  // The getter closure always resolves the current window, so once is enough
+  // even if the window is recreated (e.g. macOS dock activate after close).
+  if (!ipcHandlersRegistered) {
+    ipcHandlersRegistered = true;
+    registerIpcHandlers(ipcMain, () => mainWindow);
+  }
 }
 
 // Handle protocol URL when app is already running (second instance tries to open)
