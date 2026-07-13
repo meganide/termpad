@@ -1,5 +1,13 @@
 # termpad
 
+## 0.5.5
+
+### Patch Changes
+
+- [`e9df3cc`](https://github.com/meganide/termpad/commit/e9df3cc54071e2c4b1ce28b64a71290c9f9a919b) Thanks [@meganide](https://github.com/meganide)! - fix: skip code signature verification for unsigned macOS auto-updates
+
+- [#20](https://github.com/meganide/termpad/pull/20) [`e924244`](https://github.com/meganide/termpad/commit/e9242449e43b291382eb5519282559f16d5b1aca) Thanks [@meganide](https://github.com/meganide)! - fix: prevent macOS freezes when watching large repositories
+
 ## 0.5.4
 
 ### Patch Changes
