@@ -55,6 +55,10 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Setup Windows build tools
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
+
       # Bun doesn't support Windows ARM64 natively, use npm instead
       - name: Setup bun
         if: ${{ !(matrix.platform == 'win32' && matrix.arch == 'arm64') }}
