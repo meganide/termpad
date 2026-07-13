@@ -1,5 +1,11 @@
 # termpad
 
+## 0.5.4
+
+### Patch Changes
+
+- [#17](https://github.com/meganide/termpad/pull/17) [`6de6375`](https://github.com/meganide/termpad/commit/6de637575f4a65f886476f5cd73c711696347afa) Thanks [@meganide](https://github.com/meganide)! - Improve application responsiveness and resource usage across terminals, Git operations, and repository monitoring. Terminal output and resize work are now batched, terminal rendering uses WebGL when available, expensive Git and shell operations are cached, and polling-based repository refreshes have been replaced with event-driven updates.
+
 ## 0.5.3
 
 ### Patch Changes
