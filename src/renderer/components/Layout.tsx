@@ -9,6 +9,7 @@ import { UserTerminalSection } from '../features/user-terminals';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
 import { usePRStatusPolling } from '../hooks/usePRStatusPolling';
 import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
 import { useReviewStore } from '../stores/reviewStore';
 import { AddRepositoryScreen } from './AddRepositoryScreen';
@@ -66,7 +67,40 @@ export function Layout() {
     getUserTerminalIdForTab,
     userTerminalTabs,
     activeUserTabId,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      settings: s.settings,
+      updateSettings: s.updateSettings,
+      repositories: s.repositories,
+      activeTerminalId: s.activeTerminalId,
+      activeTabId: s.activeTabId,
+      window: s.window,
+      updateSidebarWidth: s.updateSidebarWidth,
+      updateFileChangesPaneWidth: s.updateFileChangesPaneWidth,
+      updateUserTerminalPanelRatio: s.updateUserTerminalPanelRatio,
+      terminals: s.terminals,
+      isInitialized: s.isInitialized,
+      initialize: s.initialize,
+      setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      setActiveTerminal: s.setActiveTerminal,
+      setFocusArea: s.setFocusArea,
+      unregisterTerminal: s.unregisterTerminal,
+      createTab: s.createTab,
+      closeTab: s.closeTab,
+      renameTab: s.renameTab,
+      reorderTabs: s.reorderTabs,
+      setActiveTab: s.setActiveTab,
+      getTabsForWorktree: s.getTabsForWorktree,
+      getTerminalIdForTab: s.getTerminalIdForTab,
+      worktreeTabs: s.worktreeTabs,
+      updateTabScrollPosition: s.updateTabScrollPosition,
+      getTabScrollPosition: s.getTabScrollPosition,
+      getUserTabsForWorktree: s.getUserTabsForWorktree,
+      getUserTerminalIdForTab: s.getUserTerminalIdForTab,
+      userTerminalTabs: s.userTerminalTabs,
+      activeUserTabId: s.activeUserTabId,
+    }))
+  );
 
   // Initialize store from main process storage
   useEffect(() => {
@@ -224,13 +258,18 @@ export function Layout() {
   const startResizingSidebar = useCallback(() => {
     isResizingSidebar.current = true;
     let lastWidth = sidebarWidth;
+    let rafId: number | null = null;
 
     const resize = (e: MouseEvent) => {
       if (isResizingSidebar.current) {
-        const newWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, e.clientX));
-        lastWidth = newWidth;
-        // Update local state during drag for smooth UI
-        setSidebarWidth(newWidth);
+        lastWidth = Math.min(SIDEBAR_MAX_WIDTH, Math.max(SIDEBAR_MIN_WIDTH, e.clientX));
+        // Coalesce to one state update (Layout re-render) per frame
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            setSidebarWidth(lastWidth);
+          });
+        }
       }
     };
 
@@ -238,6 +277,11 @@ export function Layout() {
       isResizingSidebar.current = false;
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      setSidebarWidth(lastWidth);
       // Persist the final width to store when drag ends
       updateSidebarWidth(lastWidth);
     };
@@ -257,17 +301,22 @@ export function Layout() {
   const startResizingFileChangesPane = useCallback(() => {
     isResizingFileChangesPane.current = true;
     let lastWidth = fileChangesPaneWidth;
+    let rafId: number | null = null;
 
     const resize = (e: MouseEvent) => {
       if (isResizingFileChangesPane.current) {
         // Calculate width from right edge of window
-        const newWidth = Math.min(
+        lastWidth = Math.min(
           FILE_CHANGES_MAX_WIDTH,
           Math.max(FILE_CHANGES_MIN_WIDTH, window.innerWidth - e.clientX)
         );
-        lastWidth = newWidth;
-        // Update local state during drag for smooth UI
-        setFileChangesPaneWidth(newWidth);
+        // Coalesce to one state update (Layout re-render) per frame
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            setFileChangesPaneWidth(lastWidth);
+          });
+        }
       }
     };
 
@@ -275,6 +324,11 @@ export function Layout() {
       isResizingFileChangesPane.current = false;
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      setFileChangesPaneWidth(lastWidth);
       // Persist the final width to store when drag ends
       updateFileChangesPaneWidth(lastWidth);
     };
@@ -295,6 +349,7 @@ export function Layout() {
   const startResizingUserTerminalPanel = useCallback(() => {
     isResizingUserTerminalPanel.current = true;
     let lastRatio = userTerminalPanelRatio;
+    let rafId: number | null = null;
 
     const resize = (e: MouseEvent) => {
       if (isResizingUserTerminalPanel.current && rightPanelRef.current) {
@@ -302,13 +357,14 @@ export function Layout() {
         // Calculate ratio based on mouse Y position within the panel
         // User terminal is at the bottom, so ratio = (panel bottom - mouse Y) / panel height
         const ratio = (panelRect.bottom - e.clientY) / panelRect.height;
-        const clampedRatio = Math.min(
-          USER_TERMINAL_MAX_RATIO,
-          Math.max(USER_TERMINAL_MIN_RATIO, ratio)
-        );
-        lastRatio = clampedRatio;
-        // Update local state during drag for smooth UI
-        setUserTerminalPanelRatio(clampedRatio);
+        lastRatio = Math.min(USER_TERMINAL_MAX_RATIO, Math.max(USER_TERMINAL_MIN_RATIO, ratio));
+        // Coalesce to one state update (Layout re-render) per frame
+        if (rafId === null) {
+          rafId = requestAnimationFrame(() => {
+            rafId = null;
+            setUserTerminalPanelRatio(lastRatio);
+          });
+        }
       }
     };
 
@@ -316,6 +372,11 @@ export function Layout() {
       isResizingUserTerminalPanel.current = false;
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      setUserTerminalPanelRatio(lastRatio);
       // Persist the final ratio to store when drag ends
       updateUserTerminalPanelRatio(lastRatio);
     };
@@ -715,20 +776,16 @@ export function Layout() {
         ? [...new Set([...smallFiles.map((f) => f.path), clickedFilePath])]
         : smallFiles.map((f) => f.path);
 
-      // Load hunks for small files + clicked file in parallel
+      // Load hunks for small files + clicked file with a single git diff
       const hunksMap = new Map<string, DiffFile['hunks']>();
-      await Promise.all(
-        filesToLoad.map(async (filePath) => {
-          try {
-            const diffFile = await window.terminal.getSingleWorkingTreeFileDiff(repoPath, filePath);
-            if (diffFile) {
-              hunksMap.set(filePath, diffFile.hunks);
-            }
-          } catch {
-            // Ignore errors for individual files
-          }
-        })
-      );
+      try {
+        const diffFiles = await window.terminal.getWorkingTreeFileDiffs(repoPath, filesToLoad);
+        for (const diffFile of diffFiles) {
+          hunksMap.set(diffFile.path, diffFile.hunks);
+        }
+      } catch {
+        // Ignore errors; files render without hunks
+      }
 
       // Build the final files array with hunks where available
       const files: DiffFile[] = statsResult.files.map((stat: DiffFileStat) => {

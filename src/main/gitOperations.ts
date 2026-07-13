@@ -45,6 +45,46 @@ const execFileAsync = promisify(execFile);
 // Cache for simple-git instances to avoid creating new ones on every operation
 const simpleGitCache = new Map<string, SimpleGit>();
 
+// Short-TTL result cache with in-flight dedup for read-only git operations.
+// Several change-driven refreshers (useGitStatus, useSourceControl,
+// useWorkingTreeDiff) react to the same repoChanged signal at once; sharing
+// results collapses their subprocess fan-out into one execution.
+const GIT_OP_CACHE_TTL_MS = 1000;
+const gitOpCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+
+function cachedGitOp<T>(op: string, repoPath: string, run: () => Promise<T>): Promise<T> {
+  const key = `${op}\0${repoPath}`;
+  const entry = gitOpCache.get(key);
+  if (entry && entry.expiresAt > Date.now()) {
+    return entry.promise as Promise<T>;
+  }
+  const promise = run();
+  gitOpCache.set(key, { expiresAt: Date.now() + GIT_OP_CACHE_TTL_MS, promise });
+  promise.catch(() => {
+    // Don't serve cached failures
+    if (gitOpCache.get(key)?.promise === promise) {
+      gitOpCache.delete(key);
+    }
+  });
+  return promise;
+}
+
+/**
+ * Drop cached read results after a mutating operation so the UI refresh that
+ * follows a stage/commit/pull sees fresh state instead of a <1s stale entry.
+ */
+export function invalidateGitOpCache(repoPath?: string): void {
+  if (!repoPath) {
+    gitOpCache.clear();
+    return;
+  }
+  for (const key of gitOpCache.keys()) {
+    if (key.endsWith(`\0${repoPath}`)) {
+      gitOpCache.delete(key);
+    }
+  }
+}
+
 // Track active operations per repo for cancellation support
 const activeOperations = new Map<string, { process: ChildProcess; aborted: boolean }>();
 
@@ -168,13 +208,14 @@ function getSimpleGit(repoPath: string): SimpleGit {
  */
 export function clearSimpleGitCache(repoPath: string): void {
   simpleGitCache.delete(repoPath);
+  defaultBranchCache.delete(repoPath);
 }
 
 /**
  * Check if a path is a WSL UNC path (Windows accessing WSL filesystem).
  * Matches: \\wsl$\distro\... or \\wsl.localhost\distro\... or //wsl$/...
  */
-function isWslPath(filePath: string): boolean {
+export function isWslPath(filePath: string): boolean {
   if (process.platform !== 'win32') return false;
   const normalized = filePath.replace(/\\/g, '/').toLowerCase();
   return normalized.startsWith('//wsl$/') || normalized.startsWith('//wsl.localhost/');
@@ -387,10 +428,12 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
       return null;
     }
 
-    // Get current branch and status in parallel
+    // Get current branch and status in parallel. --no-optional-locks stops
+    // git from opportunistically rewriting .git/index during these background
+    // reads, which would re-trigger the repo change watcher.
     const [branchResult, statusResult] = await Promise.allSettled([
       execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath }),
-      execAsync('git status --porcelain -u', { cwd: repoPath }),
+      execAsync('git --no-optional-locks status --porcelain -u', { cwd: repoPath }),
     ]);
 
     // Handle potential failures in parallel operations
@@ -428,9 +471,12 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
 
       try {
         // Get numstat for tracked changes (staged + unstaged)
-        const { stdout: diffOutput } = await execAsync('git diff --numstat HEAD', {
-          cwd: repoPath,
-        });
+        const { stdout: diffOutput } = await execAsync(
+          'git --no-optional-locks diff --numstat HEAD',
+          {
+            cwd: repoPath,
+          }
+        );
 
         // Parse numstat output: "added\tdeleted\tfilename"
         const lines = diffOutput.trim().split('\n').filter(Boolean);
@@ -447,40 +493,15 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
         console.debug(`[Git] Failed to get diff numstat for ${repoPath}:`, error);
       }
 
-      // Get line counts for untracked files using git diff --no-index
+      // Count lines of untracked files by reading them directly (no git spawns)
       // Limit to first 50 files to avoid performance issues with many untracked files
       const filesToCount = untrackedFiles.slice(0, 50);
       if (filesToCount.length > 0) {
-        // Use /dev/null for Linux/WSL, NUL for native Windows
-        const nullDevice =
-          process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-        const lineCountPromises = filesToCount.map(async (filePath) => {
-          try {
-            // Use execFileAsync to avoid shell injection with file paths
-            const { stdout } = await execFileAsync(
-              'git',
-              ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-              { cwd: repoPath }
-            ).catch((err) => {
-              // git diff --no-index exits with code 1 when files differ (expected)
-              if (err.stdout) return { stdout: err.stdout };
-              throw err;
-            });
-
-            const match = stdout.trim().match(/^(\d+|-)\s+/);
-            if (match && match[1] !== '-') {
-              return parseInt(match[1], 10) || 0;
-            }
-            return 0;
-          } catch (error) {
-            console.debug(`[Git] Failed to count lines for ${filePath}:`, error);
-            return 0;
-          }
-        });
-
-        const lineCounts = await Promise.all(lineCountPromises);
-        for (const count of lineCounts) {
-          additions += count;
+        const lineCounts = await Promise.all(
+          filesToCount.map((filePath) => countUntrackedFileLines(repoPath, filePath))
+        );
+        for (const { lineCount } of lineCounts) {
+          additions += lineCount;
         }
       }
     }
@@ -489,6 +510,59 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
   } catch (error) {
     console.error(`[Git] Failed to get git status for ${repoPath}:`, error);
     return null;
+  }
+}
+
+// Bounds for untracked-file line counting: read in chunks to keep memory flat
+// and stop after a generous cap since the count only feeds a status badge.
+const UNTRACKED_COUNT_CHUNK_BYTES = 64 * 1024;
+const UNTRACKED_COUNT_MAX_BYTES = 32 * 1024 * 1024;
+const BINARY_PROBE_BYTES = 8000;
+
+/**
+ * Count the lines of an untracked file by reading it directly.
+ * Replaces spawning `git diff --no-index` per file, which forked up to 100
+ * git processes per status poll. Uses git's binary heuristic (NUL byte near
+ * the start of the file).
+ */
+async function countUntrackedFileLines(
+  repoPath: string,
+  filePath: string
+): Promise<{ lineCount: number; isBinary: boolean }> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    handle = await fs.open(path.join(repoPath, filePath), 'r');
+    const buffer = Buffer.alloc(UNTRACKED_COUNT_CHUNK_BYTES);
+    let lineCount = 0;
+    let totalRead = 0;
+    let lastByte = -1;
+
+    while (totalRead < UNTRACKED_COUNT_MAX_BYTES) {
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, totalRead);
+      if (bytesRead === 0) break;
+
+      if (totalRead === 0) {
+        const probe = buffer.subarray(0, Math.min(BINARY_PROBE_BYTES, bytesRead));
+        if (probe.includes(0)) {
+          return { lineCount: 0, isBinary: true };
+        }
+      }
+
+      for (let i = 0; i < bytesRead; i++) {
+        if (buffer[i] === 10) lineCount++;
+      }
+      lastByte = buffer[bytesRead - 1];
+      totalRead += bytesRead;
+    }
+
+    // Git counts a trailing partial line as a line
+    if (totalRead > 0 && lastByte !== 10) lineCount++;
+    return { lineCount, isBinary: false };
+  } catch {
+    // Unreadable, deleted, or a directory - report zero lines
+    return { lineCount: 0, isBinary: false };
+  } finally {
+    await handle?.close().catch(() => undefined);
   }
 }
 
@@ -1054,13 +1128,40 @@ export async function getCommitHash(repoPath: string, branch: string): Promise<s
   return commit.trim();
 }
 
+// The default branch almost never changes, but getAheadBehind resolves it on
+// every poll for unpushed branches. Cache per repo; cleared via clearSimpleGitCache.
+const defaultBranchCache = new Map<string, string>();
+
 /**
  * Get the default branch name (main or master).
  */
 export async function getDefaultBranch(repoPath: string): Promise<string> {
+  const cached = defaultBranchCache.get(repoPath);
+  if (cached) {
+    return cached;
+  }
+  const branch = await resolveDefaultBranch(repoPath);
+  defaultBranchCache.set(repoPath, branch);
+  return branch;
+}
+
+async function resolveDefaultBranch(repoPath: string): Promise<string> {
+  // Fast path: origin/HEAD symbolic ref is resolved locally, no network
+  try {
+    const { stdout } = await execAsync('git symbolic-ref refs/remotes/origin/HEAD', {
+      cwd: repoPath,
+    });
+    const match = stdout.trim().match(/^refs\/remotes\/origin\/(.+)$/);
+    if (match) {
+      return match[1];
+    }
+  } catch {
+    // origin/HEAD not set locally; fall through to remote query
+  }
+
   try {
     if (isWslPath(repoPath)) {
-      // Try to get the default branch from origin
+      // Try to get the default branch from origin (network round-trip)
       const { stdout } = await execAsync('git remote show origin', { cwd: repoPath });
       const match = stdout.match(/HEAD branch: (\S+)/);
       if (match) {
@@ -1068,7 +1169,7 @@ export async function getDefaultBranch(repoPath: string): Promise<string> {
       }
     } else {
       const git = getSimpleGit(repoPath);
-      // Try to get the default branch from origin
+      // Try to get the default branch from origin (network round-trip)
       const remotes = await git.remote(['show', 'origin']);
       if (remotes) {
         const match = remotes.match(/HEAD branch: (\S+)/);
@@ -1252,40 +1353,16 @@ export async function getWorkingTreeStats(repoPath: string): Promise<WorkingTree
     }
   }
 
-  // Get line counts for untracked files using git diff --no-index
-  // This is efficient: git counts lines without us loading files into memory
+  // Count lines of untracked files by reading them directly (no git spawns)
   // Limit to first 100 files to avoid performance issues with many untracked files
   const filesToCount = untrackedFiles.slice(0, 100);
   if (filesToCount.length > 0) {
-    // Use /dev/null for Linux/WSL, NUL for native Windows
-    const nullDevice = process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-    const lineCountPromises = filesToCount.map(async (filePath) => {
-      try {
-        // Use execFileAsync to avoid shell injection with file paths
-        const { stdout } = await execFileAsync(
-          'git',
-          ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-          { cwd: repoPath }
-        ).catch((err) => {
-          // git diff --no-index exits with code 1 when files differ (expected for new files)
-          if (err.stdout) return { stdout: err.stdout };
-          throw err;
-        });
-
-        // Parse numstat output: "42    0    path/to/file"
-        const match = stdout.trim().match(/^(\d+|-)\s+(\d+|-)\s+/);
-        if (match) {
-          const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-          const isBinary = match[1] === '-'; // Binary files show "-" for line counts
-          return { filePath, lineCount: additions, isBinary };
-        }
-        return { filePath, lineCount: 0, isBinary: false };
-      } catch {
-        return { filePath, lineCount: 0, isBinary: false };
-      }
-    });
-
-    const lineCountResults = await Promise.all(lineCountPromises);
+    const lineCountResults = await Promise.all(
+      filesToCount.map(async (filePath) => ({
+        filePath,
+        ...(await countUntrackedFileLines(repoPath, filePath)),
+      }))
+    );
     for (const lineResult of lineCountResults) {
       files.push({
         path: lineResult.filePath,
@@ -1338,6 +1415,54 @@ export async function getSingleWorkingTreeFileDiff(
   }
 
   return null;
+}
+
+// git diff HEAD across many changed files can be large; the default 1MB
+// exec buffer would reject with ENOBUFS.
+const DIFF_MAX_BUFFER = 64 * 1024 * 1024;
+
+/**
+ * Get full diffs (with hunks) for many working-tree files at once.
+ * Runs a single `git diff HEAD` and picks the requested files from the
+ * parsed result, instead of one git process + IPC round-trip per file.
+ * Untracked files (absent from diff output) get a synthetic diff.
+ */
+export async function getWorkingTreeFileDiffs(
+  repoPath: string,
+  filePaths: string[]
+): Promise<DiffFile[]> {
+  if (filePaths.length === 0) return [];
+
+  let diffOutput: string;
+  if (isWslPath(repoPath)) {
+    const { stdout } = await execAsync('git diff HEAD', {
+      cwd: repoPath,
+      maxBuffer: DIFF_MAX_BUFFER,
+    });
+    diffOutput = stdout;
+  } else {
+    const git = getSimpleGit(repoPath);
+    diffOutput = await git.diff(['HEAD']);
+  }
+
+  const parsedByPath = new Map<string, DiffFile>();
+  if (diffOutput.trim()) {
+    for (const file of parseDiff(diffOutput)) {
+      parsedByPath.set(file.path, file);
+    }
+  }
+
+  const results = await Promise.all(
+    filePaths.map(async (filePath) => {
+      const parsed = parsedByPath.get(filePath);
+      if (parsed) return parsed;
+      // Not in diff output - untracked file gets a synthetic all-additions diff
+      const isUntracked = await isFileUntracked(repoPath, filePath);
+      return isUntracked ? generateUntrackedFileDiff(repoPath, filePath) : null;
+    })
+  );
+
+  return results.filter((file): file is DiffFile => file !== null);
 }
 
 /**
@@ -1616,41 +1741,16 @@ export async function getFileStatuses(repoPath: string): Promise<FileStatusResul
       }
     }
 
-    // Get line counts for untracked files using git diff --no-index
-    // This is efficient: git counts lines without us loading files into memory
+    // Count lines of untracked files by reading them directly (no git spawns)
     // Limit to first 100 files to avoid performance issues with many untracked files
     const filesToCount = untrackedFilePaths.slice(0, 100);
     if (filesToCount.length > 0) {
-      // Use /dev/null for Linux/WSL, NUL for native Windows
-      const nullDevice = process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-      const lineCountPromises = filesToCount.map(async (filePath) => {
-        try {
-          // Use execFileAsync to avoid shell injection with file paths
-          const { stdout } = await execFileAsync(
-            'git',
-            ['diff', '--no-index', '--numstat', '--', nullDevice, filePath],
-            { cwd: repoPath }
-          ).catch((err) => {
-            // git diff --no-index exits with code 1 when files differ (which is always for new files)
-            // but still outputs the numstat, so we capture stdout from the error
-            if (err.stdout) return { stdout: err.stdout };
-            throw err;
-          });
-
-          // Parse numstat output: "42    0    path/to/file" (additions, deletions, path)
-          const match = stdout.trim().match(/^(\d+|-)\s+(\d+|-)\s+/);
-          if (match) {
-            const additions = match[1] === '-' ? 0 : parseInt(match[1], 10);
-            return { filePath, lineCount: additions };
-          }
-          return { filePath, lineCount: 0 };
-        } catch {
-          // Could be binary, unreadable, or deleted
-          return { filePath, lineCount: 0 };
-        }
-      });
-
-      const lineCountResults = await Promise.all(lineCountPromises);
+      const lineCountResults = await Promise.all(
+        filesToCount.map(async (filePath) => ({
+          filePath,
+          lineCount: (await countUntrackedFileLines(repoPath, filePath)).lineCount,
+        }))
+      );
       for (const lineResult of lineCountResults) {
         result.untracked.push({
           path: lineResult.filePath,
@@ -3761,6 +3861,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   // Note: For commitWithOutput, we use event.sender.send to stream output back to renderer
   ipcMain.handle('git:clearCache', (_, repoPath: string) => {
     clearSimpleGitCache(repoPath);
+    invalidateGitOpCache(repoPath);
   });
 
   ipcMain.handle('git:isRepo', async (_, folderPath: string) => {
@@ -3772,7 +3873,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getStatus', async (_, repoPath: string) => {
-    return getGitStatus(repoPath);
+    return cachedGitOp('status', repoPath, () => getGitStatus(repoPath));
   });
 
   ipcMain.handle('git:listBranches', async (_, repoPath: string) => {
@@ -3780,7 +3881,10 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:fetchBranches', async (_, repoPath: string) => {
-    return fetchBranches(repoPath);
+    const result = await fetchBranches(repoPath);
+    // Fetch updates remote refs, which feed ahead/behind
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle(
@@ -3792,14 +3896,18 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
       basePath: string | null,
       sourceBranch?: string
     ) => {
-      return createWorktree(repoPath, taskName, basePath, sourceBranch);
+      const result = await createWorktree(repoPath, taskName, basePath, sourceBranch);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
   ipcMain.handle(
     'git:removeWorktree',
     async (_, worktreePath: string, prune: boolean, branchName?: string) => {
-      return removeWorktree(worktreePath, prune, branchName);
+      const result = await removeWorktree(worktreePath, prune, branchName);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
@@ -3826,7 +3934,9 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   ipcMain.handle(
     'git:forceRemoveWorktree',
     async (_, repoPath: string, worktreePath: string, branchName?: string) => {
-      return forceRemoveWorktree(repoPath, worktreePath, branchName);
+      const result = await forceRemoveWorktree(repoPath, worktreePath, branchName);
+      invalidateGitOpCache();
+      return result;
     }
   );
 
@@ -3872,7 +3982,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getCurrentBranch', async (_, repoPath: string) => {
-    return getCurrentBranch(repoPath);
+    return cachedGitOp('currentBranch', repoPath, () => getCurrentBranch(repoPath));
   });
 
   ipcMain.handle('git:getWorkingTreeDiff', async (_, repoPath: string) => {
@@ -3880,7 +3990,7 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getWorkingTreeStats', async (_, repoPath: string) => {
-    return getWorkingTreeStats(repoPath);
+    return cachedGitOp('workingTreeStats', repoPath, () => getWorkingTreeStats(repoPath));
   });
 
   ipcMain.handle(
@@ -3890,60 +4000,89 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
     }
   );
 
+  ipcMain.handle(
+    'git:getWorkingTreeFileDiffs',
+    async (_, repoPath: string, filePaths: string[]) => {
+      return getWorkingTreeFileDiffs(repoPath, filePaths);
+    }
+  );
+
   // Source control operations
   ipcMain.handle('git:getFileStatuses', async (_, repoPath: string) => {
-    return getFileStatuses(repoPath);
+    return cachedGitOp('fileStatuses', repoPath, () => getFileStatuses(repoPath));
   });
 
   ipcMain.handle('git:stageFiles', async (_, repoPath: string, files: string[]) => {
-    return stageFiles(repoPath, files);
+    const result = await stageFiles(repoPath, files);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:stageAll', async (_, repoPath: string) => {
-    return stageAll(repoPath);
+    const result = await stageAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:unstageFiles', async (_, repoPath: string, files: string[]) => {
-    return unstageFiles(repoPath, files);
+    const result = await unstageFiles(repoPath, files);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:unstageAll', async (_, repoPath: string) => {
-    return unstageAll(repoPath);
+    const result = await unstageAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle(
     'git:discardFiles',
     async (_, repoPath: string, files: string[], untracked: string[]) => {
-      return discardFiles(repoPath, files, untracked);
+      const result = await discardFiles(repoPath, files, untracked);
+      invalidateGitOpCache(repoPath);
+      return result;
     }
   );
 
   ipcMain.handle('git:discardAll', async (_, repoPath: string) => {
-    return discardAll(repoPath);
+    const result = await discardAll(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:commit', async (_, repoPath: string, message: string) => {
-    return commit(repoPath, message);
+    const result = await commit(repoPath, message);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:push', async (_, repoPath: string) => {
-    return push(repoPath);
+    const result = await push(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:pull', async (_, repoPath: string) => {
-    return pull(repoPath);
+    const result = await pull(repoPath);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:getAheadBehind', async (_, repoPath: string) => {
-    return getAheadBehind(repoPath);
+    return cachedGitOp('aheadBehind', repoPath, () => getAheadBehind(repoPath));
   });
 
   ipcMain.handle('git:getRemoteUrl', async (_, repoPath: string, remoteName?: string) => {
-    return getRemoteUrl(repoPath, remoteName);
+    return cachedGitOp(`remoteUrl:${remoteName ?? ''}`, repoPath, () =>
+      getRemoteUrl(repoPath, remoteName)
+    );
   });
 
   ipcMain.handle('git:addRemote', async (_, repoPath: string, name: string, url: string) => {
-    return addRemote(repoPath, name, url);
+    const result = await addRemote(repoPath, name, url);
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:hasPreCommitHooks', async (_, repoPath: string) => {
@@ -3955,24 +4094,30 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:commitWithOutput', async (event, repoPath: string, message: string) => {
-    return commitWithOutput(repoPath, message, (line) => {
+    const result = await commitWithOutput(repoPath, message, (line) => {
       // Stream each line of output back to the renderer, scoped by repoPath
       event.sender.send('git:commit-output', repoPath, line);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:commitWithHooks', async (event, repoPath: string, message: string) => {
-    return commitWithHooks(repoPath, message, (line, phase, hook) => {
+    const result = await commitWithHooks(repoPath, message, (line, phase, hook) => {
       // Stream each line of output with phase and hook info back to the renderer
       event.sender.send('git:operation-output', repoPath, line, phase, hook);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:pushWithHooks', async (event, repoPath: string) => {
-    return pushWithHooks(repoPath, (line, phase, hook) => {
+    const result = await pushWithHooks(repoPath, (line, phase, hook) => {
       // Stream each line of output with phase and hook info back to the renderer
       event.sender.send('git:operation-output', repoPath, line, phase, hook);
     });
+    invalidateGitOpCache(repoPath);
+    return result;
   });
 
   ipcMain.handle('git:abortOperation', async (_, repoPath: string) => {

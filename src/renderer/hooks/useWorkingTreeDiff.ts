@@ -4,12 +4,10 @@ import { useAppStore } from '../stores/appStore';
 
 // Threshold for auto-loading hunks (files with more changes require manual expand)
 const AUTO_LOAD_THRESHOLD = 500;
-const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 interface UseWorkingTreeDiffOptions {
   repoPath: string | null;
   enabled?: boolean;
-  pollIntervalMs?: number;
 }
 
 // Extended DiffFile that tracks whether hunks are loaded
@@ -52,7 +50,6 @@ function isSmallFile(file: DiffFileStat): boolean {
 export function useWorkingTreeDiff({
   repoPath,
   enabled = true,
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 }: UseWorkingTreeDiffOptions): UseWorkingTreeDiffResult {
   const [files, setFiles] = useState<LazyDiffFile[]>([]);
   const [headCommit, setHeadCommit] = useState<string | null>(null);
@@ -124,60 +121,48 @@ export function useWorkingTreeDiff({
           const oldStats = previousStatsRef.current;
           previousStatsRef.current = statsResult.files;
 
-          // Determine which files need hunks loaded
-          const smallFiles = statsResult.files.filter(isSmallFile);
-          const largeFiles = statsResult.files.filter((f) => !isSmallFile(f));
-
-          // For small files, load hunks in parallel
-          const smallFileHunks = await Promise.all(
-            smallFiles.map(async (file) => {
-              // Check if we already have hunks cached
-              const cachedHunks = loadedHunksRef.current.get(file.path);
-              if (cachedHunks && !isInitialLoad) {
-                // Reuse cached hunks if file stats haven't changed
-                const prevFile = oldStats.find((f) => f.path === file.path);
-                if (
-                  prevFile &&
-                  prevFile.additions === file.additions &&
-                  prevFile.deletions === file.deletions
-                ) {
-                  return { ...file, hunks: cachedHunks, hunksLoaded: true };
-                }
+          // Determine which small files actually need hunks fetched (cache
+          // misses or changed stats); everything else reuses cached hunks
+          const oldStatsByPath = new Map(oldStats.map((f) => [f.path, f]));
+          const pathsToFetch: string[] = [];
+          for (const file of statsResult.files) {
+            if (!isSmallFile(file)) continue;
+            const cachedHunks = loadedHunksRef.current.get(file.path);
+            if (cachedHunks && !isInitialLoad) {
+              const prevFile = oldStatsByPath.get(file.path);
+              if (
+                prevFile &&
+                prevFile.additions === file.additions &&
+                prevFile.deletions === file.deletions
+              ) {
+                continue;
               }
+            }
+            pathsToFetch.push(file.path);
+          }
 
-              try {
-                const diffFile = await window.terminal.getSingleWorkingTreeFileDiff(
-                  repoPath,
-                  file.path
-                );
-                if (diffFile) {
-                  loadedHunksRef.current.set(file.path, diffFile.hunks);
-                  return { ...file, hunks: diffFile.hunks, hunksLoaded: true };
-                }
-              } catch {
-                // If loading fails, return without hunks
+          // One git diff + one IPC round-trip for all files needing hunks
+          if (pathsToFetch.length > 0) {
+            try {
+              const diffFiles = await window.terminal.getWorkingTreeFileDiffs(
+                repoPath,
+                pathsToFetch
+              );
+              for (const diffFile of diffFiles) {
+                loadedHunksRef.current.set(diffFile.path, diffFile.hunks);
               }
-              return { ...file, hunks: [], hunksLoaded: false };
-            })
-          );
+            } catch {
+              // If loading fails, files render without hunks
+            }
+          }
 
-          // For large files, preserve existing hunks if already loaded
-          const largeFilesWithState: LazyDiffFile[] = largeFiles.map((file) => {
+          const allFiles: LazyDiffFile[] = statsResult.files.map((file) => {
             const cachedHunks = loadedHunksRef.current.get(file.path);
             if (cachedHunks) {
               return { ...file, hunks: cachedHunks, hunksLoaded: true };
             }
             return { ...file, hunks: [], hunksLoaded: false };
           });
-
-          // Combine and sort by original order
-          const allFiles: LazyDiffFile[] = [...smallFileHunks, ...largeFilesWithState].sort(
-            (a, b) => {
-              const aIndex = statsResult.files.findIndex((f) => f.path === a.path);
-              const bIndex = statsResult.files.findIndex((f) => f.path === b.path);
-              return aIndex - bIndex;
-            }
-          );
 
           setFiles(allFiles);
 
@@ -232,23 +217,29 @@ export function useWorkingTreeDiff({
     };
   }, [repoPath, enabled, fetchStats]);
 
-  // Check if path is being deleted (to skip polling during deletion)
+  // Check if path is being deleted (to skip refreshes during deletion)
   const isPathDeleting = useAppStore((state) => state.isPathDeleting);
+  const throttleMs = useAppStore((state) => state.settings.gitPollIntervalMs);
 
-  // Poll for stats at regular intervals
+  // Refresh stats when the main-process repo watcher signals a change
+  // (throttled there) or the window regains focus, instead of polling
   useEffect(() => {
-    if (!enabled || !repoPath || pollIntervalMs <= 0) return;
+    if (!enabled || !repoPath) return;
 
     let isFetching = false;
+    let refetchQueued = false;
     let isCleanedUp = false;
 
-    const intervalId = setInterval(async () => {
-      if (isFetching || isCleanedUp) return;
-      if (!mountedRef.current || isPathDeleting(repoPath)) return;
+    const refreshStats = async () => {
+      if (isFetching) {
+        refetchQueued = true;
+        return;
+      }
+      if (isCleanedUp || !mountedRef.current || isPathDeleting(repoPath)) return;
 
       isFetching = true;
       try {
-        // Only fetch stats during polling, not full hunks
+        // Only fetch stats on change signals, not full hunks
         const statsResult = await window.terminal.getWorkingTreeStats(repoPath);
         if (!mountedRef.current || isCleanedUp) return;
 
@@ -296,34 +287,34 @@ export function useWorkingTreeDiff({
             return newFiles;
           });
 
-          // Refetch hunks for small files that need it
+          // Refetch hunks for small files that need it: one git diff + one
+          // IPC round-trip + one state update for the whole batch
           const smallFilesNeedingHunks = statsResult.files.filter(
             (f) => isSmallFile(f) && !loadedHunksRef.current.has(f.path)
           );
 
           if (smallFilesNeedingHunks.length > 0) {
-            Promise.all(
-              smallFilesNeedingHunks.map(async (file) => {
-                try {
-                  const diffFile = await window.terminal.getSingleWorkingTreeFileDiff(
-                    repoPath,
-                    file.path
-                  );
-                  if (diffFile && mountedRef.current) {
-                    loadedHunksRef.current.set(file.path, diffFile.hunks);
-                    setFiles((prev) =>
-                      prev.map((f) =>
-                        f.path === file.path
-                          ? { ...f, hunks: diffFile.hunks, hunksLoaded: true }
-                          : f
-                      )
-                    );
-                  }
-                } catch {
-                  // Ignore errors for individual files
+            window.terminal
+              .getWorkingTreeFileDiffs(
+                repoPath,
+                smallFilesNeedingHunks.map((f) => f.path)
+              )
+              .then((diffFiles) => {
+                if (!mountedRef.current || isCleanedUp || diffFiles.length === 0) return;
+                const hunksByPath = new Map(diffFiles.map((df) => [df.path, df.hunks]));
+                for (const [filePath, hunks] of hunksByPath) {
+                  loadedHunksRef.current.set(filePath, hunks);
                 }
+                setFiles((prev) =>
+                  prev.map((f) => {
+                    const hunks = hunksByPath.get(f.path);
+                    return hunks ? { ...f, hunks, hunksLoaded: true } : f;
+                  })
+                );
               })
-            );
+              .catch(() => {
+                // Ignore errors; files render without hunks until the next change signal
+              });
           }
 
           // Clean up cached hunks for files that no longer exist
@@ -336,14 +327,26 @@ export function useWorkingTreeDiff({
         }
       } finally {
         isFetching = false;
+        if (refetchQueued && !isCleanedUp) {
+          refetchQueued = false;
+          refreshStats();
+        }
       }
-    }, pollIntervalMs);
+    };
+
+    window.watcher.watchRepoChanges(repoPath, throttleMs);
+    const unsubscribe = window.watcher.onRepoChanged(repoPath, refreshStats);
+
+    const onFocus = () => refreshStats();
+    window.addEventListener('focus', onFocus);
 
     return () => {
       isCleanedUp = true;
-      clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      unsubscribe();
+      window.watcher.unwatchRepoChanges(repoPath);
     };
-  }, [enabled, repoPath, pollIntervalMs, isPathDeleting]);
+  }, [enabled, repoPath, throttleMs, isPathDeleting]);
 
   return {
     files,

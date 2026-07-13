@@ -10,6 +10,7 @@ import {
 import { Terminal } from '@xterm/xterm';
 import { FitAddon } from '@xterm/addon-fit';
 import { WebLinksAddon } from '@xterm/addon-web-links';
+import { WebglAddon } from '@xterm/addon-webgl';
 import { ClipboardAddon } from '@xterm/addon-clipboard';
 import '@xterm/xterm/css/xterm.css';
 import { useTerminal } from '../../hooks/useTerminal';
@@ -184,6 +185,19 @@ export const TerminalView = memo(
       terminal.loadAddon(webLinksAddon);
       terminal.loadAddon(new ClipboardAddon());
       terminal.open(containerRef.current);
+
+      // WebGL renderer: markedly faster than the default DOM renderer under
+      // high-throughput output. Fall back to the DOM renderer if the GPU
+      // context is unavailable or gets lost (xterm reverts on addon dispose).
+      try {
+        const webglAddon = new WebglAddon();
+        webglAddon.onContextLoss(() => {
+          webglAddon.dispose();
+        });
+        terminal.loadAddon(webglAddon);
+      } catch (error) {
+        console.warn('[TerminalView] WebGL renderer unavailable, using DOM renderer:', error);
+      }
 
       // Only fit if the container is visible (has dimensions)
       if (containerRef.current.offsetWidth > 0 && containerRef.current.offsetHeight > 0) {
@@ -384,21 +398,31 @@ export const TerminalView = memo(
       }
     }, []);
 
-    // Handle resize
+    // Handle resize. fit() reflows (rewraps) the whole scrollback buffer,
+    // so coalesce observer callbacks to at most one fit per animation frame
+    // instead of one per raw resize event during splitter drags.
     useEffect(() => {
       if (!containerRef.current) return;
 
+      let rafId: number | null = null;
       const handleResize = () => {
-        if (fitAddonRef.current && terminalRef.current && isVisible) {
-          fitPreservingScroll();
-          resize(terminalRef.current.cols, terminalRef.current.rows);
-        }
+        if (rafId !== null) return;
+        rafId = requestAnimationFrame(() => {
+          rafId = null;
+          if (fitAddonRef.current && terminalRef.current && isVisible) {
+            fitPreservingScroll();
+            resize(terminalRef.current.cols, terminalRef.current.rows);
+          }
+        });
       };
 
       const resizeObserver = new ResizeObserver(handleResize);
       resizeObserver.observe(containerRef.current);
 
       return () => {
+        if (rafId !== null) {
+          cancelAnimationFrame(rafId);
+        }
         resizeObserver.disconnect();
       };
     }, [isVisible, resize, fitPreservingScroll]);

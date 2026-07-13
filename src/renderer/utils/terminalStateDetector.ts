@@ -49,14 +49,22 @@ export const WAITING_PATTERNS: RegExp[] = [
 
 export type DetectedState = Extract<TerminalStatus, 'running' | 'waiting' | 'idle'> | null;
 
+// Only the most recent output matters for prompt detection
+const RECENT_OUTPUT_CHARS = 300;
+// Raw tail to strip before matching: ANSI overhead rarely exceeds ~3x the
+// visible text, and slicing first avoids regex passes over the whole buffer
+const RAW_TAIL_CHARS = 1200;
+
 /**
  * Detect waiting state from terminal output patterns.
  */
 export function detectWaitingState(output: string): boolean {
-  // Strip ANSI codes for cleaner pattern matching
-  const cleanOutput = stripAnsi(output);
+  // Slice the raw tail first, then strip ANSI codes: this runs on every
+  // output chunk and every detection tick, so regexing the full buffer
+  // (up to 10KB) per call is wasted work
+  const cleanOutput = stripAnsi(output.slice(-RAW_TAIL_CHARS));
   // Check most recent output (last 300 chars)
-  const recentOutput = cleanOutput.slice(-300);
+  const recentOutput = cleanOutput.slice(-RECENT_OUTPUT_CHARS);
 
   for (const pattern of WAITING_PATTERNS) {
     if (pattern.test(recentOutput)) {

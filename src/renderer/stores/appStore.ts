@@ -1049,13 +1049,19 @@ export const useAppStore = create<AppStore>((set, get) => ({
     await window.terminal.spawn(worktreeSessionId, worktreeSession.path, 'claude');
   },
 
-  recordTerminalActivity: (worktreeSessionId) =>
+  recordTerminalActivity: (worktreeSessionId) => {
+    // Hot path: called for every output chunk. Once the terminal is known to
+    // have produced output there is nothing left to record (lastActivityTime
+    // has no readers), so skip the Map clone and store notification entirely.
+    const existing = get().terminals.get(worktreeSessionId);
+    if (existing?.hasReceivedOutput) return;
+
     set((state) => {
       const terminals = new Map(state.terminals);
-      const existing = terminals.get(worktreeSessionId);
-      if (existing) {
+      const current = terminals.get(worktreeSessionId);
+      if (current) {
         terminals.set(worktreeSessionId, {
-          ...existing,
+          ...current,
           lastActivityTime: Date.now(),
           hasReceivedOutput: true,
         });
@@ -1069,7 +1075,8 @@ export const useAppStore = create<AppStore>((set, get) => ({
         });
       }
       return { terminals, terminalsVersion: state.terminalsVersion + 1 };
-    }),
+    });
+  },
 
   resetTerminalState: (worktreeSessionId) =>
     set((state) => {

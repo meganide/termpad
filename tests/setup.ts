@@ -275,6 +275,7 @@ Object.defineProperty(window, 'terminal', {
       .fn()
       .mockResolvedValue({ files: [], headCommit: 'abc123', isDirty: false }),
     getSingleWorkingTreeFileDiff: vi.fn().mockResolvedValue(null),
+    getWorkingTreeFileDiffs: vi.fn().mockResolvedValue([]),
 
     // Clone
     cloneRepository: vi.fn().mockResolvedValue({ success: true, path: '/test/cloned' }),
@@ -358,6 +359,9 @@ Object.defineProperty(window, 'watcher', {
     onGitRestored: vi.fn().mockReturnValue(vi.fn()),
     onRepositoryDeleted: vi.fn().mockReturnValue(vi.fn()),
     onConfigChanged: vi.fn().mockReturnValue(vi.fn()),
+    watchRepoChanges: vi.fn(),
+    unwatchRepoChanges: vi.fn(),
+    onRepoChanged: vi.fn().mockReturnValue(vi.fn()),
   },
   configurable: true,
   writable: true,

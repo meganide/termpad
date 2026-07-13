@@ -17,6 +17,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '../../components/ui/context-menu';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../stores/appStore';
 import { cn } from '../../lib/utils';
 import {
@@ -192,7 +193,26 @@ export function UserTerminalSection({
     getUserTabScrollPosition,
     findUserTabsWithScript,
     closeUserTabById,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      activeUserTabId: s.activeUserTabId,
+      userTerminalTabs: s.userTerminalTabs,
+      createUserTab: s.createUserTab,
+      closeUserTab: s.closeUserTab,
+      renameUserTab: s.renameUserTab,
+      setActiveUserTab: s.setActiveUserTab,
+      getUserTabsForWorktree: s.getUserTabsForWorktree,
+      getUserTerminalIdForTab: s.getUserTerminalIdForTab,
+      unregisterTerminal: s.unregisterTerminal,
+      repositories: s.repositories,
+      updateRepositoryScriptsConfig: s.updateRepositoryScriptsConfig,
+      reorderUserTabs: s.reorderUserTabs,
+      updateUserTabScrollPosition: s.updateUserTabScrollPosition,
+      getUserTabScrollPosition: s.getUserTabScrollPosition,
+      findUserTabsWithScript: s.findUserTabsWithScript,
+      closeUserTabById: s.closeUserTabById,
+    }))
+  );
 
   // Get tabs for this worktree
   // Note: userTerminalTabs is intentionally in deps to trigger re-render when tabs change

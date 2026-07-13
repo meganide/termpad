@@ -897,15 +897,13 @@ describe('Layout', () => {
       });
 
       // Try to resize to 100px (1200 - 1100 = 100), should be clamped to 300
+      // (drag updates are rAF-coalesced; mouseup applies the final width)
       act(() => {
         fireEvent.mouseMove(document, { clientX: 1100 });
+        fireEvent.mouseUp(document);
       });
 
       expect(pane.style.width).toBe('300px');
-
-      act(() => {
-        fireEvent.mouseUp(document);
-      });
     });
 
     it('respects maximum width of 600px', () => {
@@ -922,15 +920,13 @@ describe('Layout', () => {
       });
 
       // Try to resize to 700px (1200 - 500 = 700), should be clamped to 600
+      // (drag updates are rAF-coalesced; mouseup applies the final width)
       act(() => {
         fireEvent.mouseMove(document, { clientX: 500 });
+        fireEvent.mouseUp(document);
       });
 
       expect(pane.style.width).toBe('600px');
-
-      act(() => {
-        fireEvent.mouseUp(document);
-      });
     });
 
     it('stops resizing on mouseup', () => {

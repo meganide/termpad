@@ -21,7 +21,12 @@ import {
   getUpdateStatus,
   dismissUpdate,
 } from '../autoUpdater';
-import type { OpenEditorResult, OpenFolderResult, ShellInfo } from '../../shared/types';
+import type {
+  OpenEditorResult,
+  OpenFolderResult,
+  ShellInfo,
+  UpdateStatus,
+} from '../../shared/types';
 import type { ShellValidationResult } from '../services/shellDetector';
 
 const execAsync = promisify(exec);
@@ -194,6 +199,23 @@ export function registerIpcHandlers(
     ipcMain.on('updater:dismissUpdate', () => {
       dismissUpdate();
     });
+  } else {
+    // Dev: no auto-updates, but the renderer still calls these channels,
+    // so register stubs to avoid "No handler registered" errors
+    const devUpdateStatus = (): UpdateStatus => ({
+      status: 'idle',
+      currentVersion: app.getVersion(),
+      availableVersion: null,
+      progress: null,
+      error: null,
+      supportsAutoUpdate: false,
+    });
+
+    ipcMain.handle('updater:checkForUpdates', () => devUpdateStatus());
+    ipcMain.handle('updater:downloadUpdate', () => undefined);
+    ipcMain.handle('updater:installUpdate', () => undefined);
+    ipcMain.handle('updater:getStatus', () => devUpdateStatus());
+    ipcMain.on('updater:dismissUpdate', () => undefined);
   }
 }
 

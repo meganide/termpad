@@ -111,7 +111,7 @@ export interface TerminalPreset {
 
 export interface AppSettings {
   worktreeBasePath: string | null; // null = use sibling folder
-  gitPollIntervalMs: number; // default: 5000
+  gitPollIntervalMs: number; // throttle window for change-driven git refreshes; default: 5000
   notifications: NotificationSettings;
   preferredEditor: 'cursor' | 'vscode' | 'folder'; // default: 'cursor'
   defaultShell: string | null; // Shell ID or null for system default
@@ -572,6 +572,7 @@ export interface TerminalAPI {
   getWorkingTreeDiff(repoPath: string): Promise<WorkingTreeDiffResult>;
   getWorkingTreeStats(repoPath: string): Promise<WorkingTreeStatsResult>;
   getSingleWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<DiffFile | null>;
+  getWorkingTreeFileDiffs(repoPath: string, filePaths: string[]): Promise<DiffFile[]>;
 
   // File system
   selectFolder(): Promise<string | null>;
@@ -659,6 +660,11 @@ export interface WatcherAPI {
   onRepositoryDeleted(callback: (repositoryId: string, repoPath: string) => void): () => void;
   // termpad.json change watcher
   onConfigChanged(callback: (repositoryId: string) => void): () => void;
+  // Repo change signal (working tree + git metadata), throttled in the main
+  // process; renderers refetch git data on this signal instead of polling
+  watchRepoChanges(repoPath: string, throttleMs?: number): void;
+  unwatchRepoChanges(repoPath: string): void;
+  onRepoChanged(repoPath: string, callback: () => void): () => void;
 }
 
 // Import ReviewData for the API

@@ -148,12 +148,35 @@ export function highlightCode(code: string, language?: string): string {
   }
 }
 
+// Diff lines are re-rendered far more often than their content changes
+// (polling refreshes, selection, comments), and highlight.js is expensive
+// per call. Cache results keyed by language + content. Map preserves
+// insertion order, so evicting the oldest half approximates LRU cheaply.
+const highlightCache = new Map<string, string>();
+const HIGHLIGHT_CACHE_MAX_ENTRIES = 20_000;
+
 /**
  * Highlight a single line of code.
  * Ensures the highlight state is not carried between lines.
  */
 export function highlightLine(line: string, language?: string): string {
-  return highlightCode(line, language);
+  const key = `${language ?? ''}\0${line}`;
+  const cached = highlightCache.get(key);
+  if (cached !== undefined) {
+    return cached;
+  }
+
+  const result = highlightCode(line, language);
+
+  if (highlightCache.size >= HIGHLIGHT_CACHE_MAX_ENTRIES) {
+    let toDrop = HIGHLIGHT_CACHE_MAX_ENTRIES / 2;
+    for (const oldKey of highlightCache.keys()) {
+      highlightCache.delete(oldKey);
+      if (--toDrop <= 0) break;
+    }
+  }
+  highlightCache.set(key, result);
+  return result;
 }
 
 /**

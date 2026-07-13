@@ -142,7 +142,15 @@ interface TerminalEntry {
   hasReceivedOutput: boolean;
   readyPromise: Promise<void>;
   resolveReady: () => void;
+  pendingOutput: string;
+  flushTimer: NodeJS.Timeout | null;
 }
+
+// Coalesce pty chunks before IPC: fast producers (build logs) emit thousands of
+// small chunks per second, and a structured-clone IPC message per chunk floods
+// the renderer event loop.
+const OUTPUT_FLUSH_INTERVAL_MS = 8;
+const OUTPUT_FLUSH_MAX_CHARS = 64 * 1024;
 
 class TerminalManager {
   private terminals: Map<string, TerminalEntry> = new Map();
@@ -445,6 +453,8 @@ class TerminalManager {
         hasReceivedOutput: false,
         readyPromise,
         resolveReady,
+        pendingOutput: '',
+        flushTimer: null,
       };
 
       // Track quiet period - wait for output to settle before considering shell ready
@@ -489,10 +499,7 @@ class TerminalManager {
             buffer.append(data);
           }
 
-          const win = this.mainWindow();
-          if (win && !win.isDestroyed()) {
-            win.webContents.send('terminal:data', worktreeSessionId, data);
-          }
+          this.queueOutput(worktreeSessionId, terminalEntry, data);
         })
       );
 
@@ -502,6 +509,7 @@ class TerminalManager {
           if (quietPeriodTimer) {
             clearTimeout(quietPeriodTimer);
           }
+          this.flushOutput(worktreeSessionId, terminalEntry);
           this.terminals.delete(worktreeSessionId);
           const win = this.mainWindow();
           if (win && !win.isDestroyed()) {
@@ -521,6 +529,35 @@ class TerminalManager {
       }
     } finally {
       this.spawningInProgress.delete(worktreeSessionId);
+    }
+  }
+
+  private queueOutput(worktreeSessionId: string, entry: TerminalEntry, data: string): void {
+    entry.pendingOutput += data;
+    if (entry.pendingOutput.length >= OUTPUT_FLUSH_MAX_CHARS) {
+      this.flushOutput(worktreeSessionId, entry);
+      return;
+    }
+    if (!entry.flushTimer) {
+      entry.flushTimer = setTimeout(
+        () => this.flushOutput(worktreeSessionId, entry),
+        OUTPUT_FLUSH_INTERVAL_MS
+      );
+    }
+  }
+
+  private flushOutput(worktreeSessionId: string, entry: TerminalEntry): void {
+    if (entry.flushTimer) {
+      clearTimeout(entry.flushTimer);
+      entry.flushTimer = null;
+    }
+    if (!entry.pendingOutput) return;
+
+    const data = entry.pendingOutput;
+    entry.pendingOutput = '';
+    const win = this.mainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('terminal:data', worktreeSessionId, data);
     }
   }
 
@@ -570,6 +607,10 @@ class TerminalManager {
         for (const disposable of entry.disposables) {
           disposable.dispose();
         }
+        if (entry.flushTimer) {
+          clearTimeout(entry.flushTimer);
+          entry.flushTimer = null;
+        }
 
         // On Windows, kill the entire process tree first to release file locks
         // This ensures child processes (like Claude Code) are terminated
@@ -583,6 +624,10 @@ class TerminalManager {
       // Dispose event listeners first to prevent "Object has been destroyed" errors
       for (const disposable of entry.disposables) {
         disposable.dispose();
+      }
+      if (entry.flushTimer) {
+        clearTimeout(entry.flushTimer);
+        entry.flushTimer = null;
       }
       // On Windows, kill the entire process tree first to release file locks
       await killProcessTree(pid);
@@ -657,6 +702,10 @@ class TerminalManager {
       // Dispose event listeners first to prevent "Object has been destroyed" errors
       for (const disposable of entry.disposables) {
         disposable.dispose();
+      }
+      if (entry.flushTimer) {
+        clearTimeout(entry.flushTimer);
+        entry.flushTimer = null;
       }
       killPromises.push(killProcessTree(entry.pty.pid));
     }

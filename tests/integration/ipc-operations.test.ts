@@ -340,7 +340,7 @@ describe('IPC Operations Integration', () => {
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/path');
     });
 
-    it('should poll git status at configured interval', async () => {
+    it('should refetch git status when a repo change is signaled', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
@@ -363,17 +363,22 @@ describe('IPC Operations Integration', () => {
 
       await flushPromises();
 
-      // Initial call
+      // Initial call, and the repo watcher is registered with the throttle
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/path', 5000);
 
-      // Advance timer and check again
-      vi.advanceTimersByTime(5000);
+      // Signal changes from the main-process watcher
+      const onRepoChanged = vi
+        .mocked(window.watcher.onRepoChanged)
+        .mock.calls.find(([path]) => path === '/test/path')?.[1];
+      expect(onRepoChanged).toBeDefined();
+
+      onRepoChanged?.();
       await flushPromises();
 
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
 
-      // Another interval
-      vi.advanceTimersByTime(5000);
+      onRepoChanged?.();
       await flushPromises();
 
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(3);
@@ -421,7 +426,7 @@ describe('IPC Operations Integration', () => {
       expect(window.terminal.getGitStatus).not.toHaveBeenCalled();
     });
 
-    it('should cleanup interval on unmount', async () => {
+    it('should cleanup subscription on unmount', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
@@ -441,11 +446,12 @@ describe('IPC Operations Integration', () => {
 
       unmount();
 
-      // Advance timer after unmount
-      vi.advanceTimersByTime(10000);
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/path');
+
+      // Focus after unmount does not refetch
+      window.dispatchEvent(new Event('focus'));
       await flushPromises();
 
-      // Should not have been called again
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
     });
 

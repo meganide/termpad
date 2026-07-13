@@ -222,8 +222,8 @@ describe('TerminalView', () => {
 
     it('loads addons via loadAddon', () => {
       render(<TerminalView {...defaultProps} />);
-      // FitAddon, WebLinksAddon, ClipboardAddon
-      expect(mockTerminalInstance.loadAddon).toHaveBeenCalledTimes(3);
+      // FitAddon, WebLinksAddon, ClipboardAddon, WebglAddon
+      expect(mockTerminalInstance.loadAddon).toHaveBeenCalledTimes(4);
     });
 
     it('does not call fit on initialization when container has no dimensions', () => {

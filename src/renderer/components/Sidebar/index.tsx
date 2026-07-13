@@ -3,6 +3,7 @@ import { Settings, FolderPlus, Home, Bug } from 'lucide-react';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../stores/appStore';
 import { useSidebarNavigation } from '../../hooks/useSidebarNavigation';
 import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
@@ -40,7 +41,6 @@ export function Sidebar({
   const {
     repositories,
     terminals,
-    terminalsVersion,
     activeTerminalId,
     setActiveTerminal,
     setActiveTab,
@@ -52,11 +52,25 @@ export function Sidebar({
     reorderRepositories,
     worktreeTabs,
     getTerminalIdForTab,
-  } = useAppStore();
-
-  // Force re-render when terminals change (terminalsVersion tracks this)
-  // This is needed because Zustand's shallow comparison doesn't always detect Map changes
-  void terminalsVersion;
+  } = useAppStore(
+    // Store mutations always clone the terminals Map, so its identity is a
+    // reliable change signal under shallow comparison.
+    useShallow((s) => ({
+      repositories: s.repositories,
+      terminals: s.terminals,
+      activeTerminalId: s.activeTerminalId,
+      setActiveTerminal: s.setActiveTerminal,
+      setActiveTab: s.setActiveTab,
+      toggleRepositoryExpanded: s.toggleRepositoryExpanded,
+      focusArea: s.focusArea,
+      setFocusArea: s.setFocusArea,
+      setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      reorderWorktreeSessions: s.reorderWorktreeSessions,
+      reorderRepositories: s.reorderRepositories,
+      worktreeTabs: s.worktreeTabs,
+      getTerminalIdForTab: s.getTerminalIdForTab,
+    }))
+  );
 
   // Wrap onSessionSelect to not require sessionId (keyboard navigation already handles selection)
   const handleKeyboardSessionSelect = useCallback(() => {

@@ -45,6 +45,9 @@ export function useTerminal({
   const hasReachedStableStateRef = useRef<boolean>(false);
   // Track pending "running" status transition (delayed to avoid flicker)
   const pendingRunningTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  // Last output timestamp the detection interval processed, to skip
+  // redundant pattern matching when no new output arrived
+  const lastCheckedOutputTimeRef = useRef<number>(-1);
 
   // Use selectors to only subscribe to the actions we need, preventing re-renders on unrelated store changes
   const updateTerminalStatus = useAppStore((state) => state.updateTerminalStatus);
@@ -172,6 +175,18 @@ export function useTerminal({
       const lastOutputTime = outputBufferRef.current.getLastDataTime();
       const lastUserInputTime = lastUserInputTimeRef.current;
       const currentStatus = currentStatusRef.current;
+
+      // In a stable state with no new output since the last tick, the
+      // detection result cannot change (only elapsed time matters, and that
+      // only affects running -> idle). Skip the pattern-matching work; this
+      // runs every 500ms for every terminal, including hidden ones.
+      if (
+        lastOutputTime === lastCheckedOutputTimeRef.current &&
+        (currentStatus === 'idle' || currentStatus === 'waiting')
+      ) {
+        return;
+      }
+      lastCheckedOutputTimeRef.current = lastOutputTime;
 
       // Check if recent output is likely just echo from user input
       // Only apply echo ignore when NOT already in 'running' state.

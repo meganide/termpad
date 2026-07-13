@@ -17,6 +17,10 @@ import type {
   DiffFile,
 } from '../shared/reviewTypes';
 
+// Stable empties so unaffected FileDiff rows keep identical prop identities
+const EMPTY_LINE_SET = new Set<number>();
+const EMPTY_COMMENTS: ReviewComment[] = [];
+
 export function DiffWindowApp() {
   // State
   const [currentReview, setCurrentReview] = useState<ReviewSession | null>(null);
@@ -40,14 +44,13 @@ export function DiffWindowApp() {
 
   const fileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Determine if this is a working tree review (needs polling for updates)
+  // Determine if this is a working tree review (needs live updates)
   const isWorkingTreeReview = currentReview?.compareBranch === 'Working Tree';
 
-  // Poll for working tree changes when viewing working tree diff
+  // Track working tree changes when viewing working tree diff
   const { files: polledFiles, loadFileHunks } = useWorkingTreeDiff({
     repoPath: isWorkingTreeReview ? projectPath : null,
     enabled: isWorkingTreeReview && !!projectPath,
-    pollIntervalMs: 5000,
   });
 
   // Update review files when working tree changes
@@ -167,12 +170,38 @@ export function DiffWindowApp() {
     [reviewData]
   );
 
+  // Group comments per file once per comments change, instead of filtering
+  // the full list (and allocating new arrays/sets) per file per render
+  const commentsByFile = useMemo(() => {
+    const map = new Map<string, ReviewComment[]>();
+    for (const comment of reviewData?.comments ?? []) {
+      const existing = map.get(comment.filePath);
+      if (existing) {
+        existing.push(comment);
+      } else {
+        map.set(comment.filePath, [comment]);
+      }
+    }
+    return map;
+  }, [reviewData?.comments]);
+
+  const linesWithCommentsByFile = useMemo(() => {
+    const map = new Map<string, Set<number>>();
+    for (const [filePath, comments] of commentsByFile) {
+      const lines = new Set<number>();
+      for (const comment of comments) {
+        for (let i = comment.lineStart; i <= comment.lineEnd; i++) {
+          lines.add(i);
+        }
+      }
+      map.set(filePath, lines);
+    }
+    return map;
+  }, [commentsByFile]);
+
   const getFileComments = useCallback(
-    (filePath: string): ReviewComment[] => {
-      if (!reviewData) return [];
-      return reviewData.comments.filter((c) => c.filePath === filePath);
-    },
-    [reviewData]
+    (filePath: string): ReviewComment[] => commentsByFile.get(filePath) ?? EMPTY_COMMENTS,
+    [commentsByFile]
   );
 
   // Compute unviewed files
@@ -388,17 +417,8 @@ export function DiffWindowApp() {
 
   // Get lines with comments for a file
   const getLinesWithComments = useCallback(
-    (filePath: string): Set<number> => {
-      const comments = getFileComments(filePath);
-      const lines = new Set<number>();
-      for (const comment of comments) {
-        for (let i = comment.lineStart; i <= comment.lineEnd; i++) {
-          lines.add(i);
-        }
-      }
-      return lines;
-    },
-    [getFileComments]
+    (filePath: string): Set<number> => linesWithCommentsByFile.get(filePath) ?? EMPTY_LINE_SET,
+    [linesWithCommentsByFile]
   );
 
   // Handle keyboard shortcut to close
@@ -504,50 +524,54 @@ export function DiffWindowApp() {
             unviewedFiles.map((file: DiffFile) => {
               const lazyFile = file as LazyDiffFile;
               return (
-                <FileDiff
+                <div
                   key={file.path}
-                  ref={(el) => {
-                    if (el) {
-                      fileRefs.current.set(file.path, el);
-                    } else {
-                      fileRefs.current.delete(file.path);
+                  className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]"
+                >
+                  <FileDiff
+                    ref={(el) => {
+                      if (el) {
+                        fileRefs.current.set(file.path, el);
+                      } else {
+                        fileRefs.current.delete(file.path);
+                      }
+                    }}
+                    file={file}
+                    viewMode={currentReview.viewMode}
+                    isExpanded={expandedFiles.has(file.path)}
+                    isViewed={isFileViewed(file.path)}
+                    selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
+                    linesWithComments={getLinesWithComments(file.path)}
+                    comments={getFileComments(file.path)}
+                    commentingOnLine={
+                      commentingOnLine && commentingOnLine.filePath === file.path
+                        ? {
+                            lineStart: commentingOnLine.lineStart,
+                            lineEnd: commentingOnLine.lineEnd,
+                            side: commentingOnLine.side,
+                          }
+                        : null
                     }
-                  }}
-                  file={file}
-                  viewMode={currentReview.viewMode}
-                  isExpanded={expandedFiles.has(file.path)}
-                  isViewed={isFileViewed(file.path)}
-                  selectedLines={selectedFile === file.path ? selectedLines : new Set()}
-                  linesWithComments={getLinesWithComments(file.path)}
-                  comments={getFileComments(file.path)}
-                  commentingOnLine={
-                    commentingOnLine && commentingOnLine.filePath === file.path
-                      ? {
-                          lineStart: commentingOnLine.lineStart,
-                          lineEnd: commentingOnLine.lineEnd,
-                          side: commentingOnLine.side,
-                        }
-                      : null
-                  }
-                  projectPath={projectPath ?? undefined}
-                  hunksLoaded={lazyFile.hunksLoaded ?? true}
-                  isLoadingHunks={lazyFile.isLoadingHunks ?? false}
-                  onLoadHunks={() => loadFileHunks(file.path)}
-                  onToggleExpand={() => handleToggleExpand(file.path)}
-                  onMarkViewed={() => handleMarkViewed(file.path)}
-                  onCommentClick={(lineNumber, side) =>
-                    handleCommentClick(file.path, lineNumber, side)
-                  }
-                  onLineMouseDown={(lineNumber, side) => {
-                    setSelectedFile(file.path);
-                    handleLineMouseDown(lineNumber, side);
-                  }}
-                  onLineMouseEnter={handleLineMouseEnter}
-                  onCommentSubmit={handleCommentSubmit}
-                  onCommentCancel={handleCommentCancel}
-                  onCommentDelete={handleDeleteComment}
-                  onCommentUpdate={handleUpdateComment}
-                />
+                    projectPath={projectPath ?? undefined}
+                    hunksLoaded={lazyFile.hunksLoaded ?? true}
+                    isLoadingHunks={lazyFile.isLoadingHunks ?? false}
+                    onLoadHunks={() => loadFileHunks(file.path)}
+                    onToggleExpand={() => handleToggleExpand(file.path)}
+                    onMarkViewed={() => handleMarkViewed(file.path)}
+                    onCommentClick={(lineNumber, side) =>
+                      handleCommentClick(file.path, lineNumber, side)
+                    }
+                    onLineMouseDown={(lineNumber, side) => {
+                      setSelectedFile(file.path);
+                      handleLineMouseDown(lineNumber, side);
+                    }}
+                    onLineMouseEnter={handleLineMouseEnter}
+                    onCommentSubmit={handleCommentSubmit}
+                    onCommentCancel={handleCommentCancel}
+                    onCommentDelete={handleDeleteComment}
+                    onCommentUpdate={handleUpdateComment}
+                  />
+                </div>
               );
             })
           )}

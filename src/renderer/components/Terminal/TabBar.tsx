@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Terminal, X, Plus, Loader, GripVertical, Pencil } from 'lucide-react';
 import { PRESET_ICONS } from '../IconPicker';
 import { cn } from '../../lib/utils';
@@ -491,7 +491,10 @@ export function TabBar({
   }, []);
 
   // Sort presets by order for display and keyboard handling
-  const sortedPresets = [...terminalPresets].sort((a, b) => a.order - b.order);
+  const sortedPresets = useMemo(
+    () => [...terminalPresets].sort((a, b) => a.order - b.order),
+    [terminalPresets]
+  );
 
   // Handle keyboard shortcuts 1-9 when dropdown is open
   const handleDropdownKeyDown = useCallback(

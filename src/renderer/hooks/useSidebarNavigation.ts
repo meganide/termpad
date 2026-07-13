@@ -1,4 +1,5 @@
 import { useCallback, useMemo } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
 import {
   getSidebarFocusableItems,
@@ -72,7 +73,22 @@ export function useSidebarNavigation(
     setActiveTerminal,
     setActiveTab,
     toggleRepositoryExpanded,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      repositories: s.repositories,
+      focusArea: s.focusArea,
+      sidebarFocusedItemId: s.sidebarFocusedItemId,
+      sidebarStatusFocus: s.sidebarStatusFocus,
+      activeTerminalId: s.activeTerminalId,
+      worktreeTabs: s.worktreeTabs,
+      setFocusArea: s.setFocusArea,
+      setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      setSidebarStatusFocus: s.setSidebarStatusFocus,
+      setActiveTerminal: s.setActiveTerminal,
+      setActiveTab: s.setActiveTab,
+      toggleRepositoryExpanded: s.toggleRepositoryExpanded,
+    }))
+  );
 
   const focusableItems = useMemo(() => getSidebarFocusableItems(repositories), [repositories]);
 

@@ -1,4 +1,5 @@
 import { useEffect, useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
 import type { WorktreeSession, Repository, CustomShortcut, TerminalTab } from '../../shared/types';
 import { shortcutsEqual, isMac } from '../utils/shortcuts';
@@ -123,7 +124,26 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     createTab,
     createUserTab,
     settings,
-  } = useAppStore();
+  } = useAppStore(
+    useShallow((s) => ({
+      repositories: s.repositories,
+      focusArea: s.focusArea,
+      activeTerminalId: s.activeTerminalId,
+      activeTabId: s.activeTabId,
+      activeUserTabId: s.activeUserTabId,
+      setActiveTerminal: s.setActiveTerminal,
+      setFocusArea: s.setFocusArea,
+      setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      setActiveTab: s.setActiveTab,
+      getTabsForWorktree: s.getTabsForWorktree,
+      closeTab: s.closeTab,
+      closeUserTab: s.closeUserTab,
+      getUserTabsForWorktree: s.getUserTabsForWorktree,
+      createTab: s.createTab,
+      createUserTab: s.createUserTab,
+      settings: s.settings,
+    }))
+  );
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {

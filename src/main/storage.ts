@@ -10,11 +10,24 @@ const DATA_FILE = 'projects.json';
 // Track pending saves to prevent concurrent writes
 let savePromise: Promise<void> | null = null;
 
+// In-memory mirror of the persisted state. The file is owned exclusively by
+// this app, so once loaded (or saved) the memory copy is authoritative and
+// spawn-path readers skip the disk read + JSON parse entirely.
+let lastKnownState: AppState | null = null;
+
 function getDataFilePath(): string {
   return path.join(app.getPath('userData'), DATA_FILE);
 }
 
 export async function loadAppState(): Promise<AppState> {
+  // A debounced save may hold newer state than the file on disk
+  const pending = getPendingAppState();
+  if (pending) {
+    return pending;
+  }
+  if (lastKnownState) {
+    return lastKnownState;
+  }
   try {
     const filePath = getDataFilePath();
     const data = await fs.readFile(filePath, 'utf-8');
@@ -22,7 +35,7 @@ export async function loadAppState(): Promise<AppState> {
     const defaults = getDefaultAppState();
     // Merge with defaults to ensure all required fields exist
     // Note: Old stored data may contain worktreeTabs/userTerminalTabs which will be ignored
-    return {
+    const loaded: AppState = {
       ...defaults,
       ...parsed,
       // Ensure arrays exist (don't let undefined override defaults)
@@ -30,6 +43,8 @@ export async function loadAppState(): Promise<AppState> {
       settings: { ...defaults.settings, ...parsed.settings },
       window: { ...defaults.window, ...parsed.window },
     };
+    lastKnownState = loaded;
+    return loaded;
   } catch (error) {
     console.log('[Storage] No existing state found, using defaults');
     return getDefaultAppState();
@@ -57,6 +72,7 @@ function delay(ms: number): Promise<void> {
 }
 
 export async function saveAppState(state: AppState): Promise<void> {
+  lastKnownState = state;
   const doSave = async () => {
     const filePath = getDataFilePath();
     const tempPath = `${filePath}.tmp`;
@@ -72,8 +88,9 @@ export async function saveAppState(state: AppState): Promise<void> {
           // Ignore if temp file doesn't exist
         }
 
-        // Write to temp file first
-        await fs.writeFile(tempPath, JSON.stringify(state, null, 2), 'utf-8');
+        // Write to temp file first (compact JSON: the file is machine-read
+        // only and pretty-printing inflates size and stringify cost)
+        await fs.writeFile(tempPath, JSON.stringify(state), 'utf-8');
         // Atomic rename
         await fs.rename(tempPath, filePath);
         return; // Success - exit the retry loop
@@ -110,6 +127,52 @@ export async function saveAppState(state: AppState): Promise<void> {
   return savePromise;
 }
 
+// The renderer persists the full app state after every mutation (tab switch,
+// label edit, ...). Debounce writes so bursts collapse into one disk write of
+// the latest state; flushPendingSave() runs on quit so nothing is lost.
+const SAVE_DEBOUNCE_MS = 400;
+let debouncedState: AppState | null = null;
+let debounceTimer: NodeJS.Timeout | null = null;
+
+function scheduleSaveAppState(state: AppState): void {
+  lastKnownState = state;
+  debouncedState = state;
+  if (debounceTimer) return;
+  debounceTimer = setTimeout(() => {
+    debounceTimer = null;
+    const toSave = debouncedState;
+    debouncedState = null;
+    if (toSave) {
+      saveAppState(toSave).catch((error) => {
+        console.error('[Storage] Debounced save failed:', error);
+      });
+    }
+  }, SAVE_DEBOUNCE_MS);
+}
+
+/**
+ * Write any pending debounced state immediately. Call on app quit.
+ */
+export async function flushPendingSave(): Promise<void> {
+  if (debounceTimer) {
+    clearTimeout(debounceTimer);
+    debounceTimer = null;
+  }
+  const toSave = debouncedState;
+  debouncedState = null;
+  if (toSave) {
+    await saveAppState(toSave);
+  }
+}
+
+/**
+ * Latest state handed to the debouncer but not yet written. Readers that
+ * load state from disk must prefer this to avoid seeing stale data.
+ */
+export function getPendingAppState(): AppState | null {
+  return debouncedState;
+}
+
 const CONFIG_FILENAME = 'termpad.json';
 
 export async function loadTermpadConfig(repoPath: string): Promise<TermpadConfigFile | null> {
@@ -132,7 +195,7 @@ export function setupStorageIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('storage:saveState', async (_, state: AppState) => {
-    await saveAppState(state);
+    scheduleSaveAppState(state);
   });
 
   ipcMain.handle('config:loadTermpadConfig', async (_, repoPath: string) => {
