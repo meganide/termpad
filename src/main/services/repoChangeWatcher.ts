@@ -53,6 +53,9 @@ async function resolveGitDir(repoPath: string): Promise<string | null> {
  */
 class RepoChangeWatcherService {
   private watched = new Map<string, WatchedRepo>();
+  // Track senders that already have a global 'destroyed' cleanup listener
+  // so we add at most one per WebContents regardless of how many repos it watches
+  private senderCleanups = new WeakSet<WebContents>();
 
   watch(repoPath: string, sender: WebContents, throttleMs?: number): void {
     const existing = this.watched.get(repoPath);
@@ -105,12 +108,14 @@ class RepoChangeWatcherService {
   private addSubscriber(entry: WatchedRepo, sender: WebContents): void {
     const count = entry.subscribers.get(sender) ?? 0;
     entry.subscribers.set(sender, count + 1);
-    if (count === 0) {
-      // Renderer reloads/crashes skip unwatch; clean up when it goes away
+    if (!this.senderCleanups.has(sender)) {
+      this.senderCleanups.add(sender);
       sender.once('destroyed', () => {
-        entry.subscribers.delete(sender);
-        if (entry.subscribers.size === 0) {
-          this.dispose(entry);
+        for (const watchedEntry of [...this.watched.values()]) {
+          watchedEntry.subscribers.delete(sender);
+          if (watchedEntry.subscribers.size === 0) {
+            this.dispose(watchedEntry);
+          }
         }
       });
     }
