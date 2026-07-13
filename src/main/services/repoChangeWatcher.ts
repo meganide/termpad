@@ -2,7 +2,7 @@ import type { WebContents } from 'electron';
 import * as chokidar from 'chokidar';
 import * as path from 'path';
 import * as fs from 'fs/promises';
-import { isWslPath } from '../gitOperations';
+import { invalidateGitOpCache, isWslPath } from '../gitOperations';
 
 // Batch rapid successive fs events (e.g. an editor "save all") into one signal
 const BATCH_DELAY_MS = 300;
@@ -176,6 +176,10 @@ class RepoChangeWatcherService {
 
   private emit(entry: WatchedRepo): void {
     if (entry.disposed) return;
+    // Filesystem changes happen outside the IPC mutation handlers that normally
+    // clear this cache. Invalidate before notifying renderers so their refresh
+    // cannot reuse a pre-change result from the short read cache.
+    invalidateGitOpCache(entry.repoPath);
     for (const sender of entry.subscribers.keys()) {
       if (!sender.isDestroyed()) {
         sender.send('watcher:repoChanged', entry.repoPath);
