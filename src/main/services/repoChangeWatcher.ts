@@ -1,6 +1,7 @@
 import type { WebContents } from 'electron';
 import * as chokidar from 'chokidar';
 import * as path from 'path';
+import { watch as watchNative } from 'fs';
 import * as fs from 'fs/promises';
 import { invalidateGitOpCache, isWslPath } from '../gitOperations';
 
@@ -18,11 +19,18 @@ interface WatchedRepo {
   throttleMs: number;
   // WebContents -> subscription refcount (multiple hooks can watch one path)
   subscribers: Map<WebContents, number>;
-  watchers: chokidar.FSWatcher[];
+  watchers: Array<{ close: () => void | Promise<void> }>;
   fallbackTimer: NodeJS.Timeout | null;
   emitTimer: NodeJS.Timeout | null;
   lastEmitAt: number;
   disposed: boolean;
+  failed: boolean;
+}
+
+function isIgnoredWorkingTreePath(filename: string | Buffer | null): boolean {
+  if (filename === null) return false;
+  const segments = filename.toString().replace(/\\/g, '/').split('/');
+  return segments.includes('.git') || segments.includes('node_modules');
 }
 
 /**
@@ -73,6 +81,7 @@ class RepoChangeWatcherService {
       emitTimer: null,
       lastEmitAt: 0,
       disposed: false,
+      failed: false,
     };
     this.watched.set(repoPath, entry);
     this.addSubscriber(entry, sender);
@@ -129,27 +138,33 @@ class RepoChangeWatcherService {
 
     const onChange = () => this.scheduleEmit(entry);
     const onError = (error: unknown) => {
+      if (entry.disposed || entry.failed) return;
+      entry.failed = true;
       console.error(`[RepoChangeWatcher] Watcher error for ${entry.repoPath}:`, error);
       this.closeWatchers(entry);
-      if (!entry.disposed) {
-        this.startFallbackTimer(entry);
-      }
+      this.startFallbackTimer(entry);
     };
 
-    const treeWatcher = chokidar.watch(entry.repoPath, {
-      ignoreInitial: true,
-      persistent: true,
-      ignored: (watchedPath: string) => {
-        const base = path.basename(watchedPath);
-        return base === '.git' || base === 'node_modules';
-      },
-    });
-    treeWatcher.on('all', onChange);
+    // Chokidar recursively crawls the full tree before it can watch it. On
+    // macOS, a handful of large repositories can leave thousands of files
+    // open at once, exhaust watcher resources, and block Electron's main
+    // thread while those handles are torn down. Node's native recursive
+    // watcher is backed by the OS event service and uses a constant number of
+    // handles regardless of repository size.
+    const treeWatcher = watchNative(
+      entry.repoPath,
+      { recursive: true, persistent: true },
+      (_eventType, filename) => {
+        if (!isIgnoredWorkingTreePath(filename)) {
+          onChange();
+        }
+      }
+    );
     treeWatcher.on('error', onError);
     entry.watchers.push(treeWatcher);
 
     const gitDir = await resolveGitDir(entry.repoPath);
-    if (entry.disposed || !gitDir) return;
+    if (entry.disposed || entry.failed || !gitDir) return;
 
     // The tree watcher ignores .git, so watch the metadata files that change
     // on git operations: HEAD (branch switch), index (staging),
@@ -193,17 +208,23 @@ class RepoChangeWatcherService {
   }
 
   private closeWatchers(entry: WatchedRepo): void {
-    for (const watcher of entry.watchers) {
-      watcher.close().catch((error) => {
-        console.error(`[RepoChangeWatcher] Error closing watcher for ${entry.repoPath}:`, error);
-      });
-    }
+    const watchers = entry.watchers;
     entry.watchers = [];
+    for (const watcher of watchers) {
+      try {
+        Promise.resolve(watcher.close()).catch((error) => {
+          console.error(`[RepoChangeWatcher] Error closing watcher for ${entry.repoPath}:`, error);
+        });
+      } catch (error) {
+        console.error(`[RepoChangeWatcher] Error closing watcher for ${entry.repoPath}:`, error);
+      }
+    }
   }
 
   private dispose(entry: WatchedRepo): void {
     if (entry.disposed) return;
     entry.disposed = true;
+    entry.failed = true;
     if (entry.emitTimer) clearTimeout(entry.emitTimer);
     if (entry.fallbackTimer) clearInterval(entry.fallbackTimer);
     this.closeWatchers(entry);
