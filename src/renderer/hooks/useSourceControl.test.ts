@@ -10,7 +10,7 @@ describe('useSourceControl', () => {
     resetAllStores();
     resetOperationProgressState();
     vi.clearAllMocks();
-    // Mock document.hasFocus to return true so polling uses configured interval
+    // Mock document.hasFocus to return true so the remote fetch interval runs
     vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
 
@@ -24,6 +24,14 @@ describe('useSourceControl', () => {
     await act(async () => {
       await Promise.resolve();
     });
+  };
+
+  // Helper to capture the repo-changed callback registered by the hook
+  const getRepoChangedCallback = (repoPath: string): (() => void) => {
+    const calls = vi.mocked(window.watcher.onRepoChanged).mock.calls;
+    const call = calls.find(([path]) => path === repoPath);
+    if (!call) throw new Error(`No onRepoChanged subscription for ${repoPath}`);
+    return call[1];
   };
 
   describe('initial fetch', () => {
@@ -127,8 +135,8 @@ describe('useSourceControl', () => {
     });
   });
 
-  describe('polling', () => {
-    it('polls for changes at configured interval', async () => {
+  describe('change signals', () => {
+    it('watches the repo path and refetches when a change is signaled', async () => {
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
         staged: [],
         unstaged: [],
@@ -145,31 +153,31 @@ describe('useSourceControl', () => {
       renderHook(() =>
         useSourceControl({
           repoPath: '/test/repo',
-          pollIntervalMs: 1000,
         })
       );
 
       await flushPromises();
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(1);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo', 5000);
 
-      // Advance by poll interval
+      // Simulate change signals from the main-process watcher
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(2);
 
-      // Advance again
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(3);
     });
 
-    it('uses default poll interval of 2000ms', async () => {
+    it('refetches when the window regains focus', async () => {
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
         staged: [],
         unstaged: [],
@@ -192,17 +200,8 @@ describe('useSourceControl', () => {
       await flushPromises();
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(1);
 
-      // Advance by less than default interval (2000ms)
       await act(async () => {
-        vi.advanceTimersByTime(1800);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(1);
-
-      // Advance past default interval
-      await act(async () => {
-        vi.advanceTimersByTime(200);
+        window.dispatchEvent(new Event('focus'));
       });
       await flushPromises();
 
@@ -254,7 +253,7 @@ describe('useSourceControl', () => {
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(1);
     });
 
-    it('stops polling when enabled changes to false', async () => {
+    it('stops refetching when enabled changes to false', async () => {
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
         staged: [],
         unstaged: [],
@@ -273,7 +272,6 @@ describe('useSourceControl', () => {
           useSourceControl({
             repoPath: '/test/repo',
             enabled,
-            pollIntervalMs: 1000,
           }),
         { initialProps: { enabled: true } }
       );
@@ -284,9 +282,11 @@ describe('useSourceControl', () => {
       // Disable
       rerender({ enabled: false });
 
-      // Advance time - should not trigger more fetches
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo');
+
+      // Focus events should no longer trigger fetches
       await act(async () => {
-        vi.advanceTimersByTime(3000);
+        window.dispatchEvent(new Event('focus'));
       });
       await flushPromises();
 
@@ -913,7 +913,6 @@ describe('useSourceControl', () => {
       const { result } = renderHook(() =>
         useSourceControl({
           repoPath: '/test/repo',
-          pollIntervalMs: 0, // Disable polling
         })
       );
 
@@ -968,16 +967,16 @@ describe('useSourceControl', () => {
       const { result } = renderHook(() =>
         useSourceControl({
           repoPath: '/test/repo',
-          pollIntervalMs: 1000,
         })
       );
 
       await flushPromises();
       expect(result.current.error).toBe('Network error');
 
-      // Advance to next poll
+      // Signal a change to trigger a refetch
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 
@@ -988,7 +987,9 @@ describe('useSourceControl', () => {
   });
 
   describe('cleanup', () => {
-    it('clears interval on unmount', async () => {
+    it('unsubscribes and unwatches on unmount', async () => {
+      const unsubscribe = vi.fn();
+      vi.mocked(window.watcher.onRepoChanged).mockReturnValue(unsubscribe);
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
         staged: [],
         unstaged: [],
@@ -1005,7 +1006,6 @@ describe('useSourceControl', () => {
       const { unmount } = renderHook(() =>
         useSourceControl({
           repoPath: '/test/repo',
-          pollIntervalMs: 1000,
         })
       );
 
@@ -1014,9 +1014,12 @@ describe('useSourceControl', () => {
 
       unmount();
 
-      // Advance time after unmount - should not trigger more calls
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo');
+
+      // Focus after unmount does not refetch
       await act(async () => {
-        vi.advanceTimersByTime(5000);
+        window.dispatchEvent(new Event('focus'));
       });
       await flushPromises();
 
@@ -1084,7 +1087,6 @@ describe('useSourceControl', () => {
       const { result } = renderHook(() =>
         useSourceControl({
           repoPath: '/test/repo',
-          pollIntervalMs: 1000,
         })
       );
 
@@ -1093,9 +1095,10 @@ describe('useSourceControl', () => {
       // Get reference to staged array
       const initialStaged = result.current.staged;
 
-      // Advance to next poll with same data
+      // Signal a change that yields the same data
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 

@@ -223,10 +223,16 @@ describe('useWorkingTreeDiff', () => {
     });
   });
 
-  describe('polling', () => {
-    it('polls for stats at regular intervals', async () => {
-      vi.useFakeTimers();
+  describe('change signals', () => {
+    // Helper to capture the repo-changed callback registered by the hook
+    const getRepoChangedCallback = (repoPath: string): (() => void) => {
+      const calls = vi.mocked(window.watcher.onRepoChanged).mock.calls;
+      const call = calls.find(([path]) => path === repoPath);
+      if (!call) throw new Error(`No onRepoChanged subscription for ${repoPath}`);
+      return call[1];
+    };
 
+    it('watches the repo path and refetches stats when a change is signaled', async () => {
       const mockStats = [createMockDiffFileStat('src/index.ts')];
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult(mockStats)
@@ -235,80 +241,42 @@ describe('useWorkingTreeDiff', () => {
         createMockDiffFile('src/index.ts'),
       ]);
 
-      renderHook(() =>
-        useWorkingTreeDiff({
-          repoPath: '/test/repo',
-          pollIntervalMs: 5000,
-        })
-      );
+      renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
 
       await flushPromises();
+
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo', 5000);
 
       const initialCallCount = vi.mocked(window.terminal.getWorkingTreeStats).mock.calls.length;
       expect(initialCallCount).toBeGreaterThanOrEqual(1);
 
-      // Advance time to trigger poll
+      // Simulate a change signal from the main-process watcher
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(5000);
+        onRepoChanged();
       });
-
       await flushPromises();
 
-      // Should have made at least one more call
       expect(window.terminal.getWorkingTreeStats).toHaveBeenCalledTimes(initialCallCount + 1);
     });
 
-    it('does not poll when disabled', async () => {
-      vi.useFakeTimers();
-
+    it('does not watch when disabled', async () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(createMockStatsResult([]));
 
       renderHook(() =>
         useWorkingTreeDiff({
           repoPath: '/test/repo',
           enabled: false,
-          pollIntervalMs: 5000,
         })
       );
 
       await flushPromises();
 
-      // Advance time
-      await act(async () => {
-        vi.advanceTimersByTime(10000);
-      });
-
+      expect(window.watcher.watchRepoChanges).not.toHaveBeenCalled();
       expect(window.terminal.getWorkingTreeStats).not.toHaveBeenCalled();
     });
 
-    it('does not poll when pollIntervalMs is 0', async () => {
-      vi.useFakeTimers();
-
-      vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(createMockStatsResult([]));
-
-      renderHook(() =>
-        useWorkingTreeDiff({
-          repoPath: '/test/repo',
-          pollIntervalMs: 0,
-        })
-      );
-
-      await flushPromises();
-
-      const initialCallCount = vi.mocked(window.terminal.getWorkingTreeStats).mock.calls.length;
-
-      // Advance time
-      await act(async () => {
-        vi.advanceTimersByTime(10000);
-      });
-
-      // Should not have made additional calls
-      expect(window.terminal.getWorkingTreeStats).toHaveBeenCalledTimes(initialCallCount);
-    });
-
-    it('stops polling on unmount', async () => {
-      vi.useFakeTimers();
-
+    it('refetches stats when the window regains focus', async () => {
       vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
         createMockStatsResult([createMockDiffFileStat('src/index.ts')])
       );
@@ -316,12 +284,30 @@ describe('useWorkingTreeDiff', () => {
         createMockDiffFile('src/index.ts'),
       ]);
 
-      const { unmount } = renderHook(() =>
-        useWorkingTreeDiff({
-          repoPath: '/test/repo',
-          pollIntervalMs: 5000,
-        })
+      renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
+
+      await flushPromises();
+      const initialCallCount = vi.mocked(window.terminal.getWorkingTreeStats).mock.calls.length;
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flushPromises();
+
+      expect(window.terminal.getWorkingTreeStats).toHaveBeenCalledTimes(initialCallCount + 1);
+    });
+
+    it('unsubscribes and unwatches on unmount', async () => {
+      const unsubscribe = vi.fn();
+      vi.mocked(window.watcher.onRepoChanged).mockReturnValue(unsubscribe);
+      vi.mocked(window.terminal.getWorkingTreeStats).mockResolvedValue(
+        createMockStatsResult([createMockDiffFileStat('src/index.ts')])
       );
+      vi.mocked(window.terminal.getWorkingTreeFileDiffs).mockResolvedValue([
+        createMockDiffFile('src/index.ts'),
+      ]);
+
+      const { unmount } = renderHook(() => useWorkingTreeDiff({ repoPath: '/test/repo' }));
 
       await flushPromises();
 
@@ -329,12 +315,15 @@ describe('useWorkingTreeDiff', () => {
 
       unmount();
 
-      // Advance time after unmount
-      await act(async () => {
-        vi.advanceTimersByTime(10000);
-      });
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo');
 
-      // No additional calls after unmount
+      // Focus after unmount does not refetch
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flushPromises();
+
       expect(window.terminal.getWorkingTreeStats).toHaveBeenCalledTimes(callCountAfterMount);
     });
   });

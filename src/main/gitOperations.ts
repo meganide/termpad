@@ -45,10 +45,10 @@ const execFileAsync = promisify(execFile);
 // Cache for simple-git instances to avoid creating new ones on every operation
 const simpleGitCache = new Map<string, SimpleGit>();
 
-// Short-TTL result cache with in-flight dedup for the polled read-only git
-// operations. Three renderer pollers (useGitStatus, useSourceControl,
-// useWorkingTreeDiff) hit the same repo at overlapping 2-30s cadences;
-// sharing results collapses their subprocess fan-out into one execution.
+// Short-TTL result cache with in-flight dedup for read-only git operations.
+// Several change-driven refreshers (useGitStatus, useSourceControl,
+// useWorkingTreeDiff) react to the same repoChanged signal at once; sharing
+// results collapses their subprocess fan-out into one execution.
 const GIT_OP_CACHE_TTL_MS = 1000;
 const gitOpCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
 
@@ -215,7 +215,7 @@ export function clearSimpleGitCache(repoPath: string): void {
  * Check if a path is a WSL UNC path (Windows accessing WSL filesystem).
  * Matches: \\wsl$\distro\... or \\wsl.localhost\distro\... or //wsl$/...
  */
-function isWslPath(filePath: string): boolean {
+export function isWslPath(filePath: string): boolean {
   if (process.platform !== 'win32') return false;
   const normalized = filePath.replace(/\\/g, '/').toLowerCase();
   return normalized.startsWith('//wsl$/') || normalized.startsWith('//wsl.localhost/');
@@ -428,10 +428,12 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
       return null;
     }
 
-    // Get current branch and status in parallel
+    // Get current branch and status in parallel. --no-optional-locks stops
+    // git from opportunistically rewriting .git/index during these background
+    // reads, which would re-trigger the repo change watcher.
     const [branchResult, statusResult] = await Promise.allSettled([
       execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath }),
-      execAsync('git status --porcelain -u', { cwd: repoPath }),
+      execAsync('git --no-optional-locks status --porcelain -u', { cwd: repoPath }),
     ]);
 
     // Handle potential failures in parallel operations
@@ -469,9 +471,12 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
 
       try {
         // Get numstat for tracked changes (staged + unstaged)
-        const { stdout: diffOutput } = await execAsync('git diff --numstat HEAD', {
-          cwd: repoPath,
-        });
+        const { stdout: diffOutput } = await execAsync(
+          'git --no-optional-locks diff --numstat HEAD',
+          {
+            cwd: repoPath,
+          }
+        );
 
         // Parse numstat output: "added\tdeleted\tfilename"
         const lines = diffOutput.trim().split('\n').filter(Boolean);

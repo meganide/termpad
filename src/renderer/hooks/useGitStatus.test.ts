@@ -7,15 +7,11 @@ import type { GitStatus, TerminalState } from '../../shared/types';
 
 describe('useGitStatus', () => {
   beforeEach(() => {
-    vi.useFakeTimers();
     resetAllStores();
     vi.clearAllMocks();
-    // Mock document.hasFocus to return true so polling uses configured interval
-    vi.spyOn(document, 'hasFocus').mockReturnValue(true);
   });
 
   afterEach(() => {
-    vi.useRealTimers();
     vi.restoreAllMocks();
   });
 
@@ -32,11 +28,19 @@ describe('useGitStatus', () => {
     useAppStore.setState({ terminals });
   };
 
-  // Helper to flush promises without running more timers
+  // Helper to flush promises
   const flushPromises = async () => {
     await act(async () => {
       await Promise.resolve();
     });
+  };
+
+  // Helper to capture the repo-changed callback registered by the hook
+  const getRepoChangedCallback = (repoPath: string): (() => void) => {
+    const calls = vi.mocked(window.watcher.onRepoChanged).mock.calls;
+    const call = calls.find(([path]) => path === repoPath);
+    if (!call) throw new Error(`No onRepoChanged subscription for ${repoPath}`);
+    return call[1];
   };
 
   describe('initial fetch', () => {
@@ -53,11 +57,9 @@ describe('useGitStatus', () => {
         })
       );
 
-      // Should have called getGitStatus immediately
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/repo');
 
-      // Flush the pending promise
       await flushPromises();
     });
 
@@ -79,7 +81,6 @@ describe('useGitStatus', () => {
         })
       );
 
-      // Flush the initial async call
       await flushPromises();
 
       const state = useAppStore.getState();
@@ -116,12 +117,15 @@ describe('useGitStatus', () => {
     });
   });
 
-  describe('interval polling', () => {
-    it('sets up polling interval with configured interval', async () => {
-      const mockStatus: GitStatus = { branch: 'main', isDirty: false, additions: 0, deletions: 0 };
-      vi.mocked(window.terminal.getGitStatus).mockResolvedValue(mockStatus);
+  describe('repo change subscription', () => {
+    it('starts watching the repo path with the configured throttle', async () => {
+      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
+        branch: 'main',
+        isDirty: false,
+        additions: 0,
+        deletions: 0,
+      });
 
-      // Set custom poll interval
       useAppStore.setState({
         settings: createMockSettings({ gitPollIntervalMs: 3000 }),
       });
@@ -137,78 +141,53 @@ describe('useGitStatus', () => {
 
       await flushPromises();
 
-      // Initial call
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
-
-      // Advance by interval
-      await act(async () => {
-        vi.advanceTimersByTime(3000);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
-
-      // Advance again
-      await act(async () => {
-        vi.advanceTimersByTime(3000);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(3);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo', 3000);
+      expect(window.watcher.onRepoChanged).toHaveBeenCalledWith('/test/repo', expect.any(Function));
     });
 
-    it('uses default poll interval from settings', async () => {
-      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
-        branch: 'main',
-        isDirty: false,
-        additions: 0,
-        deletions: 0,
-      });
-
-      setupTerminal('session-1');
-
-      // Default interval is 5000ms from getDefaultAppState
-      renderHook(() =>
-        useGitStatus({
-          sessionId: 'session-1',
-          path: '/test/repo',
-        })
-      );
-
-      await flushPromises();
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
-
-      // Advance by less than default interval (5000ms)
-      await act(async () => {
-        vi.advanceTimersByTime(4000);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
-
-      // Advance past the interval
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
-    });
-
-    it('updates store on each interval poll', async () => {
+    it('refetches git status when a repo change is signaled', async () => {
       const statuses: GitStatus[] = [
         { branch: 'main', isDirty: false, additions: 0, deletions: 0 },
         { branch: 'main', isDirty: true, additions: 5, deletions: 3 },
-        { branch: 'feature', isDirty: true, additions: 15, deletions: 4 },
       ];
       let callCount = 0;
       vi.mocked(window.terminal.getGitStatus).mockImplementation(async () => {
         return statuses[callCount++] || statuses[statuses.length - 1];
       });
 
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
+      setupTerminal('session-1');
+
+      renderHook(() =>
+        useGitStatus({
+          sessionId: 'session-1',
+          path: '/test/repo',
+        })
+      );
+
+      await flushPromises();
+      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual(statuses[0]);
+
+      // Simulate a change signal from the main-process watcher
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
+      await act(async () => {
+        onRepoChanged();
       });
+      await flushPromises();
+
+      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual(statuses[1]);
+    });
+
+    it('queues one trailing refetch when a signal arrives during an in-flight fetch', async () => {
+      let resolveFirst: ((value: GitStatus | null) => void) | undefined;
+      vi.mocked(window.terminal.getGitStatus)
+        .mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              resolveFirst = resolve;
+            })
+        )
+        .mockResolvedValue({ branch: 'main', isDirty: true, additions: 1, deletions: 0 });
 
       setupTerminal('session-1');
 
@@ -219,32 +198,31 @@ describe('useGitStatus', () => {
         })
       );
 
-      // After initial fetch
-      await flushPromises();
-      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual(statuses[0]);
-
-      // After first interval
+      // Signal a change while the initial fetch is still pending
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
+      });
+      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
+
+      // Completing the first fetch triggers the queued trailing refetch
+      await act(async () => {
+        resolveFirst?.({ branch: 'main', isDirty: false, additions: 0, deletions: 0 });
       });
       await flushPromises();
-      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual(statuses[1]);
 
-      // After second interval
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
+      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
+      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual({
+        branch: 'main',
+        isDirty: true,
+        additions: 1,
+        deletions: 0,
       });
-      await flushPromises();
-      expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual(statuses[2]);
     });
 
-    it('does not update store when polled data is unchanged (deep comparison)', async () => {
+    it('does not update store when refetched data is unchanged (deep comparison)', async () => {
       const mockStatus: GitStatus = { branch: 'main', isDirty: false, additions: 0, deletions: 0 };
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue(mockStatus);
-
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
-      });
 
       setupTerminal('session-1');
 
@@ -257,13 +235,12 @@ describe('useGitStatus', () => {
         })
       );
 
-      // Initial fetch should update
       await flushPromises();
       expect(updateGitStatusSpy).toHaveBeenCalledTimes(1);
 
-      // Advance to next poll with same data
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 
@@ -272,10 +249,8 @@ describe('useGitStatus', () => {
 
       updateGitStatusSpy.mockRestore();
     });
-  });
 
-  describe('cleanup', () => {
-    it('clears interval on unmount', async () => {
+    it('refetches when the window regains focus', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
@@ -283,8 +258,61 @@ describe('useGitStatus', () => {
         deletions: 0,
       });
 
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
+      setupTerminal('session-1');
+
+      renderHook(() =>
+        useGitStatus({
+          sessionId: 'session-1',
+          path: '/test/repo',
+        })
+      );
+
+      await flushPromises();
+      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
+
+      await act(async () => {
+        window.dispatchEvent(new Event('focus'));
+      });
+      await flushPromises();
+
+      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  describe('cleanup', () => {
+    it('unsubscribes and unwatches on unmount', async () => {
+      const unsubscribe = vi.fn();
+      vi.mocked(window.watcher.onRepoChanged).mockReturnValue(unsubscribe);
+      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
+        branch: 'main',
+        isDirty: false,
+        additions: 0,
+        deletions: 0,
+      });
+
+      setupTerminal('session-1');
+
+      const { unmount } = renderHook(() =>
+        useGitStatus({
+          sessionId: 'session-1',
+          path: '/test/repo',
+        })
+      );
+
+      await flushPromises();
+
+      unmount();
+
+      expect(unsubscribe).toHaveBeenCalledTimes(1);
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo');
+    });
+
+    it('stops refetching on focus after unmount', async () => {
+      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
+        branch: 'main',
+        isDirty: false,
+        additions: 0,
+        deletions: 0,
       });
 
       setupTerminal('session-1');
@@ -301,25 +329,20 @@ describe('useGitStatus', () => {
 
       unmount();
 
-      // Advance time after unmount - should not trigger more calls
       await act(async () => {
-        vi.advanceTimersByTime(5000);
+        window.dispatchEvent(new Event('focus'));
       });
       await flushPromises();
 
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
     });
 
-    it('clears interval when enabled changes to false', async () => {
+    it('unwatches when enabled changes to false', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
         additions: 0,
         deletions: 0,
-      });
-
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
       });
 
       setupTerminal('session-1');
@@ -337,12 +360,12 @@ describe('useGitStatus', () => {
       await flushPromises();
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
 
-      // Disable polling
       rerender({ enabled: false });
 
-      // Advance time - should not trigger more calls
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo');
+
       await act(async () => {
-        vi.advanceTimersByTime(5000);
+        window.dispatchEvent(new Event('focus'));
       });
       await flushPromises();
 
@@ -351,7 +374,7 @@ describe('useGitStatus', () => {
   });
 
   describe('enabled option', () => {
-    it('does not fetch when enabled is false', () => {
+    it('does not fetch or watch when enabled is false', () => {
       setupTerminal('session-1');
 
       renderHook(() =>
@@ -363,9 +386,10 @@ describe('useGitStatus', () => {
       );
 
       expect(window.terminal.getGitStatus).not.toHaveBeenCalled();
+      expect(window.watcher.watchRepoChanges).not.toHaveBeenCalled();
     });
 
-    it('cleanup runs safely when no interval was set (enabled was false)', () => {
+    it('cleanup runs safely when enabled was false', () => {
       setupTerminal('session-1');
 
       const { unmount } = renderHook(() =>
@@ -376,9 +400,8 @@ describe('useGitStatus', () => {
         })
       );
 
-      // Unmount triggers cleanup - should not throw even though no interval was set
       expect(() => unmount()).not.toThrow();
-      expect(window.terminal.getGitStatus).not.toHaveBeenCalled();
+      expect(window.watcher.unwatchRepoChanges).not.toHaveBeenCalled();
     });
 
     it('starts fetching when enabled changes to true', async () => {
@@ -403,12 +426,12 @@ describe('useGitStatus', () => {
 
       expect(window.terminal.getGitStatus).not.toHaveBeenCalled();
 
-      // Enable polling
       rerender({ enabled: true });
 
       await flushPromises();
 
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo', 5000);
     });
 
     it('defaults enabled to true', async () => {
@@ -435,7 +458,7 @@ describe('useGitStatus', () => {
   });
 
   describe('dependency changes', () => {
-    it('restarts polling when sessionId changes', async () => {
+    it('resubscribes when sessionId changes', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
@@ -443,11 +466,6 @@ describe('useGitStatus', () => {
         deletions: 0,
       });
 
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
-      });
-
-      // Set up both terminals
       const terminals = new Map<string, TerminalState>();
       terminals.set('session-1', {
         id: 'session-1',
@@ -475,16 +493,14 @@ describe('useGitStatus', () => {
       await flushPromises();
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
 
-      // Change sessionId
       rerender({ sessionId: 'session-2' });
 
       await flushPromises();
 
-      // Should have called again for new session
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
     });
 
-    it('restarts polling when path changes', async () => {
+    it('rewatches when path changes', async () => {
       vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
         branch: 'main',
         isDirty: false,
@@ -505,56 +521,15 @@ describe('useGitStatus', () => {
 
       await flushPromises();
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/repo-1');
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo-1', 5000);
 
-      // Change path
       rerender({ path: '/test/repo-2' });
 
       await flushPromises();
 
+      expect(window.watcher.unwatchRepoChanges).toHaveBeenCalledWith('/test/repo-1');
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/repo-2');
-    });
-
-    it('restarts polling when poll interval changes', async () => {
-      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
-        branch: 'main',
-        isDirty: false,
-        additions: 0,
-        deletions: 0,
-      });
-
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 5000 }),
-      });
-
-      setupTerminal('session-1');
-
-      renderHook(() =>
-        useGitStatus({
-          sessionId: 'session-1',
-          path: '/test/repo',
-        })
-      );
-
-      await flushPromises();
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(1);
-
-      // Change poll interval via store
-      act(() => {
-        useAppStore.getState().updateSettings({ gitPollIntervalMs: 1000 });
-      });
-
-      await flushPromises();
-
-      // Effect should have restarted with new interval (initial call again)
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
-
-      // Advance by new interval
-      await act(async () => {
-        vi.advanceTimersByTime(1000);
-      });
-      await flushPromises();
-
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(3);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith('/test/repo-2', 5000);
     });
   });
 
@@ -582,15 +557,11 @@ describe('useGitStatus', () => {
       consoleSpy.mockRestore();
     });
 
-    it('continues polling after fetch error', async () => {
+    it('recovers on the next change signal after a fetch error', async () => {
       const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
       vi.mocked(window.terminal.getGitStatus)
         .mockRejectedValueOnce(new Error('Network error'))
         .mockResolvedValueOnce({ branch: 'main', isDirty: false, additions: 0, deletions: 0 });
-
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
-      });
 
       setupTerminal('session-1');
 
@@ -603,16 +574,14 @@ describe('useGitStatus', () => {
 
       // First call fails
       await flushPromises();
-
       expect(consoleSpy).toHaveBeenCalled();
 
-      // Advance to next interval
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
 
-      // Second call should succeed
       expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(2);
       expect(useAppStore.getState().terminals.get('session-1')?.gitStatus).toEqual({
         branch: 'main',
@@ -642,7 +611,6 @@ describe('useGitStatus', () => {
 
       await flushPromises();
 
-      // Should not throw
       expect(window.terminal.getGitStatus).toHaveBeenCalled();
     });
   });
@@ -687,7 +655,7 @@ describe('useGitStatus', () => {
 
       await flushPromises();
 
-      // updateGitStatus now creates a terminal entry even if one doesn't exist
+      // updateGitStatus creates a terminal entry even if one doesn't exist
       expect(result.current).toEqual({
         branch: 'main',
         isDirty: false,
@@ -696,43 +664,12 @@ describe('useGitStatus', () => {
       });
     });
 
-    it('updates return value when store updates', async () => {
-      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
-        branch: 'main',
-        isDirty: false,
-        additions: 0,
-        deletions: 0,
-      });
-
-      setupTerminal('session-1');
-
-      const { result } = renderHook(() =>
-        useGitStatus({
-          sessionId: 'session-1',
-          path: '/test/repo',
-        })
-      );
-
-      await flushPromises();
-
-      expect(result.current).toEqual({
-        branch: 'main',
-        isDirty: false,
-        additions: 0,
-        deletions: 0,
-      });
-    });
-
-    it('reflects latest status after multiple polls', async () => {
+    it('reflects latest status across change signals', async () => {
       vi.mocked(window.terminal.getGitStatus)
         .mockResolvedValueOnce({ branch: 'main', isDirty: false, additions: 0, deletions: 0 })
         .mockResolvedValueOnce({ branch: 'main', isDirty: true, additions: 5, deletions: 3 })
         .mockResolvedValueOnce({ branch: 'feature', isDirty: true, additions: 15, deletions: 4 });
 
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 1000 }),
-      });
-
       setupTerminal('session-1');
 
       const { result } = renderHook(() =>
@@ -742,7 +679,6 @@ describe('useGitStatus', () => {
         })
       );
 
-      // After initial fetch
       await flushPromises();
       expect(result.current).toEqual({
         branch: 'main',
@@ -751,16 +687,16 @@ describe('useGitStatus', () => {
         deletions: 0,
       });
 
-      // After first interval
+      const onRepoChanged = getRepoChangedCallback('/test/repo');
+
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
       expect(result.current).toEqual({ branch: 'main', isDirty: true, additions: 5, deletions: 3 });
 
-      // After second interval
       await act(async () => {
-        vi.advanceTimersByTime(1000);
+        onRepoChanged();
       });
       await flushPromises();
       expect(result.current).toEqual({
@@ -824,48 +760,14 @@ describe('useGitStatus', () => {
 
       await flushPromises();
 
-      // Each enable triggers a new fetch
-      // The hook will clean up and restart on each toggle
       expect(window.terminal.getGitStatus).toHaveBeenCalled();
-    });
-
-    it('handles very short poll interval', async () => {
-      vi.mocked(window.terminal.getGitStatus).mockResolvedValue({
-        branch: 'main',
-        isDirty: false,
-        additions: 0,
-        deletions: 0,
-      });
-
-      useAppStore.setState({
-        settings: createMockSettings({ gitPollIntervalMs: 100 }),
-      });
-
-      setupTerminal('session-1');
-
-      renderHook(() =>
-        useGitStatus({
-          sessionId: 'session-1',
-          path: '/test/repo',
-        })
+      // Every watch has a matching unwatch except the final active one
+      expect(vi.mocked(window.watcher.watchRepoChanges).mock.calls.length).toBe(
+        vi.mocked(window.watcher.unwatchRepoChanges).mock.calls.length + 1
       );
-
-      await flushPromises();
-
-      // Advance through multiple intervals
-      for (let i = 0; i < 5; i++) {
-        await act(async () => {
-          vi.advanceTimersByTime(100);
-        });
-        await flushPromises();
-      }
-
-      // Should have called multiple times (1 initial + 5 intervals)
-      expect(window.terminal.getGitStatus).toHaveBeenCalledTimes(6);
     });
 
     it('handles unmount during pending fetch', async () => {
-      // Create a promise that we can control
       let resolvePromise: ((value: GitStatus) => void) | undefined;
       vi.mocked(window.terminal.getGitStatus).mockImplementation(
         () =>
@@ -883,7 +785,6 @@ describe('useGitStatus', () => {
         })
       );
 
-      // Unmount before the promise resolves
       unmount();
 
       // Resolve the promise after unmount - should not throw
@@ -893,7 +794,6 @@ describe('useGitStatus', () => {
         }
       });
 
-      // No assertions needed - just verifying no errors occur
       expect(window.terminal.getGitStatus).toHaveBeenCalled();
     });
 
@@ -919,6 +819,7 @@ describe('useGitStatus', () => {
       await flushPromises();
 
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith(specialPath);
+      expect(window.watcher.watchRepoChanges).toHaveBeenCalledWith(specialPath, 5000);
     });
 
     it('handles multiple hooks watching different sessions', async () => {
@@ -960,7 +861,6 @@ describe('useGitStatus', () => {
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/repo-1');
       expect(window.terminal.getGitStatus).toHaveBeenCalledWith('/test/repo-2');
 
-      // Each hook should have its own status
       expect(result1.current).toEqual({
         branch: 'main',
         isDirty: false,

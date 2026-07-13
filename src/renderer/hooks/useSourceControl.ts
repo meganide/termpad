@@ -10,8 +10,6 @@ import type {
 } from '../../shared/types';
 import { useAppStore } from '../stores/appStore';
 
-const BACKGROUND_POLL_INTERVAL_MS = 30000;
-
 // Store per-repo state so each worktree maintains its own state
 const operationProgressMap = new Map<string, OperationProgress>();
 const operationLoadingMap = new Map<string, boolean>();
@@ -60,7 +58,6 @@ export function resetOperationProgressState() {
 interface UseSourceControlOptions {
   repoPath: string | null;
   enabled?: boolean;
-  pollIntervalMs?: number;
 }
 
 interface UseSourceControlResult {
@@ -105,8 +102,6 @@ interface UseSourceControlResult {
   // Hook manifest for tooltip display
   hookManifest: HookManifest | null;
 }
-
-const DEFAULT_POLL_INTERVAL_MS = 2000;
 
 const DEFAULT_AHEAD_BEHIND: AheadBehindResult = {
   ahead: 0,
@@ -163,7 +158,6 @@ function areAheadBehindEqual(a: AheadBehindResult, b: AheadBehindResult): boolea
 export function useSourceControl({
   repoPath,
   enabled = true,
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 }: UseSourceControlOptions): UseSourceControlResult {
   const [fileStatuses, setFileStatuses] = useState<FileStatusResult>(DEFAULT_FILE_STATUS_RESULT);
   const [aheadBehind, setAheadBehind] = useState<AheadBehindResult>(DEFAULT_AHEAD_BEHIND);
@@ -699,23 +693,23 @@ export function useSourceControl({
     };
   }, [repoPath, enabled, fetchData]);
 
-  // Check if path is being deleted (to skip polling during deletion)
+  // Check if path is being deleted (to skip refreshes during deletion)
   const isPathDeleting = useAppStore((state) => state.isPathDeleting);
+  const throttleMs = useAppStore((state) => state.settings.gitPollIntervalMs);
 
-  // Polling for changes
+  // Refetch when the main-process repo watcher signals a change (throttled
+  // there) or the window regains focus, instead of polling on a timer
   useEffect(() => {
-    if (!enabled || !repoPath || pollIntervalMs <= 0) return;
+    if (!enabled || !repoPath) return;
 
     let isFetching = false;
-    let isCleanedUp = false;
+    let refetchQueued = false;
 
-    // Use longer polling interval when window is unfocused
-    const effectivePollInterval = isFocused ? pollIntervalMs : BACKGROUND_POLL_INTERVAL_MS;
-
-    const intervalId = setInterval(async () => {
-      // Skip if already fetching (prevents process accumulation with slow operations like WSL)
-      if (isFetching || isCleanedUp) return;
-      // Skip polling if repository is being deleted
+    const onRepoChanged = async () => {
+      if (isFetching) {
+        refetchQueued = true;
+        return;
+      }
       if (!mountedRef.current || isPathDeleting(repoPath)) return;
 
       isFetching = true;
@@ -723,14 +717,25 @@ export function useSourceControl({
         await fetchData();
       } finally {
         isFetching = false;
+        if (refetchQueued && mountedRef.current) {
+          refetchQueued = false;
+          onRepoChanged();
+        }
       }
-    }, effectivePollInterval);
+    };
+
+    window.watcher.watchRepoChanges(repoPath, throttleMs);
+    const unsubscribe = window.watcher.onRepoChanged(repoPath, onRepoChanged);
+
+    const onFocus = () => onRepoChanged();
+    window.addEventListener('focus', onFocus);
 
     return () => {
-      isCleanedUp = true;
-      clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      unsubscribe();
+      window.watcher.unwatchRepoChanges(repoPath);
     };
-  }, [enabled, repoPath, pollIntervalMs, fetchData, isPathDeleting, isFocused]);
+  }, [enabled, repoPath, throttleMs, fetchData, isPathDeleting]);
 
   // Periodic fetch from remote to keep ahead/behind accurate.
   // This is a network round-trip to the remote, so keep the cadence low and

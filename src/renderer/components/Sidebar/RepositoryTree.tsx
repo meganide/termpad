@@ -504,11 +504,10 @@ function SessionItem({
   const [isHovered, setIsHovered] = useState(false);
   const dragHandleRef = useRef<HTMLDivElement>(null);
 
-  // Poll git status for all sessions, but use slower interval for inactive ones
+  // Git status stays fresh via change events from the main-process repo watcher
   const gitStatus = useGitStatus({
     sessionId: session.id,
     path: session.path,
-    isActive, // Active sessions poll faster (5s), inactive ones slower (15s)
   });
 
   // Get PR status for this branch (narrow selector so other branches' updates

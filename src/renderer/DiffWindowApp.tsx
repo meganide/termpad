@@ -44,14 +44,13 @@ export function DiffWindowApp() {
 
   const fileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Determine if this is a working tree review (needs polling for updates)
+  // Determine if this is a working tree review (needs live updates)
   const isWorkingTreeReview = currentReview?.compareBranch === 'Working Tree';
 
-  // Poll for working tree changes when viewing working tree diff
+  // Track working tree changes when viewing working tree diff
   const { files: polledFiles, loadFileHunks } = useWorkingTreeDiff({
     repoPath: isWorkingTreeReview ? projectPath : null,
     enabled: isWorkingTreeReview && !!projectPath,
-    pollIntervalMs: 5000,
   });
 
   // Update review files when working tree changes

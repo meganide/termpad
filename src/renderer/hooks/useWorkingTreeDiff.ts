@@ -4,12 +4,10 @@ import { useAppStore } from '../stores/appStore';
 
 // Threshold for auto-loading hunks (files with more changes require manual expand)
 const AUTO_LOAD_THRESHOLD = 500;
-const DEFAULT_POLL_INTERVAL_MS = 5000;
 
 interface UseWorkingTreeDiffOptions {
   repoPath: string | null;
   enabled?: boolean;
-  pollIntervalMs?: number;
 }
 
 // Extended DiffFile that tracks whether hunks are loaded
@@ -52,7 +50,6 @@ function isSmallFile(file: DiffFileStat): boolean {
 export function useWorkingTreeDiff({
   repoPath,
   enabled = true,
-  pollIntervalMs = DEFAULT_POLL_INTERVAL_MS,
 }: UseWorkingTreeDiffOptions): UseWorkingTreeDiffResult {
   const [files, setFiles] = useState<LazyDiffFile[]>([]);
   const [headCommit, setHeadCommit] = useState<string | null>(null);
@@ -220,23 +217,29 @@ export function useWorkingTreeDiff({
     };
   }, [repoPath, enabled, fetchStats]);
 
-  // Check if path is being deleted (to skip polling during deletion)
+  // Check if path is being deleted (to skip refreshes during deletion)
   const isPathDeleting = useAppStore((state) => state.isPathDeleting);
+  const throttleMs = useAppStore((state) => state.settings.gitPollIntervalMs);
 
-  // Poll for stats at regular intervals
+  // Refresh stats when the main-process repo watcher signals a change
+  // (throttled there) or the window regains focus, instead of polling
   useEffect(() => {
-    if (!enabled || !repoPath || pollIntervalMs <= 0) return;
+    if (!enabled || !repoPath) return;
 
     let isFetching = false;
+    let refetchQueued = false;
     let isCleanedUp = false;
 
-    const intervalId = setInterval(async () => {
-      if (isFetching || isCleanedUp) return;
-      if (!mountedRef.current || isPathDeleting(repoPath)) return;
+    const refreshStats = async () => {
+      if (isFetching) {
+        refetchQueued = true;
+        return;
+      }
+      if (isCleanedUp || !mountedRef.current || isPathDeleting(repoPath)) return;
 
       isFetching = true;
       try {
-        // Only fetch stats during polling, not full hunks
+        // Only fetch stats on change signals, not full hunks
         const statsResult = await window.terminal.getWorkingTreeStats(repoPath);
         if (!mountedRef.current || isCleanedUp) return;
 
@@ -310,7 +313,7 @@ export function useWorkingTreeDiff({
                 );
               })
               .catch(() => {
-                // Ignore errors; files render without hunks until next poll
+                // Ignore errors; files render without hunks until the next change signal
               });
           }
 
@@ -324,14 +327,26 @@ export function useWorkingTreeDiff({
         }
       } finally {
         isFetching = false;
+        if (refetchQueued && !isCleanedUp) {
+          refetchQueued = false;
+          refreshStats();
+        }
       }
-    }, pollIntervalMs);
+    };
+
+    window.watcher.watchRepoChanges(repoPath, throttleMs);
+    const unsubscribe = window.watcher.onRepoChanged(repoPath, refreshStats);
+
+    const onFocus = () => refreshStats();
+    window.addEventListener('focus', onFocus);
 
     return () => {
       isCleanedUp = true;
-      clearInterval(intervalId);
+      window.removeEventListener('focus', onFocus);
+      unsubscribe();
+      window.watcher.unwatchRepoChanges(repoPath);
     };
-  }, [enabled, repoPath, pollIntervalMs, isPathDeleting]);
+  }, [enabled, repoPath, throttleMs, isPathDeleting]);
 
   return {
     files,

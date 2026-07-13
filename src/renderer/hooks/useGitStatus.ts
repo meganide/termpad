@@ -1,15 +1,11 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import { useAppStore } from '../stores/appStore';
 import type { GitStatus } from '../../shared/types';
-
-const BACKGROUND_POLL_INTERVAL_MS = 30000;
-const INACTIVE_POLL_INTERVAL_MS = 15000;
 
 interface UseGitStatusOptions {
   sessionId: string;
   path: string;
   enabled?: boolean;
-  isActive?: boolean; // Active sessions poll faster than inactive ones
 }
 
 function isGitStatusEqual(a: GitStatus | undefined, b: GitStatus | undefined): boolean {
@@ -23,51 +19,41 @@ function isGitStatusEqual(a: GitStatus | undefined, b: GitStatus | undefined): b
   );
 }
 
+/**
+ * Keeps a session's git status in the store up to date. Event-driven: fetches
+ * once on mount, then refetches only when the main-process repo watcher
+ * signals a change (throttled there) or the window regains focus.
+ */
 export function useGitStatus({
   sessionId,
   path,
   enabled = true,
-  isActive = true,
 }: UseGitStatusOptions): GitStatus | undefined {
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
   const previousStatusRef = useRef<GitStatus | undefined>(undefined);
-  const isFetchingRef = useRef(false);
   // Narrow selectors: this hook is mounted once per session, so subscribing to
   // the whole store would re-render every session row on unrelated changes.
   const updateGitStatus = useAppStore((s) => s.updateGitStatus);
   const isPathDeleting = useAppStore((s) => s.isPathDeleting);
-  const gitPollIntervalMs = useAppStore((s) => s.settings.gitPollIntervalMs);
+  const throttleMs = useAppStore((s) => s.settings.gitPollIntervalMs);
   const gitStatus = useAppStore((s) => s.terminals.get(sessionId)?.gitStatus);
-
-  // Track window focus state to throttle polling when in background
-  const [isFocused, setIsFocused] = useState(document.hasFocus());
-
-  // Track window focus changes
-  useEffect(() => {
-    const onFocus = () => setIsFocused(true);
-    const onBlur = () => setIsFocused(false);
-
-    window.addEventListener('focus', onFocus);
-    window.addEventListener('blur', onBlur);
-
-    return () => {
-      window.removeEventListener('focus', onFocus);
-      window.removeEventListener('blur', onBlur);
-    };
-  }, []);
 
   useEffect(() => {
     if (!enabled) return;
 
     let isCleanedUp = false;
+    let isFetching = false;
+    let refetchQueued = false;
 
     const fetchGitStatus = async () => {
-      // Skip if already fetching (prevents process accumulation with slow operations)
-      if (isFetchingRef.current) return;
-      // Skip polling if repository is being deleted
-      if (isPathDeleting(path)) return;
+      // A change signal during an in-flight fetch queues one trailing refetch
+      // so the final repo state is never missed
+      if (isFetching) {
+        refetchQueued = true;
+        return;
+      }
+      if (isCleanedUp || isPathDeleting(path)) return;
 
-      isFetchingRef.current = true;
+      isFetching = true;
       try {
         const status = await window.terminal.getGitStatus(path);
         if (!isCleanedUp && status && !isGitStatusEqual(status, previousStatusRef.current)) {
@@ -77,39 +63,30 @@ export function useGitStatus({
       } catch (error) {
         console.error('[useGitStatus] Failed to fetch git status:', error);
       } finally {
-        isFetchingRef.current = false;
+        isFetching = false;
+        if (refetchQueued && !isCleanedUp) {
+          refetchQueued = false;
+          fetchGitStatus();
+        }
       }
     };
 
-    // Fetch immediately (if not being deleted)
-    if (!isPathDeleting(path)) {
-      fetchGitStatus();
-    }
+    // Initial fetch; afterwards the main-process watcher signals changes
+    fetchGitStatus();
+    window.watcher.watchRepoChanges(path, throttleMs);
+    const unsubscribe = window.watcher.onRepoChanged(path, fetchGitStatus);
 
-    // Use longer polling interval when window is unfocused or session is inactive
-    const pollInterval = !isFocused
-      ? BACKGROUND_POLL_INTERVAL_MS
-      : isActive
-        ? gitPollIntervalMs
-        : INACTIVE_POLL_INTERVAL_MS;
-    intervalRef.current = setInterval(fetchGitStatus, pollInterval);
+    // Reconcile on refocus in case fs events were missed
+    const onFocus = () => fetchGitStatus();
+    window.addEventListener('focus', onFocus);
 
     return () => {
       isCleanedUp = true;
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
+      window.removeEventListener('focus', onFocus);
+      unsubscribe();
+      window.watcher.unwatchRepoChanges(path);
     };
-  }, [
-    sessionId,
-    path,
-    enabled,
-    isActive,
-    gitPollIntervalMs,
-    updateGitStatus,
-    isPathDeleting,
-    isFocused,
-  ]);
+  }, [sessionId, path, enabled, throttleMs, updateGitStatus, isPathDeleting]);
 
   return gitStatus;
 }
