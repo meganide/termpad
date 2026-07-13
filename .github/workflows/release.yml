@@ -17,6 +17,8 @@ permissions:
 jobs:
   publish:
     strategy:
+      # Let remaining platforms finish publishing even if one fails
+      fail-fast: false
       matrix:
         include:
           # Windows x64 (windows-2022 has VS Build Tools needed for node-gyp)
@@ -98,6 +100,9 @@ jobs:
   # Generate latest-*.yml files for electron-updater after all builds complete
   generate-update-manifests:
     needs: publish
+    # Run even if some publish jobs failed - manifests are generated per-platform
+    # based on which assets actually exist on the release
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
