@@ -9,6 +9,9 @@ autoUpdater.logger = console;
 autoUpdater.autoDownload = false;
 autoUpdater.autoInstallOnAppQuit = true;
 
+// Skip code signature verification for unsigned builds (no Apple Developer certificate yet)
+autoUpdater.forceDevUpdateConfig = true;
+
 // Configure update source to match forge.config.ts publisher
 autoUpdater.setFeedURL({
   provider: 'github',
