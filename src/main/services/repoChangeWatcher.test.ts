@@ -4,7 +4,13 @@ import type { WebContents } from 'electron';
 const mocks = vi.hoisted(() => ({
   invalidateGitOpCache: vi.fn(),
   isWslPath: vi.fn(() => false),
-  watchers: [] as Array<{
+  nativeWatch: vi.fn(),
+  nativeWatchers: [] as Array<{
+    handlers: Map<string, (...args: unknown[]) => void>;
+    close: ReturnType<typeof vi.fn>;
+    emitChange: (filename: string | Buffer | null) => void;
+  }>,
+  chokidarWatchers: [] as Array<{
     handlers: Map<string, (...args: unknown[]) => void>;
     close: ReturnType<typeof vi.fn>;
   }>,
@@ -23,6 +29,30 @@ vi.mock('fs/promises', () => ({
   readFile: vi.fn(),
 }));
 
+vi.mock('fs', () => ({
+  default: { watch: mocks.nativeWatch },
+  watch: mocks.nativeWatch.mockImplementation(
+    (
+      _path: string,
+      _options: unknown,
+      callback: (_eventType: string, filename: string | Buffer | null) => void
+    ) => {
+      const handlers = new Map<string, (...args: unknown[]) => void>();
+      const watcher = {
+        handlers,
+        close: vi.fn(),
+        emitChange: (filename: string | Buffer | null) => callback('change', filename),
+        on: vi.fn((event: string, eventCallback: (...args: unknown[]) => void) => {
+          handlers.set(event, eventCallback);
+          return watcher;
+        }),
+      };
+      mocks.nativeWatchers.push(watcher);
+      return watcher;
+    }
+  ),
+}));
+
 vi.mock('chokidar', () => ({
   watch: vi.fn(() => {
     const handlers = new Map<string, (...args: unknown[]) => void>();
@@ -34,7 +64,7 @@ vi.mock('chokidar', () => ({
         return watcher;
       }),
     };
-    mocks.watchers.push(watcher);
+    mocks.chokidarWatchers.push(watcher);
     return watcher;
   }),
 }));
@@ -45,7 +75,8 @@ describe('RepoChangeWatcherService', () => {
   beforeEach(() => {
     vi.useFakeTimers();
     vi.clearAllMocks();
-    mocks.watchers.length = 0;
+    mocks.nativeWatchers.length = 0;
+    mocks.chokidarWatchers.length = 0;
     repoChangeWatcher.stopAll();
   });
 
@@ -64,9 +95,9 @@ describe('RepoChangeWatcherService', () => {
 
     repoChangeWatcher.watch('/repo', sender, 5000);
 
-    const treeWatcher = mocks.watchers[0];
+    const treeWatcher = mocks.nativeWatchers[0];
     expect(treeWatcher).toBeDefined();
-    treeWatcher.handlers.get('all')?.('change', '/repo/file.txt');
+    treeWatcher.emitChange('file.txt');
 
     await vi.advanceTimersByTimeAsync(300);
 
@@ -76,5 +107,66 @@ describe('RepoChangeWatcherService', () => {
     expect(mocks.invalidateGitOpCache.mock.invocationCallOrder[0]).toBeLessThan(
       send.mock.invocationCallOrder[0]
     );
+  });
+
+  it('uses the native recursive watcher without crawling the working tree', async () => {
+    const sender = {
+      once: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn(),
+    } as unknown as WebContents;
+
+    repoChangeWatcher.watch('/large-repo', sender);
+    await vi.waitFor(() => expect(mocks.chokidarWatchers).toHaveLength(1));
+
+    expect(mocks.nativeWatch).toHaveBeenCalledWith(
+      '/large-repo',
+      { recursive: true, persistent: true },
+      expect.any(Function)
+    );
+    expect(mocks.chokidarWatchers).toHaveLength(1);
+  });
+
+  it('ignores node_modules and git metadata events from the tree watcher', async () => {
+    const send = vi.fn();
+    const sender = {
+      once: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      send,
+    } as unknown as WebContents;
+
+    repoChangeWatcher.watch('/repo', sender, 1000);
+    const treeWatcher = mocks.nativeWatchers[0];
+    treeWatcher.emitChange('node_modules/package/index.js');
+    treeWatcher.emitChange('.git/index');
+
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(send).not.toHaveBeenCalled();
+
+    treeWatcher.emitChange('src/index.ts');
+    await vi.advanceTimersByTimeAsync(300);
+    expect(send).toHaveBeenCalledWith('watcher:repoChanged', '/repo');
+  });
+
+  it('closes watchers and falls back to polling after a watcher error', async () => {
+    const send = vi.fn();
+    const sender = {
+      once: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      send,
+    } as unknown as WebContents;
+
+    repoChangeWatcher.watch('/repo', sender);
+    await vi.waitFor(() => expect(mocks.chokidarWatchers).toHaveLength(1));
+
+    const nativeWatcher = mocks.nativeWatchers[0];
+    const metadataWatcher = mocks.chokidarWatchers[0];
+    nativeWatcher.handlers.get('error')?.(new Error('watch failed'));
+
+    expect(nativeWatcher.close).toHaveBeenCalledOnce();
+    expect(metadataWatcher.close).toHaveBeenCalledOnce();
+
+    await vi.advanceTimersByTimeAsync(15000);
+    expect(send).toHaveBeenCalledWith('watcher:repoChanged', '/repo');
   });
 });
