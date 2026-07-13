@@ -19,8 +19,8 @@ jobs:
     strategy:
       matrix:
         include:
-          # Windows x64
-          - os: windows-latest
+          # Windows x64 (windows-2022 has VS Build Tools needed for node-gyp)
+          - os: windows-2022
             platform: win32
             arch: x64
           # Windows ARM64
@@ -54,10 +54,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-
-      - name: Setup Windows build tools
-        if: runner.os == 'Windows'
-        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1.13.0
 
       # Bun doesn't support Windows ARM64 natively, use npm instead
       - name: Setup bun
