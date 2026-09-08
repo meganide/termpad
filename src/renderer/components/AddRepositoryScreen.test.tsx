@@ -637,11 +637,22 @@ describe('AddRepositoryScreen', () => {
       expect(addButton).not.toBeDisabled();
     });
 
-    it('initializes git and adds repository when checkbox is checked', async () => {
+    it('initializes git and selects its main worktree when checkbox is checked', async () => {
       vi.mocked(window.terminal.selectFolder).mockResolvedValue('/test/plain-project');
       vi.mocked(window.terminal.isGitRepo).mockResolvedValue(false);
       vi.mocked(window.terminal.getBasename).mockReturnValue('plain-project');
       vi.mocked(window.terminal.initGitRepo).mockResolvedValue({ success: true });
+      vi.mocked(window.terminal.listWorktrees).mockResolvedValueOnce([
+        {
+          path: '/test/plain-project',
+          branch: 'develop',
+          head: 'abc123',
+          isMain: true,
+          isBare: false,
+          isLocked: false,
+          prunable: false,
+        },
+      ]);
 
       render(<AddRepositoryScreen onBack={mockOnBack} />);
 
@@ -671,12 +682,28 @@ describe('AddRepositoryScreen', () => {
 
       // Check that initGitRepo was called
       expect(window.terminal.initGitRepo).toHaveBeenCalledWith('/test/plain-project');
+      expect(window.terminal.listWorktrees).toHaveBeenCalledWith('/test/plain-project');
+      expect(window.terminal.initGitRepo).toHaveBeenCalledBefore(
+        vi.mocked(window.terminal.listWorktrees)
+      );
 
       // Check store - should have been added since we initialized git
       const { repositories } = useAppStore.getState();
       expect(repositories).toHaveLength(1);
       expect(repositories[0].name).toBe('plain-project');
       expect(repositories[0].path).toBe('/test/plain-project');
+      expect(repositories[0].worktreeSessions).toHaveLength(1);
+      const mainSession = repositories[0].worktreeSessions[0];
+      expect(mainSession).toMatchObject({
+        label: 'develop',
+        path: '/test/plain-project',
+        branchName: 'develop',
+        worktreeName: 'develop',
+        isExternal: false,
+        isMainWorktree: true,
+      });
+      expect(useAppStore.getState().activeTerminalId).toBe(mainSession.id);
+      expect(mockOnBack).toHaveBeenCalledOnce();
     });
 
     it('shows error when git initialization fails', async () => {
