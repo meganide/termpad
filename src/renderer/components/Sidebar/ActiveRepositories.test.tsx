@@ -14,12 +14,18 @@ vi.mock('./RepositoryTree', () => ({
   RepositoryTree: ({
     repositories,
     onReorderRepositories,
+    onReorderSessions,
+    onRepositoryDelete,
   }: ComponentProps<typeof RepositoryTree>) => (
     <div>
       {repositories.map((repository) => (
         <div key={repository.id}>{repository.name}</div>
       ))}
       <button onClick={() => onReorderRepositories(0, 1)}>Move first repo down</button>
+      <button onClick={() => onReorderSessions(repositories[0].id, 0, 1)}>
+        Move first worktree down
+      </button>
+      <button onClick={() => onRepositoryDelete(repositories[0])}>Delete first repo</button>
     </div>
   ),
 }));
@@ -123,5 +129,26 @@ describe('Sidebar active repository filter', () => {
     expect(useAppStore.getState().sidebarFocusedItemId).toBe('main');
     fireEvent.keyDown(window, { key: 'ArrowDown' });
     expect(useAppStore.getState().sidebarFocusedItemId).toBe('__add_repository__');
+  });
+
+  it('uses original worktree indexes and complete repository data while searching', () => {
+    const repository = createMockRepository({
+      id: 'repo',
+      name: 'Portal',
+      worktreeSessions: ['main', 'fix-one', 'unrelated', 'fix-two'].map((id) =>
+        createMockWorktreeSession({ id, label: id })
+      ),
+    });
+    useAppStore.setState({ repositories: [repository] });
+    render(<Sidebar {...props} />);
+    fireEvent.change(screen.getByRole('textbox', { name: 'Search repositories and worktrees' }), {
+      target: { value: 'fix' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Delete first repo' }));
+    expect(props.onRepositoryDelete).toHaveBeenLastCalledWith(repository);
+    fireEvent.click(screen.getByRole('button', { name: 'Move first worktree down' }));
+    expect(
+      useAppStore.getState().repositories[0].worktreeSessions.map((session) => session.id)
+    ).toEqual(['main', 'unrelated', 'fix-two', 'fix-one']);
   });
 });
