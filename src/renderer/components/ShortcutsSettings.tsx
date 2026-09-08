@@ -31,6 +31,10 @@ const shortcutGroups: ShortcutGroup[] = [
         keys: `${ctrl} + G`,
         description: 'Add repository',
       },
+      {
+        keys: `${ctrl} + O`,
+        description: 'Toggle agent overview',
+      },
     ],
   },
   {

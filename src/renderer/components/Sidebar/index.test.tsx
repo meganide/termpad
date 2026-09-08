@@ -21,6 +21,9 @@ describe('Sidebar', () => {
     onWorktreeRemove: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenHome: vi.fn(),
+    onToggleOverview: vi.fn(),
+    isOverviewMode: false,
+    hasAgents: true,
   };
 
   beforeEach(() => {

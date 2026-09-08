@@ -11,6 +11,12 @@ import { formatShortcut } from '../../utils/shortcuts';
 import { getAddWorktreeItemId } from '../../utils/sidebarNavigation';
 import { useGitStatus } from '../../hooks/useGitStatus';
 import { useAppStore } from '../../stores/appStore';
+import {
+  TERMINAL_STATUS_LABELS,
+  getStatusDotColor,
+  getStatusHoverRingColor,
+  isStatusPulsing,
+} from '../../utils/terminalStatusStyles';
 import type {
   Repository,
   WorktreeSession,
@@ -778,16 +784,6 @@ function SessionItem({
   return content;
 }
 
-// Status labels for tooltips
-const statusLabels: Record<TerminalStatus, string> = {
-  starting: 'Starting',
-  running: 'Running',
-  waiting: 'Waiting',
-  idle: 'Idle',
-  stopped: 'Stopped',
-  error: 'Error',
-};
-
 interface TabStatusDotsProps {
   tabs: TerminalTab[];
   terminals: Map<string, TerminalState>;
@@ -834,46 +830,7 @@ interface TabStatusDotProps {
 }
 
 function TabStatusDot({ tabId, tabName, status, isFocused, onClick }: TabStatusDotProps) {
-  // Get status-specific colors with ring colors for hover
-  const getStatusColor = (): string => {
-    switch (status) {
-      case 'starting':
-        return 'bg-status-starting';
-      case 'running':
-        return 'bg-status-running';
-      case 'waiting':
-        return 'bg-status-waiting';
-      case 'idle':
-        return 'bg-status-idle';
-      case 'stopped':
-        return 'bg-status-stopped';
-      case 'error':
-        return 'bg-status-error';
-      default:
-        return 'bg-status-idle';
-    }
-  };
-
-  const getRingColor = (): string => {
-    switch (status) {
-      case 'starting':
-        return 'hover:ring-status-starting/40';
-      case 'running':
-        return 'hover:ring-status-running/40';
-      case 'waiting':
-        return 'hover:ring-status-waiting/40';
-      case 'idle':
-        return 'hover:ring-status-idle/40';
-      case 'stopped':
-        return 'hover:ring-status-stopped/40';
-      case 'error':
-        return 'hover:ring-status-error/40';
-      default:
-        return 'hover:ring-status-idle/40';
-    }
-  };
-
-  const isPulsing = status === 'starting' || status === 'running';
+  const isPulsing = isStatusPulsing(status);
 
   return (
     <Tooltip>
@@ -887,7 +844,7 @@ function TabStatusDot({ tabId, tabName, status, isFocused, onClick }: TabStatusD
           className={cn(
             'relative flex items-center justify-center w-6 h-6 rounded-md transition-all duration-200',
             'hover:bg-sidebar-accent/60 hover:scale-105 hover:ring-1',
-            getRingColor(),
+            getStatusHoverRingColor(status),
             'focus:outline-none focus-visible:ring-1 focus-visible:ring-primary/70',
             'active:scale-95',
             isFocused && 'ring-1 ring-primary/40 bg-sidebar-accent/60 scale-105'
@@ -896,7 +853,7 @@ function TabStatusDot({ tabId, tabName, status, isFocused, onClick }: TabStatusD
           <span
             className={cn(
               'h-2.5 w-2.5 rounded-full shrink-0 transition-transform duration-200',
-              getStatusColor(),
+              getStatusDotColor(status),
               isPulsing && 'animate-pulse'
             )}
           />
@@ -904,7 +861,7 @@ function TabStatusDot({ tabId, tabName, status, isFocused, onClick }: TabStatusD
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={5}>
         <span className="text-xs">
-          {tabName} - {statusLabels[status]}
+          {tabName} - {TERMINAL_STATUS_LABELS[status]}
         </span>
       </TooltipContent>
     </Tooltip>

@@ -37,6 +37,7 @@ interface TerminalViewProps {
   initialCommand?: string; // Command to auto-run on terminal start (e.g., 'claude', 'gemini')
   matchSystemBackground?: boolean; // Use bg-background matching colors instead of default terminal colors
   terminalType?: 'main' | 'user'; // Which focus area this terminal responds to (default: 'main')
+  fontSize?: number; // Font size in px (overview mode uses a smaller size)
 }
 
 export interface TerminalViewHandle {
@@ -45,6 +46,8 @@ export interface TerminalViewHandle {
 
 // System background color to override theme background when matchSystemBackground is true
 const SYSTEM_BG_DARK = '#1d1f23';
+
+const DEFAULT_FONT_SIZE = 14;
 
 interface ContextMenuState {
   isOpen: boolean;
@@ -62,6 +65,7 @@ export const TerminalView = memo(
       initialCommand,
       matchSystemBackground = false,
       terminalType = 'main',
+      fontSize = DEFAULT_FONT_SIZE,
     },
     ref
   ) {
@@ -169,7 +173,7 @@ export const TerminalView = memo(
 
       const terminal = new Terminal({
         fontFamily: 'JetBrains Mono, Consolas, monospace',
-        fontSize: 14,
+        fontSize,
         lineHeight: 1.2,
         cursorBlink: true,
         theme: buildTheme(),
@@ -273,6 +277,10 @@ export const TerminalView = memo(
         if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 't') {
           return false; // Don't let xterm handle it, let it bubble to window
         }
+        // Let Ctrl+O pass through for toggling the agent overview
+        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') {
+          return false; // Don't let xterm handle it, let it bubble to window
+        }
         // Let Ctrl+U pass through for switching to user terminal
         if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'u') {
           return false; // Don't let xterm handle it, let it bubble to window
@@ -355,8 +363,8 @@ export const TerminalView = memo(
         isReplayingRef.current = false;
         pendingReplayWritesRef.current = [];
       };
-      // Note: matchSystemBackground and settings are intentionally excluded - we handle theme
-      // changes in the separate useEffect below to avoid recreating the terminal
+      // Note: matchSystemBackground, fontSize and settings are intentionally excluded - we handle
+      // theme and font changes in the separate useEffects below to avoid recreating the terminal
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [effectiveTerminalId, write, resize]);
 
@@ -397,6 +405,20 @@ export const TerminalView = memo(
         terminal.scrollToLine(Math.min(savedViewportY, buffer.baseY));
       }
     }, []);
+
+    // Apply font size changes (overview mode renders agents at a smaller size)
+    useEffect(() => {
+      const terminal = terminalRef.current;
+      if (!terminal || terminal.options.fontSize === fontSize) return;
+
+      terminal.options.fontSize = fontSize;
+
+      // A font change alters the cell grid, so the pty needs the new dimensions
+      if (isVisible && containerRef.current && containerRef.current.offsetWidth > 0) {
+        fitPreservingScroll();
+        resize(terminal.cols, terminal.rows);
+      }
+    }, [fontSize, isVisible, fitPreservingScroll, resize]);
 
     // Handle resize. fit() reflows (rewraps) the whole scrollback buffer,
     // so coalesce observer callbacks to at most one fit per animation frame
