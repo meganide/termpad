@@ -23,6 +23,7 @@ vi.mock('./Sidebar/index', () => ({
     onOpenSettings,
     onOpenHome,
     onToggleOverview,
+    onOpenRepositoryOverview,
     isOverviewMode,
     hasAgents,
   }: {
@@ -33,10 +34,12 @@ vi.mock('./Sidebar/index', () => ({
     onOpenSettings: () => void;
     onOpenHome: () => void;
     onToggleOverview: () => void;
+    onOpenRepositoryOverview: (repositoryId: string) => void;
     isOverviewMode: boolean;
     hasAgents: boolean;
   }) => (
     <div data-testid="sidebar" data-overview-mode={isOverviewMode} data-has-agents={hasAgents}>
+      <button onClick={() => onOpenRepositoryOverview('repo-1')}>Split repository agents</button>
       <button data-testid="sidebar-toggle-overview" onClick={onToggleOverview}>
         Overview
       </button>
@@ -73,12 +76,18 @@ vi.mock('./Terminal/TerminalView', () => ({
     sessionId,
     terminalId,
     isVisible,
+    isFocused,
   }: {
     sessionId: string;
     terminalId?: string;
     isVisible: boolean;
+    isFocused?: boolean;
   }) => (
-    <div data-testid={`terminal-${terminalId ?? sessionId}`} data-visible={isVisible}>
+    <div
+      data-testid={`terminal-${terminalId ?? sessionId}`}
+      data-visible={isVisible}
+      data-focused={isFocused}
+    >
       TerminalView
     </div>
   ),
@@ -1309,6 +1318,88 @@ describe('Layout', () => {
       });
     };
 
+    it('keeps terminals mounted across worktree splits, resize, overview, and collapse', async () => {
+      setUpTwoAgents();
+      const extra = useAppStore.getState().createTab('session-1', 'Shell');
+      useAppStore.getState().setActiveTab('tab-1');
+      render(<Layout />);
+      const first = screen.getByTestId('terminal-session-1:tab-1');
+      const second = screen.getByTestId(`terminal-session-1:${extra.id}`);
+      await act(async () => {
+        useAppStore.getState().splitTab(extra.id, 'horizontal');
+      });
+      expect(first).toHaveAttribute('data-visible', 'true');
+      expect(second).toHaveAttribute('data-visible', 'true');
+      expect(first).toHaveAttribute('data-focused', 'true');
+      expect(second).toHaveAttribute('data-focused', 'false');
+      fireEvent.pointerDown(second);
+      expect(useAppStore.getState().activeTabId).toBe(extra.id);
+      fireEvent.keyDown(screen.getByRole('separator'), { key: 'ArrowRight' });
+      await openOverview();
+      fireEvent.click(screen.getByRole('button', { name: 'Close overview' }));
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toBe(first);
+      expect(screen.getByTestId(`terminal-session-1:${extra.id}`)).toBe(second);
+      expect(first).toHaveAttribute('data-visible', 'true');
+      expect(second).toHaveAttribute('data-visible', 'true');
+      fireEvent.click(screen.getByRole('button', { name: 'Remove Shell from split' }));
+      expect(first).toHaveAttribute('data-visible', 'true');
+      expect(second).toHaveAttribute('data-visible', 'false');
+      expect(window.terminal.kill).not.toHaveBeenCalled();
+    });
+
+    it('shows interactive agents only in the selected repository without remounting terminals', async () => {
+      setUpTwoAgents();
+      useAppStore.setState((state) => ({
+        repositories: [
+          ...state.repositories,
+          createMockRepository({
+            id: 'repo-other',
+            name: 'Other repo',
+            worktreeSessions: [createMockWorktreeSession({ id: 'session-other' })],
+          }),
+        ],
+        worktreeTabs: [
+          ...state.worktreeTabs,
+          {
+            worktreeSessionId: 'session-other',
+            activeTabId: 'other-tab',
+            tabs: [{ id: 'other-tab', name: 'Other agent', createdAt: '', order: 0 }],
+          },
+        ],
+      }));
+      render(<Layout />);
+      const first = screen.getByTestId('terminal-session-1:tab-1');
+      const second = screen.getByTestId('terminal-session-2:tab-2');
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: 'Split repository agents' }));
+      });
+      expect(screen.getByText('Repository split view')).toBeInTheDocument();
+      expect(first).toHaveAttribute('data-visible', 'true');
+      expect(second).toHaveAttribute('data-visible', 'true');
+      expect(screen.getByTestId('terminal-session-other:other-tab')).toHaveAttribute(
+        'data-visible',
+        'false'
+      );
+      expect(first.closest('[inert]')).toBeNull();
+      expect(second.closest('[inert]')).toBeNull();
+      fireEvent.pointerDown(second);
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(useAppStore.getState().activeTabId).toBe('tab-2');
+      expect(second).toHaveAttribute('data-focused', 'true');
+      expect(first).toHaveAttribute('data-focused', 'false');
+      expect(screen.getByText('Repository split view')).toBeInTheDocument();
+      const terminalInput = document.createElement('textarea');
+      terminalInput.className = 'xterm';
+      second.appendChild(terminalInput);
+      fireEvent.keyDown(terminalInput, { key: 'Escape' });
+      expect(screen.getByText('Repository split view')).toBeInTheDocument();
+      fireEvent.click(screen.getByRole('button', { name: 'Close overview' }));
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toBe(first);
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toBe(second);
+      expect(first).toHaveAttribute('data-visible', 'false');
+      expect(second).toHaveAttribute('data-visible', 'true');
+    });
+
     it('shows only the active agent terminal while closed', () => {
       setUpTwoAgents();
       render(<Layout />);
@@ -1415,7 +1506,12 @@ describe('Layout', () => {
       useAppStore.setState({
         repositories: [
           { ...repo, worktreeSessions: [repo.worktreeSessions[0]] },
-          { ...repo, id: 'repo-2', name: 'other-repo', worktreeSessions: [repo.worktreeSessions[1]] },
+          {
+            ...repo,
+            id: 'repo-2',
+            name: 'other-repo',
+            worktreeSessions: [repo.worktreeSessions[1]],
+          },
         ],
       });
       const user = userEvent.setup();
@@ -1440,9 +1536,17 @@ describe('Layout', () => {
       async (status) => {
         setUpTwoAgents();
         useAppStore.setState({
-          terminals: new Map([['session-2:tab-2', {
-            id: 'session-2:tab-2', status, lastActivityTime: Date.now(), hasReceivedOutput: true,
-          }]]),
+          terminals: new Map([
+            [
+              'session-2:tab-2',
+              {
+                id: 'session-2:tab-2',
+                status,
+                lastActivityTime: Date.now(),
+                hasReceivedOutput: true,
+              },
+            ],
+          ]),
         });
         const user = userEvent.setup();
         render(<Layout />);

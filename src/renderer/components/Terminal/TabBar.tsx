@@ -1,5 +1,15 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Terminal, X, Plus, Loader, GripVertical, Pencil } from 'lucide-react';
+import {
+  Terminal,
+  X,
+  Plus,
+  Loader,
+  GripVertical,
+  Pencil,
+  Columns2,
+  Rows2,
+  Maximize2,
+} from 'lucide-react';
 import { PRESET_ICONS } from '../IconPicker';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
@@ -30,6 +40,7 @@ import type {
   TerminalState,
   TerminalStatus,
   TerminalPreset,
+  TerminalSplitView,
 } from '../../../shared/types';
 import {
   DndContext,
@@ -68,6 +79,9 @@ interface TabBarProps {
   worktreeSessionId?: string;
   /** Terminal presets to show in the dropdown menu */
   terminalPresets?: TerminalPreset[];
+  splitView?: TerminalSplitView;
+  onSplitTab?: (tabId: string, direction: TerminalSplitView['direction']) => void;
+  onClearSplit?: () => void;
 }
 
 const statusTooltips: Record<TerminalStatus, string> = {
@@ -116,6 +130,9 @@ function TabStatusIndicator({ status }: { status: TerminalStatus }) {
 interface SortableTabProps {
   tab: TerminalTab;
   isActive: boolean;
+  isInSplit?: boolean;
+  onSplitTab?: TabBarProps['onSplitTab'];
+  canSplit?: boolean;
   status: TerminalStatus;
   isEditing: boolean;
   onTabClick: (tabId: string) => void;
@@ -128,6 +145,9 @@ interface SortableTabProps {
 function SortableTab({
   tab,
   isActive,
+  isInSplit,
+  onSplitTab,
+  canSplit,
   status,
   isEditing,
   onTabClick,
@@ -210,6 +230,9 @@ function SortableTab({
             isActive
               ? 'bg-background text-foreground'
               : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+            isInSplit &&
+              !isActive &&
+              'bg-background/40 underline decoration-lime-500/50 underline-offset-4',
             isDragging && 'opacity-50 z-50'
           )}
           onClick={() => !isEditing && onTabClick(tab.id)}
@@ -277,6 +300,18 @@ function SortableTab({
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        {onSplitTab && (
+          <>
+            <ContextMenuItem disabled={!canSplit} onClick={() => onSplitTab(tab.id, 'horizontal')}>
+              <Columns2 className="h-4 w-4 mr-2" />
+              Split right
+            </ContextMenuItem>
+            <ContextMenuItem disabled={!canSplit} onClick={() => onSplitTab(tab.id, 'vertical')}>
+              <Rows2 className="h-4 w-4 mr-2" />
+              Split down
+            </ContextMenuItem>
+          </>
+        )}
         <ContextMenuItem onClick={handleStartEditing}>
           <Pencil className="h-4 w-4 mr-2" />
           Rename
@@ -309,6 +344,9 @@ export function TabBar({
   onScrollPositionChange,
   worktreeSessionId,
   terminalPresets = [],
+  splitView,
+  onSplitTab,
+  onClearSplit,
 }: TabBarProps) {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
@@ -520,7 +558,10 @@ export function TabBar({
     : null;
 
   return (
-    <div className="flex items-center py-1 bg-muted/60 backdrop-blur-sm mx-3 mt-3 rounded-lg">
+    <div
+      className="flex items-center py-1 bg-muted/60 backdrop-blur-sm mx-3 mt-3 rounded-lg"
+      onClick={(event) => event.stopPropagation()}
+    >
       {/* Scrollable tabs container */}
       <div
         ref={tabsScrollRef}
@@ -548,6 +589,9 @@ export function TabBar({
                   key={tab.id}
                   tab={tab}
                   isActive={isActive}
+                  isInSplit={splitView?.tabIds.includes(tab.id)}
+                  onSplitTab={onSplitTab}
+                  canSplit={tabs.length > 1}
                   status={status}
                   isEditing={editingTabId === tab.id}
                   onTabClick={onTabClick}
@@ -595,6 +639,47 @@ export function TabBar({
           </DropdownMenu>
         </Tooltip>
       </div>
+
+      {onSplitTab && (
+        <div className="flex shrink-0 items-center gap-1 px-2">
+          {(
+            [
+              ['horizontal', Columns2, 'Split right (side by side)'],
+              ['vertical', Rows2, 'Split down (stacked)'],
+            ] as const
+          ).map(([direction, Icon, label]) => (
+            <Tooltip key={direction}>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label={label}
+                  disabled={tabs.length < 2 || !activeTabId}
+                  onClick={() => activeTabId && onSplitTab(activeTabId, direction)}
+                >
+                  <Icon className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>
+                {tabs.length < 2 ? 'Open another terminal to split' : label}
+              </TooltipContent>
+            </Tooltip>
+          ))}
+          {splitView && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  className="rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  aria-label="Single terminal view"
+                  onClick={onClearSplit}
+                >
+                  <Maximize2 className="h-4 w-4" />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent>Single terminal view</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      )}
 
       {/* Close confirmation dialog for running terminals */}
       <AlertDialog open={pendingCloseTabId !== null}>

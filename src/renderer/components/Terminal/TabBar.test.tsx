@@ -166,6 +166,31 @@ describe('TabBar', () => {
     vi.clearAllMocks();
   });
 
+  it('offers both split directions, specific tab context actions, and a single view control', () => {
+    const onSplitTab = vi.fn();
+    const onClearSplit = vi.fn();
+    render(
+      <TabBar
+        {...defaultProps}
+        onSplitTab={onSplitTab}
+        onClearSplit={onClearSplit}
+        splitView={{ direction: 'horizontal', tabIds: ['tab-1', 'tab-2'], sizes: [50, 50] }}
+      />
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Split right (side by side)' }));
+    expect(onSplitTab).toHaveBeenLastCalledWith('tab-1', 'horizontal');
+    fireEvent.click(screen.getByRole('button', { name: 'Split down (stacked)' }));
+    expect(onSplitTab).toHaveBeenLastCalledWith('tab-1', 'vertical');
+    fireEvent.click(screen.getByRole('button', { name: 'Single terminal view' }));
+    expect(onClearSplit).toHaveBeenCalled();
+  });
+
+  it('disables splits until another tab is open', () => {
+    render(<TabBar {...defaultProps} tabs={[mockTabs[0]]} onSplitTab={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Split right (side by side)' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Split down (stacked)' })).toBeDisabled();
+  });
+
   it('renders tabs correctly', () => {
     render(<TabBar {...defaultProps} />);
 

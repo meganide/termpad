@@ -12,16 +12,24 @@ An AI orchestration tool for managing multiple AI coding agent sessions. Run Cla
 <img width="1394" height="886" alt="image" src="https://github.com/user-attachments/assets/23cf25ac-429a-4443-9b43-23765330d3a8" />
 <img width="350" height="278" alt="image" src="https://github.com/user-attachments/assets/6c7a2790-8c52-4e94-aa9d-0cad822b78b6" />
 
-
-
 - **Multiple terminal sessions** - Run Claude Code, Gemini CLI, Codex, or any other AI coding agent installed on your machine in parallel
 - **Git worktree integration** - Create and manage worktrees directly from the sidebar for isolated feature branches
 - **Terminal tabs** - Open multiple terminal tabs per worktree (Claude, Gemini, plain shell, custom presets)
+- **Worktree splits** - View open tabs side by side or stacked, with resizable panes
+- **Repository split view** - Interact with all open agents across a repository's worktrees in one live grid
 - **Built-in diff viewer** - Review code changes across branches without leaving the app
 - **Source control** - Stage, commit, push, and manage git operations from the UI
 - **Desktop notifications** - Get notified when long-running terminal tasks complete
 - **Auto-updates** - Stay current with automatic update checks and one-click installs
 - **Cross-platform** - Works on Windows, macOS, and Linux (including WSL)
+
+### Terminal split views
+
+Within a worktree, open at least two terminal tabs and use **Split right** or **Split down** in the tab bar. Right-click a tab to choose that terminal for the split. Click a pane to focus it; selecting a hidden tab replaces the focused pane. Drag a divider to resize, or focus it and use the arrow keys. Double-click a divider to balance its panes.
+
+Use the grid button beside a repository's name, or its **Split repository agents** context menu action, to show all its open terminals across worktrees. Each terminal accepts input independently. The overview header lets you switch repositories or return to the global agent overview.
+
+Removing a pane from a worktree split keeps its terminal running. **Single terminal view** returns to the focused tab. Worktree layouts and pane sizes are retained when switching worktrees during the current app session.
 
 ## Platform Support
 

@@ -157,11 +157,18 @@ export interface TerminalTab {
 }
 
 // Persisted tab state per worktree
+export interface TerminalSplitView {
+  direction: 'horizontal' | 'vertical';
+  tabIds: string[];
+  sizes: number[]; // Relative pane sizes, totaling 100
+}
+
 export interface WorktreeTabState {
   worktreeSessionId: string; // Links to WorktreeSession
   tabs: TerminalTab[]; // Ordered list of tabs
   activeTabId: string | null; // Currently selected tab
   tabScrollPosition?: number; // Horizontal scroll position of tab bar
+  splitView?: TerminalSplitView;
 }
 
 export interface Repository {

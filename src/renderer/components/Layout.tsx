@@ -27,6 +27,7 @@ import { SettingsScreen } from './SettingsScreen';
 import { Sidebar } from './Sidebar/index';
 import { EmptyTerminalState } from './Terminal/EmptyTerminalState';
 import { TabBar } from './Terminal/TabBar';
+import { SplitResizeHandle } from './Terminal/SplitResizeHandle';
 import { TerminalView, type TerminalViewHandle } from './Terminal/TerminalView';
 import { TitleBar } from './TitleBar';
 import { UpdateNotification } from './UpdateNotification';
@@ -62,6 +63,10 @@ export function Layout() {
     getTabsForWorktree,
     getTerminalIdForTab,
     worktreeTabs,
+    splitTab,
+    removeTabFromSplit,
+    clearTerminalSplit,
+    resizeTerminalSplit,
     // Scroll position actions
     updateTabScrollPosition,
     getTabScrollPosition,
@@ -96,6 +101,10 @@ export function Layout() {
       getTabsForWorktree: s.getTabsForWorktree,
       getTerminalIdForTab: s.getTerminalIdForTab,
       worktreeTabs: s.worktreeTabs,
+      splitTab: s.splitTab,
+      removeTabFromSplit: s.removeTabFromSplit,
+      clearTerminalSplit: s.clearTerminalSplit,
+      resizeTerminalSplit: s.resizeTerminalSplit,
       updateTabScrollPosition: s.updateTabScrollPosition,
       getTabScrollPosition: s.getTabScrollPosition,
       getUserTabsForWorktree: s.getUserTabsForWorktree,
@@ -194,8 +203,10 @@ export function Layout() {
 
   // Overview mode shows every agent terminal side by side in a grid
   const [isOverviewMode, setIsOverviewMode] = useState(false);
+  const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
+  const isRepositoryOverview = isOverviewMode && overviewRepositoryId !== null;
   const overviewNavigation = useOverviewNavigation(
-    isOverviewMode && activeScreen.type === 'main',
+    isOverviewMode && !isRepositoryOverview && activeScreen.type === 'main',
     activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null
   );
 
@@ -207,6 +218,7 @@ export function Layout() {
     setIsOverviewMode((prev) => {
       const next = !prev;
       if (next) {
+        setOverviewRepositoryId(null);
         // Overview lives in the main screen, and no terminal should capture keys
         setActiveScreen({ type: 'main' });
         setFocusArea('app');
@@ -214,6 +226,23 @@ export function Layout() {
       return next;
     });
   }, [setFocusArea]);
+
+  const openRepositoryOverview = useCallback(
+    (repositoryId: string) => {
+      setOverviewRepositoryId(repositoryId);
+      setIsOverviewMode(true);
+      setActiveScreen({ type: 'main' });
+      setFocusArea('app');
+    },
+    [setFocusArea]
+  );
+
+  useEffect(() => {
+    if (overviewRepositoryId && !repositories.some((repo) => repo.id === overviewRepositoryId)) {
+      exitOverview();
+      setOverviewRepositoryId(null);
+    }
+  }, [overviewRepositoryId, repositories, exitOverview]);
 
   // Callback to close overlay screens when session is selected via keyboard
   const handleKeyboardSessionSelect = useCallback(() => {
@@ -250,6 +279,9 @@ export function Layout() {
           e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
         if (isOverviewMode) {
+          // Escape belongs to the running agent while interacting with a repository pane.
+          if (isRepositoryOverview && e.target instanceof Element && e.target.closest('.xterm'))
+            return;
           e.preventDefault();
           exitOverview();
         } else if (activeScreen.type === 'settings') {
@@ -272,7 +304,7 @@ export function Layout() {
     return () => {
       window.removeEventListener('keydown', handleEscapeKey);
     };
-  }, [activeScreen.type, isOverviewMode, exitOverview]);
+  }, [activeScreen.type, isOverviewMode, isRepositoryOverview, exitOverview]);
 
   // Sync sidebar focus when active terminal changes
   useEffect(() => {
@@ -631,6 +663,11 @@ export function Layout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSessions, getTabsForWorktree, getTerminalIdForTab, worktreeTabs]);
 
+  const overviewAgentCount = isRepositoryOverview
+    ? allTerminalConfigs.filter((config) => config.repositoryId === overviewRepositoryId).length
+    : allTerminalConfigs.length;
+  const repositoryGridColumns = Math.max(1, Math.ceil(Math.sqrt(overviewAgentCount)));
+
   const overviewRepoCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const config of allTerminalConfigs) {
@@ -681,6 +718,11 @@ export function Layout() {
     return getTabsForWorktree(activeTerminalId);
   }, [activeTerminalId, getTabsForWorktree, worktreeTabs]);
 
+  const activeSplitView = worktreeTabs.find(
+    (wt) => wt.worktreeSessionId === activeTerminalId
+  )?.splitView;
+  const splitView = isOverviewMode ? undefined : activeSplitView;
+
   // Helper to get terminal ID for a tab in the current worktree
   const getTerminalIdForActiveTab = useCallback(
     (tabId: string) => {
@@ -694,8 +736,9 @@ export function Layout() {
   const handleTabClick = useCallback(
     (tabId: string) => {
       setActiveTab(tabId);
+      setFocusArea('mainTerminal');
     },
-    [setActiveTab]
+    [setActiveTab, setFocusArea]
   );
 
   const handleTabClose = useCallback(
@@ -1026,6 +1069,7 @@ export function Layout() {
           onOpenHome={handleOpenHome}
           onSessionSelect={handleSessionSelect}
           onToggleOverview={toggleOverview}
+          onOpenRepositoryOverview={openRepositoryOverview}
           isOverviewMode={isOverviewMode}
           hasAgents={allTerminalConfigs.length > 0}
         />
@@ -1047,7 +1091,16 @@ export function Layout() {
               <div className="flex-1 flex flex-col min-w-0">
                 {/* Overview replaces the per-session header while it is open */}
                 {isOverviewMode && (
-                  <OverviewHeader agentCount={allTerminalConfigs.length} onClose={exitOverview} />
+                  <OverviewHeader
+                    agentCount={overviewAgentCount}
+                    onClose={exitOverview}
+                    repositories={repositories}
+                    repositoryId={overviewRepositoryId}
+                    onRepositoryChange={(repositoryId) => {
+                      setOverviewRepositoryId(repositoryId);
+                      setFocusArea('app');
+                    }}
+                  />
                 )}
 
                 {/* WorktreeBar Header - only spans terminal width */}
@@ -1078,6 +1131,9 @@ export function Layout() {
                     onScrollPositionChange={handleTabScrollPositionChange}
                     worktreeSessionId={activeTerminalId}
                     terminalPresets={settings.terminalPresets}
+                    splitView={splitView}
+                    onSplitTab={splitTab}
+                    onClearSplit={() => clearTerminalSplit(activeTerminalId)}
                   />
                 )}
 
@@ -1085,11 +1141,23 @@ export function Layout() {
                 <div
                   ref={overviewNavigation.containerRef}
                   onKeyDown={overviewNavigation.onKeyDown}
+                  style={
+                    isRepositoryOverview
+                      ? {
+                          gridTemplateColumns: `repeat(${repositoryGridColumns}, minmax(0, 1fr))`,
+                          gridTemplateRows: `repeat(${Math.max(1, Math.ceil(overviewAgentCount / repositoryGridColumns))}, minmax(0, 1fr))`,
+                        }
+                      : undefined
+                  }
                   className={cn(
                     'flex-1 min-h-0 rounded-xl mx-3 mb-3 mt-2',
                     isOverviewMode
-                      ? 'overview-agent-grid overflow-y-auto p-4 bg-obsidian-950/50'
-                      : 'relative p-2 bg-muted'
+                      ? isRepositoryOverview
+                        ? 'grid gap-2 overflow-hidden p-2 bg-obsidian-950/50'
+                        : 'overview-agent-grid overflow-y-auto p-4 bg-obsidian-950/50'
+                      : 'relative p-2 bg-muted',
+                    splitView && 'flex',
+                    splitView?.direction === 'vertical' && 'flex-col'
                   )}
                 >
                   {/* Notes panel - overlay on top of terminal */}
@@ -1107,14 +1175,22 @@ export function Layout() {
                   {allTerminalConfigs.flatMap((config, index) => {
                     const isActiveTab =
                       config.sessionId === activeTerminalId && config.tabId === activeTabId;
-                    const isVisible = isOverviewMode || isActiveTab;
+                    const paneIndex =
+                      config.sessionId === activeTerminalId
+                        ? (splitView?.tabIds.indexOf(config.tabId) ?? -1)
+                        : -1;
+                    const isVisible = isOverviewMode
+                      ? !isRepositoryOverview || config.repositoryId === overviewRepositoryId
+                      : splitView
+                        ? paneIndex >= 0
+                        : isActiveTab;
 
                     // Headings are flat siblings so toggling grouping never remounts terminals.
                     const startsRepository =
                       index === 0 ||
                       allTerminalConfigs[index - 1].repositoryId !== config.repositoryId;
                     return [
-                      isOverviewMode && startsRepository && (
+                      isOverviewMode && !isRepositoryOverview && startsRepository && (
                         <h2
                           key={`repository:${config.repositoryId}`}
                           className={cn(
@@ -1130,12 +1206,45 @@ export function Layout() {
                           </span>
                         </h2>
                       ),
+                      splitView && paneIndex > 0 && (
+                        <SplitResizeHandle
+                          key={`split:${config.terminalId}`}
+                          direction={splitView.direction}
+                          sizes={splitView.sizes}
+                          index={paneIndex}
+                          onResize={(sizes) => resizeTerminalSplit(config.sessionId, sizes)}
+                        />
+                      ),
                       <AgentTile
                         key={config.terminalId}
                         terminalId={config.terminalId}
                         isOverview={isOverviewMode}
+                        isInteractiveOverview={isRepositoryOverview}
                         isVisible={isVisible}
                         isActive={isActiveTab}
+                        splitStyle={
+                          splitView && paneIndex >= 0
+                            ? {
+                                order: paneIndex * 2,
+                                flex: `${splitView.sizes[paneIndex]} 1 0px`,
+                                ...(splitView.direction === 'horizontal'
+                                  ? { width: 0 }
+                                  : { height: 0 }),
+                              }
+                            : undefined
+                        }
+                        onFocusPane={
+                          (!isOverviewMode || isRepositoryOverview) && isVisible
+                            ? () => {
+                                if (!isActiveTab) {
+                                  if (config.sessionId !== activeTerminalId)
+                                    setActiveTerminal(config.sessionId);
+                                  handleTabClick(config.tabId);
+                                }
+                              }
+                            : undefined
+                        }
+                        onRemovePane={() => removeTabFromSplit(config.tabId)}
                         repositoryName={config.repositoryName}
                         worktreeLabel={config.worktreeLabel}
                         tabName={config.tabName}
@@ -1149,19 +1258,33 @@ export function Layout() {
                           terminalId={config.terminalId}
                           cwd={config.cwd}
                           isVisible={isVisible}
+                          isFocused={(!isOverviewMode || isRepositoryOverview) && isActiveTab}
                           initialCommand={config.tabCommand}
                           terminalType="main"
-                          fontSize={isOverviewMode ? OVERVIEW_TERMINAL_FONT_SIZE : undefined}
+                          fontSize={
+                            isOverviewMode && !isRepositoryOverview
+                              ? OVERVIEW_TERMINAL_FONT_SIZE
+                              : undefined
+                          }
                         />
                       </AgentTile>,
                     ];
                   })}
 
                   {/* Overview open but no agent terminals exist yet */}
-                  {isOverviewMode && allTerminalConfigs.length === 0 && (
+                  {isOverviewMode && overviewAgentCount === 0 && (
                     <div className="col-span-full flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                       <TerminalIcon className="h-8 w-8 opacity-40" />
-                      <span className="text-sm">No agents yet</span>
+                      <span className="text-sm">
+                        {isRepositoryOverview
+                          ? 'No agents open in this repository'
+                          : 'No agents yet'}
+                      </span>
+                      {isRepositoryOverview && (
+                        <span className="text-xs">
+                          Open a terminal in one of its worktrees to see it here.
+                        </span>
+                      )}
                     </div>
                   )}
 

@@ -175,6 +175,22 @@ describe('TerminalView', () => {
     vi.restoreAllMocks();
   });
 
+  it('resizes an unfocused visible split without stealing focus, then focuses it when selected', () => {
+    useAppStore.setState({ focusArea: 'mainTerminal' });
+    const { rerender } = render(<TerminalView {...defaultProps} isFocused={false} />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockUseTerminalReturn.resize).toHaveBeenCalled();
+    expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+    rerender(<TerminalView {...defaultProps} isFocused />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockTerminalInstance.focus).toHaveBeenCalledTimes(1);
+    expect(mockTerminalInstance.dispose).not.toHaveBeenCalled();
+  });
+
   describe('rendering', () => {
     it('renders terminal container div', () => {
       const { container } = render(<TerminalView {...defaultProps} />);

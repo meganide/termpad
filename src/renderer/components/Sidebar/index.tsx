@@ -23,6 +23,7 @@ interface SidebarProps {
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
   onToggleOverview: () => void;
+  onOpenRepositoryOverview?: (repositoryId: string) => void;
   isOverviewMode: boolean;
   hasAgents: boolean;
 }
@@ -39,6 +40,7 @@ export function Sidebar({
   onOpenHome,
   onSessionSelect,
   onToggleOverview,
+  onOpenRepositoryOverview,
   isOverviewMode,
   hasAgents,
 }: SidebarProps) {
@@ -317,6 +319,7 @@ export function Sidebar({
               onToggleExpand={toggleRepositoryExpanded}
               onRepositoryDelete={onRepositoryDelete}
               onOpenRepositorySettings={onOpenRepositorySettings}
+              onOpenRepositoryOverview={onOpenRepositoryOverview}
               onWorktreeRemove={onWorktreeRemove}
               onReorderSessions={reorderWorktreeSessions}
               onReorderRepositories={handleReorderRepositories}

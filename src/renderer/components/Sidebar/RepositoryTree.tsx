@@ -1,5 +1,14 @@
 import { useState, Fragment, useMemo, useRef } from 'react';
-import { ChevronRight, Plus, GripVertical, GitBranch, Settings, Trash2, Home } from 'lucide-react';
+import {
+  ChevronRight,
+  Plus,
+  GripVertical,
+  GitBranch,
+  Settings,
+  Trash2,
+  Home,
+  LayoutGrid,
+} from 'lucide-react';
 import { GitPullRequestIcon } from '@primer/octicons-react';
 import { cn } from '../../lib/utils';
 import { Button } from '../ui/button';
@@ -52,6 +61,7 @@ interface RepositoryTreeProps {
   onToggleExpand: (repositoryId: string) => void;
   onRepositoryDelete: (repository: Repository) => void;
   onOpenRepositorySettings: (repository: Repository) => void;
+  onOpenRepositoryOverview?: (repositoryId: string) => void;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onReorderSessions: (repositoryId: string, fromIndex: number, toIndex: number) => void;
   onReorderRepositories: (fromIndex: number, toIndex: number) => void;
@@ -85,6 +95,7 @@ export function RepositoryTree({
   onToggleExpand,
   onRepositoryDelete,
   onOpenRepositorySettings,
+  onOpenRepositoryOverview,
   onWorktreeRemove,
   onReorderSessions,
   onReorderRepositories,
@@ -132,6 +143,7 @@ export function RepositoryTree({
               onToggleExpand={onToggleExpand}
               onDelete={onRepositoryDelete}
               onOpenSettings={onOpenRepositorySettings}
+              onOpenRepositoryOverview={onOpenRepositoryOverview}
               onWorktreeRemove={onWorktreeRemove}
               onAssignShortcut={setShortcutDialogSession}
               sessionDragState={sessionDragState}
@@ -201,6 +213,7 @@ interface RepositoryItemProps {
   onToggleExpand: (repositoryId: string) => void;
   onDelete: (repository: Repository) => void;
   onOpenSettings: (repository: Repository) => void;
+  onOpenRepositoryOverview?: (repositoryId: string) => void;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onAssignShortcut: (session: WorktreeSession) => void;
   // Session drag props
@@ -238,6 +251,7 @@ function RepositoryItem({
   onToggleExpand,
   onDelete,
   onOpenSettings,
+  onOpenRepositoryOverview,
   onWorktreeRemove,
   onAssignShortcut,
   sessionDragState,
@@ -329,6 +343,7 @@ function RepositoryItem({
           repository={repository}
           onDelete={onDelete}
           onOpenSettings={onOpenSettings}
+          onOpenOverview={onOpenRepositoryOverview}
           onOpenChange={setIsMenuOpen}
         >
           <div
@@ -371,6 +386,23 @@ function RepositoryItem({
               />
             </button>
             <span className="flex-1 text-sm font-semibold truncate">{repository.name}</span>
+            {onOpenRepositoryOverview && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    aria-label={`Split agents in ${repository.name}`}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onOpenRepositoryOverview(repository.id);
+                    }}
+                    className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    <LayoutGrid className="h-3.5 w-3.5" />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent side="right">Split all agents in this repository</TooltipContent>
+              </Tooltip>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <button
