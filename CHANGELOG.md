@@ -1,5 +1,11 @@
 # termpad
 
+## 0.8.0
+
+### Minor Changes
+
+- [#30](https://github.com/meganide/termpad/pull/30) [`0f93ffe`](https://github.com/meganide/termpad/commit/0f93ffe59e85a2892b19c8c09f5c6498bf9667ed) Thanks [@meganide](https://github.com/meganide)! - Refresh the workspace with a neutral graphite theme, clearer sidebar navigation, and a redesigned home screen with live workspace counts, recent worktrees, and direct repository actions. Polish setup screens, settings, terminal panels, and empty states, and make the Cmd + O shortcut easier to read. Opening a repository without worktrees now starts worktree setup.
+
 ## 0.7.0
 
 ### Minor Changes
