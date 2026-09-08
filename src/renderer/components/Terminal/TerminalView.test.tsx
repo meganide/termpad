@@ -271,6 +271,11 @@ describe('TerminalView', () => {
 
   describe('visibility handling', () => {
     it('fits terminal when becoming visible', async () => {
+      // jsdom computes no layout, so every element reports a 0x0 box and
+      // TerminalView skips fitting a collapsed container.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(800);
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(600);
+
       const { rerender } = render(<TerminalView {...defaultProps} isVisible={false} />);
 
       // Clear calls from initial render

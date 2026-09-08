@@ -156,6 +156,7 @@ interface AppStore extends AppState {
   addTodo: (scope: TodoScope, text: string) => void;
   updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
   removeTodo: (scope: TodoScope, todoId: string) => void;
+  reorderTodos: (scope: TodoScope, orderedTodoIds: string[]) => void;
 
   // Terminal actions
   setActiveTerminal: (worktreeSessionId: string | null) => void;
@@ -248,7 +249,7 @@ export type TodoScope =
   | { type: 'repository'; repositoryId: string }
   | { type: 'worktree'; worktreeSessionId: string };
 
-export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed'>>;
+export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority'>>;
 
 const applyToScopedTodos = (
   repositories: Repository[],
@@ -849,8 +850,9 @@ export const useAppStore = create<AppStore>((set, get) => ({
       completed: false,
       createdAt: new Date().toISOString(),
     };
+    // Newest first; manual drag ordering takes over from there
     set((state) => ({
-      repositories: applyToScopedTodos(state.repositories, scope, (todos) => [...todos, todo]),
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) => [todo, ...todos]),
     }));
     persistState(get());
   },
@@ -876,6 +878,21 @@ export const useAppStore = create<AppStore>((set, get) => ({
       repositories: applyToScopedTodos(state.repositories, scope, (todos) =>
         todos.filter((todo) => todo.id !== todoId)
       ),
+    }));
+    persistState(get());
+  },
+
+  reorderTodos: (scope, orderedTodoIds) => {
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) => {
+        const byId = new Map(todos.map((todo) => [todo.id, todo]));
+        const reordered = orderedTodoIds
+          .map((id) => byId.get(id))
+          .filter((todo): todo is TodoItem => todo !== undefined);
+        // Anything the caller left out keeps its place at the end
+        const missing = todos.filter((todo) => !orderedTodoIds.includes(todo.id));
+        return [...reordered, ...missing];
+      }),
     }));
     persistState(get());
   },

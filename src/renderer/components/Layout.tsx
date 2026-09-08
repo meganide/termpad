@@ -349,6 +349,13 @@ export function Layout() {
   const [userTerminalPanelRatio, setUserTerminalPanelRatio] = useState(
     windowState.userTerminalPanelRatio
   );
+
+  // Notes and todos need room to write, so they take the full right panel and
+  // the user terminals step aside until the user goes back to Changes.
+  const isUserTerminalPanelCollapsed = rightPanelTab !== 'changes';
+  const topPanelHeightPercent = isUserTerminalPanelCollapsed
+    ? 100
+    : (1 - userTerminalPanelRatio) * 100;
   const isResizingUserTerminalPanel = useRef(false);
   const rightPanelRef = useRef<HTMLDivElement>(null);
 
@@ -1053,13 +1060,15 @@ export function Layout() {
                 />
 
                 {/* Vertical resize handle (for panel split) */}
-                <div
-                  className="absolute left-0 w-full cursor-ns-resize z-10 group flex items-center py-1 -translate-y-1/2"
-                  style={{ top: `${(1 - userTerminalPanelRatio) * 100}%` }}
-                  onMouseDown={startResizingUserTerminalPanel}
-                >
-                  <div className="w-full h-px bg-border group-hover:bg-primary/30 transition-colors" />
-                </div>
+                {!isUserTerminalPanelCollapsed && (
+                  <div
+                    className="absolute left-0 w-full cursor-ns-resize z-10 group flex items-center py-1 -translate-y-1/2"
+                    style={{ top: `${(1 - userTerminalPanelRatio) * 100}%` }}
+                    onMouseDown={startResizingUserTerminalPanel}
+                  >
+                    <div className="w-full h-px bg-border group-hover:bg-primary/30 transition-colors" />
+                  </div>
+                )}
 
                 {/* Top Panel: Source Control / Notes tabs.
                     Both stay mounted so git watchers and an in-progress commit
@@ -1067,11 +1076,12 @@ export function Layout() {
                 {activeSession && activeSessionInfo && (
                   <div
                     className="absolute top-0 left-0 right-0 overflow-hidden"
-                    style={{ height: `${(1 - userTerminalPanelRatio) * 100}%` }}
+                    style={{ height: `${topPanelHeightPercent}%` }}
+                    data-testid="right-panel-top"
                   >
                     <div className={rightPanelTab === 'changes' ? 'h-full' : 'hidden'}>
                       <SourceControlPane
-                        titleSlot={rightPanelTabs}
+                        titleSlot={rightPanelTab === 'changes' ? rightPanelTabs : null}
                         repoPath={activeSession.path}
                         onViewDiff={handleViewDiff}
                         onOpenInEditor={handleOpenInEditor}
@@ -1080,7 +1090,7 @@ export function Layout() {
                     </div>
                     <div className={rightPanelTab === 'notes' ? 'h-full' : 'hidden'}>
                       <NotesPanel
-                        titleSlot={rightPanelTabs}
+                        titleSlot={rightPanelTab === 'notes' ? rightPanelTabs : null}
                         repositoryId={activeSessionInfo.repository.id}
                         worktreeSessionId={activeSessionInfo.session.id}
                         repositoryName={activeSessionInfo.repository.name}
@@ -1089,7 +1099,7 @@ export function Layout() {
                     </div>
                     <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
                       <TodosPanel
-                        titleSlot={rightPanelTabs}
+                        titleSlot={rightPanelTab === 'todos' ? rightPanelTabs : null}
                         repositoryId={activeSessionInfo.repository.id}
                         worktreeSessionId={activeSessionInfo.session.id}
                         repositoryName={activeSessionInfo.repository.name}
@@ -1102,7 +1112,11 @@ export function Layout() {
                 {/* Bottom Panel: User Terminals - Tab bar, controls, and stable terminal container */}
                 <div
                   className="absolute bottom-0 left-0 right-0 overflow-hidden flex flex-col"
-                  style={{ height: `${userTerminalPanelRatio * 100}%` }}
+                  style={{
+                    height: `${100 - topPanelHeightPercent}%`,
+                    display: isUserTerminalPanelCollapsed ? 'none' : undefined,
+                  }}
+                  data-testid="user-terminal-panel"
                 >
                   {activeSession && activeSessionInfo && (
                     <UserTerminalSection
@@ -1134,7 +1148,9 @@ export function Layout() {
                         terminalId={config.terminalId}
                         cwd={config.cwd}
                         isVisible={
-                          config.sessionId === activeTerminalId && config.tabId === activeUserTabId
+                          !isUserTerminalPanelCollapsed &&
+                          config.sessionId === activeTerminalId &&
+                          config.tabId === activeUserTabId
                         }
                         terminalType="user"
                       />

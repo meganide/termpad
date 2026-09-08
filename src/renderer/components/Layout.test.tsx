@@ -239,10 +239,12 @@ vi.mock('../hooks/useWorkingTreeDiff', () => ({
 vi.mock('../features/source-control', () => ({
   SourceControlPane: ({
     repoPath,
+    titleSlot,
     onViewDiff,
     onOpenInEditor,
   }: {
     repoPath: string | null;
+    titleSlot?: React.ReactNode;
     onViewDiff?: (file: {
       path: string;
       type: string;
@@ -257,6 +259,7 @@ vi.mock('../features/source-control', () => ({
     }) => void;
   }) => (
     <div data-testid="source-control-pane">
+      {titleSlot}
       SourceControlPane
       <span data-testid="repo-path">{repoPath}</span>
       <button
@@ -959,6 +962,44 @@ describe('Layout', () => {
 
       // Width should remain at 400px since mouseup stopped resizing
       expect(pane.style.width).toBe('400px');
+    });
+
+    it('shares the right panel with user terminals on the Changes tab', () => {
+      setupGitRepo();
+      render(<Layout />);
+
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(document.querySelector('.cursor-ns-resize')).toBeInTheDocument();
+    });
+
+    it.each(['notes', 'todos'])('gives the %s tab the full right panel height', (tab) => {
+      setupGitRepo();
+      render(<Layout />);
+
+      act(() => {
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+      });
+
+      expect(screen.getByTestId(`${tab}-panel`)).toBeVisible();
+      expect(screen.getByTestId('right-panel-top')).toHaveStyle({ height: '100%' });
+      expect(screen.getByTestId('user-terminal-panel')).not.toBeVisible();
+      // Nothing left to drag once the split is gone
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
+    });
+
+    it('restores the user terminals when returning to Changes', () => {
+      setupGitRepo();
+      render(<Layout />);
+
+      act(() => {
+        fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
+      });
+      act(() => {
+        fireEvent.click(screen.getByTestId('right-panel-tab-changes'));
+      });
+
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(document.querySelector('.cursor-ns-resize')).toBeInTheDocument();
     });
   });
 

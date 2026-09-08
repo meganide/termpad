@@ -203,6 +203,85 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository[0].text).toBe('Write tests');
   });
 
+  it('puts newly added todos at the top', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo({ id: 'todo-old', text: 'Older' })] });
+    renderPanel();
+
+    await user.type(repositoryList(), 'Newer{Enter}');
+
+    expect(getStoredTodos().repository.map((t) => t.text)).toEqual(['Newer', 'Older']);
+  });
+
+  it('shows the creation date of a todo', () => {
+    seedRepository({ repository: [makeTodo({ createdAt: '2026-03-14T10:00:00.000Z' })] });
+    renderPanel();
+
+    expect(screen.getByText('Mar 14')).toBeInTheDocument();
+  });
+
+  it('sets and clears a priority', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    await user.click(screen.getByLabelText('Priority for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'High' }));
+    expect(getStoredTodos().repository[0].priority).toBe('high');
+
+    await user.click(screen.getByLabelText('Priority for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'None' }));
+    expect(getStoredTodos().repository[0].priority).toBeUndefined();
+  });
+
+  it('copies a todo to the clipboard', async () => {
+    // userEvent.setup() swaps in its own clipboard, so spy after it installs
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    await user.click(screen.getByLabelText('Copy "Write tests"'));
+
+    expect(writeText).toHaveBeenCalledWith('Write tests');
+  });
+
+  it('offers a drag handle for active todos but not completed ones', () => {
+    seedRepository({
+      repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Done one', completed: true })],
+    });
+    renderPanel();
+
+    expect(screen.getByLabelText('Reorder "Write tests"')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Reorder "Done one"')).not.toBeInTheDocument();
+  });
+
+  it('reorders todos through the store', () => {
+    seedRepository({
+      repository: [
+        makeTodo({ id: 'a', text: 'A' }),
+        makeTodo({ id: 'b', text: 'B' }),
+        makeTodo({ id: 'c', text: 'C' }),
+      ],
+    });
+
+    useAppStore
+      .getState()
+      .reorderTodos({ type: 'repository', repositoryId: REPOSITORY_ID }, ['c', 'a', 'b']);
+
+    expect(getStoredTodos().repository.map((t) => t.text)).toEqual(['C', 'A', 'B']);
+  });
+
+  it('keeps todos the caller left out of a reorder', () => {
+    seedRepository({
+      repository: [makeTodo({ id: 'a', text: 'A' }), makeTodo({ id: 'b', text: 'B' })],
+    });
+
+    useAppStore.getState().reorderTodos({ type: 'repository', repositoryId: REPOSITORY_ID }, ['b']);
+
+    expect(getStoredTodos().repository.map((t) => t.text)).toEqual(['B', 'A']);
+  });
+
   it('deletes a todo', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()], worktree: [makeTodo({ id: 'todo-2' })] });

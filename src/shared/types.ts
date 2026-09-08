@@ -130,12 +130,16 @@ export interface CustomShortcut {
   metaKey: boolean;
 }
 
+export type TodoPriority = 'low' | 'medium' | 'high';
+
 // A single todo entry. Scoped to either a repository or a worktree session.
+// Array position is the user's manual ordering.
 export interface TodoItem {
   id: string;
   text: string;
   completed: boolean;
   createdAt: string;
+  priority?: TodoPriority;
 }
 
 export interface WorktreeSession {

@@ -2,6 +2,22 @@ import { useCallback, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { useShallow } from 'zustand/react/shallow';
 import {
+  DndContext,
+  KeyboardSensor,
+  PointerSensor,
+  closestCenter,
+  useSensor,
+  useSensors,
+  type DragEndEvent,
+} from '@dnd-kit/core';
+import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
+import {
+  SortableContext,
+  arrayMove,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable';
+import {
   Accordion,
   AccordionContent,
   AccordionItem,
@@ -10,7 +26,7 @@ import {
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { useAppStore, type TodoScope } from '../../stores/appStore';
-import type { TodoItem } from '../../../shared/types';
+import type { TodoItem, TodoPriority } from '../../../shared/types';
 import { TodoItemRow } from './TodoItemRow';
 
 interface TodoListProps {
@@ -20,14 +36,20 @@ interface TodoListProps {
 }
 
 export function TodoList({ label, scope, todos }: TodoListProps) {
-  const { addTodo, updateTodo, removeTodo } = useAppStore(
+  const { addTodo, updateTodo, removeTodo, reorderTodos } = useAppStore(
     useShallow((s) => ({
       addTodo: s.addTodo,
       updateTodo: s.updateTodo,
       removeTodo: s.removeTodo,
+      reorderTodos: s.reorderTodos,
     }))
   );
   const [draft, setDraft] = useState('');
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
+  );
 
   const submitDraft = useCallback(() => {
     if (!draft.trim()) return;
@@ -43,12 +65,34 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
     [todos]
   );
 
-  const renderRow = (todo: TodoItem) => (
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      const { active: dragged, over } = event;
+      if (!over || dragged.id === over.id) return;
+
+      const oldIndex = active.findIndex((todo) => todo.id === dragged.id);
+      const newIndex = active.findIndex((todo) => todo.id === over.id);
+      if (oldIndex === -1 || newIndex === -1) return;
+
+      const reordered = arrayMove(active, oldIndex, newIndex);
+      reorderTodos(
+        scope,
+        [...reordered, ...completed].map((todo) => todo.id)
+      );
+    },
+    [active, completed, reorderTodos, scope]
+  );
+
+  const renderRow = (todo: TodoItem, sortable: boolean) => (
     <TodoItemRow
       key={todo.id}
       todo={todo}
+      sortable={sortable}
       onToggle={(isCompleted) => updateTodo(scope, todo.id, { completed: isCompleted })}
       onRename={(text) => updateTodo(scope, todo.id, { text })}
+      onPriorityChange={(priority: TodoPriority | undefined) =>
+        updateTodo(scope, todo.id, { priority })
+      }
       onRemove={() => removeTodo(scope, todo.id)}
     />
   );
@@ -97,7 +141,21 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
           <p className="pt-4 text-center text-sm text-muted-foreground">No todos yet</p>
         )}
 
-        {active.length > 0 && <ul className="space-y-1">{active.map(renderRow)}</ul>}
+        {active.length > 0 && (
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragEnd={handleDragEnd}
+            modifiers={[restrictToVerticalAxis]}
+          >
+            <SortableContext
+              items={active.map((todo) => todo.id)}
+              strategy={verticalListSortingStrategy}
+            >
+              <ul className="space-y-1">{active.map((todo) => renderRow(todo, true))}</ul>
+            </SortableContext>
+          </DndContext>
+        )}
 
         {todos.length > 0 && active.length === 0 && (
           <p className="pt-4 text-center text-sm text-muted-foreground">All done</p>
@@ -110,7 +168,7 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
                 Completed ({completed.length})
               </AccordionTrigger>
               <AccordionContent className="pb-0 pt-1">
-                <ul className="space-y-1">{completed.map(renderRow)}</ul>
+                <ul className="space-y-1">{completed.map((todo) => renderRow(todo, false))}</ul>
               </AccordionContent>
             </AccordionItem>
           </Accordion>
