@@ -331,7 +331,7 @@ function NoteEditor({
           '[&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground',
           '[&_ul]:list-disc [&_ul]:pl-5',
           '[&_ol]:list-decimal [&_ol]:pl-5',
-          '[&_code]:bg-obsidian-950 [&_code]:text-lime-500 [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-lime-500/20',
+          '[&_code]:bg-obsidian-950 [&_code]:text-primary [&_code]:rounded [&_code]:px-1.5 [&_code]:py-0.5 [&_code]:text-xs [&_code]:font-mono [&_code]:border [&_code]:border-primary/20',
         ].join(' ')}
         onInput={() => {
           saveContent();

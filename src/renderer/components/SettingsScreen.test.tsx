@@ -119,7 +119,8 @@ describe('SettingsScreen', () => {
       render(<SettingsScreen onBack={mockOnBack} initialTab="terminal" />);
       // Use getAllByText since "Terminal" appears both as nav tab and as a preset name
       const terminalButton = screen.getAllByText('Terminal')[0].closest('button');
-      expect(terminalButton).toHaveClass('bg-accent');
+      expect(terminalButton).toHaveAttribute('aria-current', 'page');
+      expect(terminalButton).toHaveClass('bg-primary/10');
     });
 
     it('applies inactive styling to non-selected tabs', () => {

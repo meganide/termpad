@@ -120,6 +120,6 @@ describe('AgentTile', () => {
         <div />
       </AgentTile>
     );
-    expect(screen.getByTestId('agent-tile-session-1:tab-1').className).toContain('ring-lime-500');
+    expect(screen.getByTestId('agent-tile-session-1:tab-1').className).toContain('ring-primary/40');
   });
 });

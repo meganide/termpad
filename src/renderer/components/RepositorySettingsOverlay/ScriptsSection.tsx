@@ -119,7 +119,7 @@ export function ScriptsSection({ repositoryId, scriptsConfig, onUpdate }: Script
                 <RefreshCw className="h-3.5 w-3.5" />
                 <span className="text-xs">Sync from termpad.json</span>
                 {hasConfigUpdate && (
-                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-lime-500" />
+                  <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-primary" />
                 )}
               </Button>
             </TooltipTrigger>

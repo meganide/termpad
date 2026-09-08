@@ -51,14 +51,16 @@ export function EmptyTerminalState({ onCreateTab, defaultPreset }: EmptyTerminal
 
   return (
     <div className="flex h-full w-full items-center justify-center bg-background">
-      <div className="flex flex-col items-center gap-6 text-center max-w-md px-8">
-        <div className="rounded-full bg-primary/10 p-4">
-          <Terminal className="h-12 w-12 text-primary" />
+      <div className="flex flex-col items-center gap-6 text-center max-w-md px-8 py-12">
+        <div className="rounded-2xl border border-primary/20 bg-primary/10 p-4 shadow-sm">
+          <Terminal className="h-6 w-6 text-primary" />
         </div>
 
         <div>
-          <h2 className="text-xl font-semibold mb-2">No Terminal Tabs</h2>
-          <p className="text-muted-foreground">Press Enter or click below to start {presetName}.</p>
+          <h2 className="text-xl font-semibold tracking-tight mb-2">No Terminal Tabs</h2>
+          <p className="text-sm leading-6 text-muted-foreground">
+            Press Enter or click below to start {presetName}.
+          </p>
         </div>
 
         <Button

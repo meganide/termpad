@@ -308,7 +308,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
   if (!repository) {
     return (
       <div className="flex-1 flex items-center justify-center bg-background">
-        <p className="text-muted-foreground">Repository not found</p>
+        <p className="text-sm text-muted-foreground">Repository not found</p>
       </div>
     );
   }
@@ -340,8 +340,9 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
       data-repository-id={repositoryId}
     >
       {/* Left navigation panel */}
-      <div className="w-48 flex flex-col bg-sidebar-panel">
-        <nav className="flex-1 p-2 space-y-1">
+      <div className="w-44 shrink-0 flex flex-col border-r border-border/60 bg-sidebar-panel">
+        <div className="px-5 pt-6 pb-4 eyebrow">Worktrees</div>
+        <nav className="flex-1 p-3 space-y-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = mode === item.id;
@@ -352,7 +353,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
                 className={cn(
                   'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
                   isActive
-                    ? 'bg-accent text-foreground'
+                    ? 'bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]'
                     : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
                   item.disabled &&
                     'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
@@ -399,13 +400,13 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
       </div>
 
       {/* Right content panel */}
-      <div className="flex-1 flex flex-col min-h-0 bg-background">
+      <div className="min-w-0 flex-1 flex flex-col min-h-0 bg-background">
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-xl">
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold mb-2">Add Worktree</h1>
-              <p className="text-muted-foreground">
+        <div className="flex-1 overflow-y-auto p-6 lg:p-10">
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-8 border-b border-border/60 pb-6">
+              <h1 className="text-2xl font-semibold tracking-tight mb-2">Add Worktree</h1>
+              <p className="text-sm text-muted-foreground">
                 {mode === 'create' ? 'Create a new worktree' : 'Import existing worktrees'} for
                 &quot;
                 {repository.name}&quot;
@@ -458,11 +459,15 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
                           disabled={branchesLoading}
                         >
                           {branchesLoading ? (
-                            <span className="text-muted-foreground">Loading branches...</span>
+                            <span className="text-sm text-muted-foreground">
+                              Loading branches...
+                            </span>
                           ) : selectedBranch ? (
                             <span className="truncate">{selectedBranch}</span>
                           ) : (
-                            <span className="text-muted-foreground">Select a branch...</span>
+                            <span className="text-sm text-muted-foreground">
+                              Select a branch...
+                            </span>
                           )}
                           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
                         </Button>
@@ -561,7 +566,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
                     <div className="space-y-2">
                       <div className="flex items-center gap-2 text-sm">
                         <GitBranch className="h-4 w-4 text-muted-foreground" />
-                        <span className="text-muted-foreground">Branch name:</span>
+                        <span className="text-sm text-muted-foreground">Branch name:</span>
                         <code className="font-mono bg-background px-2 py-0.5 rounded">
                           {sanitizedName || '(invalid)'}
                         </code>

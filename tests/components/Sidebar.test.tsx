@@ -134,7 +134,7 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} />);
 
     // Session with customShortcut should show the shortcut key
-    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('1', { selector: 'kbd' })).toBeInTheDocument();
   });
 
   it('shows ellipsis menu button for session', () => {
