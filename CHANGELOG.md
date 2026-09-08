@@ -1,5 +1,57 @@
 # termpad
 
+## 0.6.0
+
+### Minor Changes
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: separate global notes and todos from worktree content
+
+  The primary checkout shows repository-wide Global notes and todos, while each linked worktree shows only its own content. Existing primary-checkout content is preserved in the global scope. Tab indicators reflect only the current scope, with completed/total todo counts and an indicator for saved notes. Todo actions are available from a dropdown or right-click menu, including moving a global todo to another worktree.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: review changes and use terminals in dedicated workspace tabs
+
+  Review now opens directly in its own tab alongside Changes, Terminals, Notes and Todos. Choose the current branch for uncommitted changes or another base branch, such as main or master, to review branch changes. Changes and Review show changed-file counts, and Terminals shows the number of open terminals.
+
+  The review file tree can be collapsed or resized, with its width retained when switching worktrees. Resizing no longer selects text. Files start expanded without unfolding unchanged context, review icon actions have tooltips, and each available file can be opened in the configured editor.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: move notes into the right panel and add a todos tab
+
+  Notes no longer cover the terminal. The right panel now has Changes, Notes and Todos tabs, and can be resized up to 1000px. Todos support add, edit, complete and delete, scoped to either the repository or the worktree, and persist alongside notes.
+
+- [#26](https://github.com/meganide/termpad/pull/26) [`7fe344d`](https://github.com/meganide/termpad/commit/7fe344db15ebe3e14d70186755547d956c296d83) Thanks [@meganide](https://github.com/meganide)! - Add a grid toggle to show all terminal tabs in a worktree. The agent overview uses a full-area interactive grid with a repository filter, and repository grid buttons open that same overview with the matching filter applied. Right-click a terminal to navigate to its worktree or hide it from the overview. Restore hidden agents individually or together from the overview header. Switching layouts preserves running terminals and scrollback.
+
+- [#21](https://github.com/meganide/termpad/pull/21) [`2e50d02`](https://github.com/meganide/termpad/commit/2e50d0278e871e3bd9d02675fbcb45bb10c257dd) Thanks [@meganide](https://github.com/meganide)! - Add a live agent overview grouped by repository, with larger responsive terminal previews, hover highlights, and arrow-key navigation. Open the overview from the sidebar or with Ctrl+O, press Enter to open a terminal, and right-click a card to close it with confirmation for active processes. Switching views preserves terminal scrollback.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: give notes and todos the full right panel, and add todo priority, reordering, dates and copy
+
+  Notes and todos now use the full height of the right panel, with user terminals available in their own Terminals tab. Todos gained colour-coded priorities, drag-to-reorder, a visible creation date, and a copy action. New todos are added at the top.
+
+### Patch Changes
+
+- [#23](https://github.com/meganide/termpad/pull/23) [`fb34f10`](https://github.com/meganide/termpad/commit/fb34f10f876e17a05a8565f94980c8eed7be2f64) Thanks [@meganide](https://github.com/meganide)! - Add a saved sidebar toggle beside Home to show only repositories with open terminals, including terminals in any worktree or the lower terminal panel.
+
+- [#24](https://github.com/meganide/termpad/pull/24) [`ee757e0`](https://github.com/meganide/termpad/commit/ee757e0a114068faf0fbba72a2a9750557438fca) Thanks [@meganide](https://github.com/meganide)! - Show and select the main worktree immediately after using "Initialize Git repository for me", without needing to remove and re-add the repository.
+
+- [#26](https://github.com/meganide/termpad/pull/26) [`7fe344d`](https://github.com/meganide/termpad/commit/7fe344db15ebe3e14d70186755547d956c296d83) Thanks [@meganide](https://github.com/meganide)! - Add agent overview shortcuts: Cmd+O to toggle the overview, Cmd+I to open the overview for the current repository, Cmd+Arrow keys to select visible agents, Cmd+Shift+Enter to open the selected agent in its worktree, and Cmd+- to close it with the existing running-terminal confirmation. Use Ctrl on Windows and Linux.
+
+  Register global keyboard shortcuts once so returning from the overview to a worktree does not cause another listener to swallow the repository overview shortcut.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: keep the worktree folder action beside the editor dropdown
+
+  A dedicated folder button opens the selected worktree in the file manager without changing the preferred editor. The adjacent editor dropdown contains Cursor and VS Code, keeping folder access available regardless of the selected editor.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: open long todos in a dialog
+
+  Todo rows now clamp to two lines, and an expand button opens the full todo in a dialog with room to read and edit it.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: give todos multi-line input and a completed section
+
+  Todo text is now edited in an auto-growing textarea (Enter saves, Shift+Enter adds a line), and completed todos collapse into a "Completed" accordion you can un-tick to restore them.
+
+- [#25](https://github.com/meganide/termpad/pull/25) [`9006fb5`](https://github.com/meganide/termpad/commit/9006fb554ad624e46691c34c4bc00ad3f774df06) Thanks [@meganide](https://github.com/meganide)! - feat: allow the right panel to be dragged out to 2000px
+
+  The right panel's maximum width is now 2000px, up from 1000px, giving notes and todos more room on wide displays.
+
 ## 0.5.5
 
 ### Patch Changes
