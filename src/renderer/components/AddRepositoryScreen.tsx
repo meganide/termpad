@@ -259,6 +259,8 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
     setError(null);
 
     try {
+      let resolvedMainWorktree = mainWorktree;
+
       // Initialize git if user checked the checkbox for a non-git folder
       if (!isGit && initGitChecked) {
         const result = await window.terminal.initGitRepo(selectedPath);
@@ -266,6 +268,10 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
           setError(result.error || 'Failed to initialize Git repository');
           return;
         }
+
+        // The folder had no worktrees when selected; discover them after initialization.
+        const worktrees = await window.terminal.listWorktrees(selectedPath);
+        resolvedMainWorktree = worktrees.find((wt) => wt.isMain) || null;
       }
 
       const repositoryId = generateId();
@@ -275,13 +281,13 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
       const worktreeSessions: WorktreeSession[] = [];
 
       // Add main worktree session first (if it's a git repo with main worktree)
-      if (mainWorktree) {
+      if (resolvedMainWorktree) {
         const mainSession: WorktreeSession = {
           id: generateId(),
-          label: mainWorktree.branch || 'main',
-          path: normalizePathSlashes(mainWorktree.path),
-          branchName: mainWorktree.branch || undefined,
-          worktreeName: mainWorktree.branch || 'main',
+          label: resolvedMainWorktree.branch || 'main',
+          path: normalizePathSlashes(resolvedMainWorktree.path),
+          branchName: resolvedMainWorktree.branch || undefined,
+          worktreeName: resolvedMainWorktree.branch || 'main',
           createdAt: new Date().toISOString(),
           isExternal: false,
           isMainWorktree: true,
