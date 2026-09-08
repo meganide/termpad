@@ -1213,7 +1213,74 @@ export async function getCurrentBranch(repoPath: string): Promise<string> {
 /**
  * Get the diff of working tree vs HEAD (uncommitted changes).
  */
-export async function getWorkingTreeDiff(repoPath: string): Promise<WorkingTreeDiffResult> {
+export async function getWorkingTreeDiff(
+  repoPath: string,
+  baseBranch?: string
+): Promise<WorkingTreeDiffResult> {
+  // The review panel compares the complete working tree to HEAD or to the
+  // merge base of another branch. Pass arguments directly, never through a shell.
+  if (baseBranch !== undefined) {
+    const runGit = async (args: string[]) => {
+      const wsl = isWslPath(repoPath);
+      let command = 'git';
+      if (wsl) {
+        const distro = getWslDistro(repoPath);
+        if (!distro) throw new Error(`Invalid WSL path: ${repoPath}`);
+        command = 'wsl.exe';
+        args = ['-d', distro, '--cd', toWslInternalPath(repoPath), '--exec', 'git', ...args];
+      }
+      const result = await execFileAsync(command, args, {
+        cwd: wsl ? undefined : repoPath,
+        maxBuffer: DIFF_MAX_BUFFER,
+      });
+      return result.stdout;
+    };
+    const commit = (
+      await runGit(['rev-parse', '--verify', '--end-of-options', `${baseBranch}^{commit}`])
+    ).trim();
+    const baseCommit =
+      baseBranch === 'HEAD' ? commit : (await runGit(['merge-base', commit, 'HEAD'])).trim();
+    const files = parseDiff(
+      await runGit(['diff', '--no-ext-diff', '--no-textconv', baseCommit, '--'])
+    );
+    const untracked = (await runGit(['ls-files', '--others', '--exclude-standard', '-z']))
+      .split('\0')
+      .filter(Boolean);
+    const trackedPaths = new Set(files.map((file) => file.path));
+    for (const filePath of untracked) {
+      if (!trackedPaths.has(filePath)) {
+        const nullDevice =
+          process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
+        const diff = await runGit([
+          'diff',
+          '--no-ext-diff',
+          '--no-textconv',
+          '--no-index',
+          '--',
+          nullDevice,
+          filePath,
+        ]).catch((error: { code?: number; stdout?: string }) => {
+          // --no-index returns 1 for differences; other failures must remain visible.
+          if (error.code === 1 && typeof error.stdout === 'string') return error.stdout;
+          throw error;
+        });
+        const file = parseDiff(diff)[0];
+        files.push(
+          file
+            ? { ...file, path: filePath }
+            : {
+                path: filePath,
+                status: 'added',
+                additions: 0,
+                deletions: 0,
+                isBinary: false,
+                hunks: [],
+              }
+        );
+      }
+    }
+    return { files, headCommit: baseCommit, isDirty: files.length > 0 };
+  }
   if (isWslPath(repoPath)) {
     const { stdout: headCommit } = await execAsync('git rev-parse HEAD', { cwd: repoPath });
     const { stdout: diffOutput } = await execAsync('git diff HEAD', { cwd: repoPath });
@@ -3985,8 +4052,8 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
     return cachedGitOp('currentBranch', repoPath, () => getCurrentBranch(repoPath));
   });
 
-  ipcMain.handle('git:getWorkingTreeDiff', async (_, repoPath: string) => {
-    return getWorkingTreeDiff(repoPath);
+  ipcMain.handle('git:getWorkingTreeDiff', async (_, repoPath: string, baseBranch?: string) => {
+    return getWorkingTreeDiff(repoPath, baseBranch);
   });
 
   ipcMain.handle('git:getWorkingTreeStats', async (_, repoPath: string) => {

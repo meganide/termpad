@@ -203,7 +203,8 @@ const terminalAPI: TerminalAPI = {
   getCommitHash: (repoPath, branch) => ipcRenderer.invoke('git:getCommitHash', repoPath, branch),
   getDefaultBranch: (repoPath) => ipcRenderer.invoke('git:getDefaultBranch', repoPath),
   getCurrentBranch: (repoPath) => ipcRenderer.invoke('git:getCurrentBranch', repoPath),
-  getWorkingTreeDiff: (repoPath) => ipcRenderer.invoke('git:getWorkingTreeDiff', repoPath),
+  getWorkingTreeDiff: (repoPath, baseBranch) =>
+    ipcRenderer.invoke('git:getWorkingTreeDiff', repoPath, baseBranch),
   getWorkingTreeStats: (repoPath) => ipcRenderer.invoke('git:getWorkingTreeStats', repoPath),
   getSingleWorkingTreeFileDiff: (repoPath, filePath) =>
     ipcRenderer.invoke('git:getSingleWorkingTreeFileDiff', repoPath, filePath),

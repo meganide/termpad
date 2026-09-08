@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Undo2,
   Redo2,
@@ -14,22 +14,31 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { PanelSection } from '../../components/RightPanel/PanelSection';
+import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
+import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
 interface NotesPanelProps {
   repositoryId: string;
   worktreeSessionId: string;
   repositoryName: string;
   worktreeLabel: string;
+  titleSlot: ReactNode;
 }
 
 function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pendingSaveRef = useRef<(() => void) | undefined>(undefined);
 
   const debouncedSave = useCallback(
     (value: string) => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => save(value), delayMs);
+      pendingSaveRef.current = () => save(value);
+      timeoutRef.current = setTimeout(() => {
+        pendingSaveRef.current?.();
+        pendingSaveRef.current = undefined;
+      }, delayMs);
     },
     [save, delayMs]
   );
@@ -37,6 +46,8 @@ function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      pendingSaveRef.current?.();
+      pendingSaveRef.current = undefined;
     };
   }, []);
 
@@ -235,10 +246,7 @@ function NoteEditor({
   const iconSize = 'h-3.5 w-3.5';
 
   return (
-    <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-      <label className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground px-1">
-        {label}
-      </label>
+    <div className="flex flex-1 min-h-0 flex-col gap-1.5">
       <div className="flex items-center gap-0.5 px-1 flex-wrap">
         <ToolbarButton
           icon={<Undo2 className={iconSize} />}
@@ -312,6 +320,8 @@ function NoteEditor({
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        role="textbox"
+        aria-label={label}
         className={[
           'flex-1 min-h-0 overflow-y-auto rounded-lg bg-obsidian-800/60 px-3 py-2 text-sm text-foreground',
           'focus:outline-none focus:ring-1 focus:ring-primary/30',
@@ -344,14 +354,19 @@ export function NotesPanel({
   worktreeSessionId,
   repositoryName,
   worktreeLabel,
+  titleSlot,
 }: NotesPanelProps) {
   const { repositories, updateRepositoryNotes, updateWorktreeNotes } = useAppStore();
+  const { collapsed, toggle } = useCollapsibleScopes();
 
   const repository = repositories.find((r) => r.id === repositoryId);
   const worktree = repository?.worktreeSessions.find((ws) => ws.id === worktreeSessionId);
 
   const repoNotes = repository?.notes ?? '';
   const worktreeNotes = worktree?.notes ?? '';
+  const global = isGlobalWorkspace(worktree);
+  const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
+  const scopeKey = global ? 'repository' : 'worktree';
 
   const handleRepoNotesChange = useCallback(
     (notes: string) => updateRepositoryNotes(repositoryId, notes),
@@ -364,22 +379,23 @@ export function NotesPanel({
   );
 
   return (
-    <div
-      className="absolute inset-0 z-10 flex gap-3 p-3 bg-muted rounded-xl"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <NoteEditor
-        label={`Repository: ${repositoryName}`}
-        value={repoNotes}
-        identity={repositoryId}
-        onChange={handleRepoNotesChange}
-      />
-      <NoteEditor
-        label={`Worktree: ${worktreeLabel}`}
-        value={worktreeNotes}
-        identity={worktreeSessionId}
-        onChange={handleWorktreeNotesChange}
-      />
+    <div className="h-full flex flex-col" data-testid="notes-panel">
+      {titleSlot && <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>}
+      <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
+        <PanelSection
+          label={label}
+          collapsed={collapsed[scopeKey]}
+          onToggle={() => toggle(scopeKey)}
+        >
+          <NoteEditor
+            key={global ? repositoryId : worktreeSessionId}
+            label={label}
+            value={global ? repoNotes : worktreeNotes}
+            identity={global ? repositoryId : worktreeSessionId}
+            onChange={global ? handleRepoNotesChange : handleWorktreeNotesChange}
+          />
+        </PanelSection>
+      </div>
     </div>
   );
 }

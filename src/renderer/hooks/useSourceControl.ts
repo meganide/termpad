@@ -58,6 +58,7 @@ export function resetOperationProgressState() {
 interface UseSourceControlOptions {
   repoPath: string | null;
   enabled?: boolean;
+  onFileCountChange?: (repoPath: string, count: number) => void;
 }
 
 interface UseSourceControlResult {
@@ -158,6 +159,7 @@ function areAheadBehindEqual(a: AheadBehindResult, b: AheadBehindResult): boolea
 export function useSourceControl({
   repoPath,
   enabled = true,
+  onFileCountChange,
 }: UseSourceControlOptions): UseSourceControlResult {
   const [fileStatuses, setFileStatuses] = useState<FileStatusResult>(DEFAULT_FILE_STATUS_RESULT);
   const [aheadBehind, setAheadBehind] = useState<AheadBehindResult>(DEFAULT_AHEAD_BEHIND);
@@ -255,6 +257,14 @@ export function useSourceControl({
         const hookManifestResult = isInitialLoad ? (results[4] as HookManifest) : undefined;
 
         if (mountedRef.current) {
+          onFileCountChange?.(
+            repoPath,
+            new Set(
+              [...statusResult.staged, ...statusResult.unstaged, ...statusResult.untracked].map(
+                (file) => file.path
+              )
+            ).size
+          );
           // Only update file statuses if changed
           if (!areFileStatusesEqual(statusResult, previousFileStatusesRef.current)) {
             previousFileStatusesRef.current = statusResult;
@@ -291,7 +301,7 @@ export function useSourceControl({
         }
       }
     },
-    [repoPath, enabled]
+    [repoPath, enabled, onFileCountChange]
   );
 
   const refresh = useCallback(() => {

@@ -77,14 +77,14 @@ describe('SourceControlPane', () => {
 
   describe('rendering', () => {
     it('renders source control pane', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('source-control-pane')).toBeInTheDocument();
     });
 
-    it('renders header with title and refresh button', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+    it('renders header with title slot and refresh button', async () => {
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByText('Source Control')).toBeInTheDocument();
@@ -92,14 +92,14 @@ describe('SourceControlPane', () => {
     });
 
     it('renders commit section', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('commit-section')).toBeInTheDocument();
     });
 
     it('renders file status sections when there are changes', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByText('Staged Changes')).toBeInTheDocument();
@@ -108,7 +108,7 @@ describe('SourceControlPane', () => {
     });
 
     it('renders remote status bar', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('remote-status-bar')).toBeInTheDocument();
@@ -119,7 +119,7 @@ describe('SourceControlPane', () => {
     it('shows empty state when no changes', async () => {
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue(mockEmptyStatuses);
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('empty-state')).toBeInTheDocument();
@@ -129,7 +129,7 @@ describe('SourceControlPane', () => {
     it('does not show file sections when empty', async () => {
       vi.mocked(window.terminal.getFileStatuses).mockResolvedValue(mockEmptyStatuses);
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.queryByText('Staged Changes')).not.toBeInTheDocument();
@@ -148,7 +148,7 @@ describe('SourceControlPane', () => {
           })
       );
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
 
       expect(screen.getByText('Loading...')).toBeInTheDocument();
 
@@ -162,7 +162,7 @@ describe('SourceControlPane', () => {
 
   describe('refresh button', () => {
     it('calls refresh when clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(window.terminal.getFileStatuses).toHaveBeenCalledTimes(1);
@@ -176,7 +176,7 @@ describe('SourceControlPane', () => {
 
   describe('stage operations', () => {
     it('stages file when stage button is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Find and click stage button in Changes section (unstaged files)
@@ -188,7 +188,7 @@ describe('SourceControlPane', () => {
     });
 
     it('stages all unstaged when bulk action is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Find bulk action buttons - the first "Stage All" is for Changes section
@@ -208,7 +208,7 @@ describe('SourceControlPane', () => {
 
   describe('unstage operations', () => {
     it('unstages file when unstage button is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Find and click unstage button in Staged Changes section
@@ -220,7 +220,7 @@ describe('SourceControlPane', () => {
     });
 
     it('unstages all when bulk action is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Find "Unstage All" button
@@ -239,7 +239,7 @@ describe('SourceControlPane', () => {
 
   describe('discard operations', () => {
     it('opens discard dialog when discard button is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Find and click discard button
@@ -251,7 +251,7 @@ describe('SourceControlPane', () => {
     });
 
     it('confirms discard and calls API', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Click discard button
@@ -267,7 +267,7 @@ describe('SourceControlPane', () => {
     });
 
     it('cancels discard dialog', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Click discard button
@@ -293,7 +293,7 @@ describe('SourceControlPane', () => {
 
   describe('commit operations', () => {
     it('renders commit section with textarea and button', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Verify commit section renders correctly
@@ -305,7 +305,7 @@ describe('SourceControlPane', () => {
     });
 
     it('updates textarea value when typing', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       const textarea = screen.getByTestId('commit-message-input') as HTMLTextAreaElement;
@@ -317,7 +317,7 @@ describe('SourceControlPane', () => {
 
   describe('push/pull operations', () => {
     it('pushes when push button is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       const pushButton = screen.getByTestId('push-button');
@@ -328,7 +328,7 @@ describe('SourceControlPane', () => {
     });
 
     it('pulls when pull button is clicked', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       const pullButton = screen.getByTestId('pull-button');
@@ -348,7 +348,7 @@ describe('SourceControlPane', () => {
       });
       vi.mocked(window.terminal.getRemoteUrl).mockResolvedValue(null);
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       const addRemoteButton = screen.getByTestId('add-remote-button');
@@ -365,7 +365,7 @@ describe('SourceControlPane', () => {
       });
       vi.mocked(window.terminal.getRemoteUrl).mockResolvedValue(null);
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       // Open dialog
@@ -386,6 +386,7 @@ describe('SourceControlPane', () => {
     it('calls onViewDiff when view diff button is clicked', async () => {
       render(
         <SourceControlPane
+          titleSlot={<span>Source Control</span>}
           repoPath="/test/repo"
           onViewDiff={mockViewDiff}
           onOpenInEditor={mockOpenInEditor}
@@ -403,6 +404,7 @@ describe('SourceControlPane', () => {
     it('calls onOpenInEditor when open in editor button is clicked', async () => {
       render(
         <SourceControlPane
+          titleSlot={<span>Source Control</span>}
           repoPath="/test/repo"
           onViewDiff={mockViewDiff}
           onOpenInEditor={mockOpenInEditor}
@@ -419,7 +421,7 @@ describe('SourceControlPane', () => {
 
   describe('null repo path', () => {
     it('renders pane without errors when repoPath is null', async () => {
-      render(<SourceControlPane repoPath={null} />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath={null} />);
       await flushPromises();
 
       expect(screen.getByTestId('source-control-pane')).toBeInTheDocument();
@@ -428,14 +430,14 @@ describe('SourceControlPane', () => {
 
   describe('branch display', () => {
     it('shows current branch in remote status bar', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('branch-name')).toHaveTextContent('feature-branch');
     });
 
     it('shows ahead/behind badges', async () => {
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByTestId('ahead-badge')).toHaveTextContent('2');
@@ -451,7 +453,7 @@ describe('SourceControlPane', () => {
         untracked: [],
       });
 
-      render(<SourceControlPane repoPath="/test/repo" />);
+      render(<SourceControlPane titleSlot={<span>Source Control</span>} repoPath="/test/repo" />);
       await flushPromises();
 
       expect(screen.getByText('Staged Changes')).toBeInTheDocument();

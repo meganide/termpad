@@ -35,6 +35,25 @@ describe('useSourceControl', () => {
   };
 
   describe('initial fetch', () => {
+    it('reports unique changed files and updates the count on repository changes', async () => {
+      const onFileCountChange = vi.fn();
+      const changed = { path: 'shared.ts', type: 'modified' as const, additions: 1, deletions: 1 };
+      vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
+        staged: [changed],
+        unstaged: [changed],
+        untracked: [{ ...changed, path: 'new.ts' }],
+      });
+      renderHook(() => useSourceControl({ repoPath: '/test/repo', onFileCountChange }));
+      await flushPromises();
+      expect(onFileCountChange).toHaveBeenLastCalledWith('/test/repo', 2);
+      vi.mocked(window.terminal.getFileStatuses).mockResolvedValue({
+        staged: [],
+        unstaged: [],
+        untracked: [],
+      });
+      await act(async () => getRepoChangedCallback('/test/repo')());
+      expect(onFileCountChange).toHaveBeenLastCalledWith('/test/repo', 0);
+    });
     it('fetches source control data immediately when mounted', async () => {
       const mockStatuses: FileStatusResult = {
         staged: [{ path: 'file1.ts', type: 'modified', additions: 5, deletions: 2 }],

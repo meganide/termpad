@@ -4,15 +4,15 @@ import { Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
 import type { FileStatus, Repository, TerminalTab, WorktreeSession } from '../../shared/types';
-import type { DiffFile, DiffFileStat } from '../../shared/reviewTypes';
 import { SourceControlPane } from '../features/source-control';
 import { UserTerminalSection } from '../features/user-terminals';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
+import { useResizeSelectionLock } from '../hooks/useResizeSelectionLock';
 import { usePRStatusPolling } from '../hooks/usePRStatusPolling';
 import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
-import { useReviewStore } from '../stores/reviewStore';
+import { ReviewPanel, type ReviewRequest } from '../features/review/ReviewPanel';
 import { AddRepositoryScreen } from './AddRepositoryScreen';
 import { AddWorktreeScreen } from './AddWorktreeScreen';
 import { CloseWarningDialog } from './CloseWarningDialog';
@@ -33,6 +33,9 @@ import { TitleBar } from './TitleBar';
 import { UpdateNotification } from './UpdateNotification';
 import { WorktreeBar } from './WorktreeBar/WorktreeBar';
 import { NotesPanel } from '../features/notes/NotesPanel';
+import { TodosPanel } from '../features/todos/TodosPanel';
+import { RightPanelTabs, type RightPanelTab } from './RightPanel/RightPanelTabs';
+import { getScopeIndicators } from './RightPanel/scopeIndicators';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
 
@@ -46,7 +49,6 @@ export function Layout() {
     window: windowState,
     updateSidebarWidth,
     updateFileChangesPaneWidth,
-    updateUserTerminalPanelRatio,
     terminals,
     isInitialized,
     initialize,
@@ -82,7 +84,6 @@ export function Layout() {
       window: s.window,
       updateSidebarWidth: s.updateSidebarWidth,
       updateFileChangesPaneWidth: s.updateFileChangesPaneWidth,
-      updateUserTerminalPanelRatio: s.updateUserTerminalPanelRatio,
       terminals: s.terminals,
       isInitialized: s.isInitialized,
       initialize: s.initialize,
@@ -193,7 +194,34 @@ export function Layout() {
 
   // Start with home screen on app launch
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'home' });
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
+  const [reviewExpanded, setReviewExpanded] = useState(false);
+  const [reviewRequests, setReviewRequests] = useState<Record<string, ReviewRequest>>({});
+  const [visitedReviews, setVisitedReviews] = useState<Record<string, string>>({});
+  const [changeCounts, setChangeCounts] = useState<Record<string, number>>({});
+  const [reviewCounts, setReviewCounts] = useState<
+    Record<string, { base: string; count: number | null }>
+  >({});
+  const handleChangeCount = useCallback((repoPath: string, count: number) => {
+    setChangeCounts((previous) =>
+      previous[repoPath] === count ? previous : { ...previous, [repoPath]: count }
+    );
+  }, []);
+  const handleReviewCount = useCallback((repoPath: string, base: string, count: number | null) => {
+    setReviewCounts((previous) =>
+      previous[repoPath]?.base === base && previous[repoPath]?.count === count
+        ? previous
+        : { ...previous, [repoPath]: { base, count } }
+    );
+  }, []);
+  const selectRightPanelTab = useCallback(
+    (tab: RightPanelTab) => {
+      setRightPanelTab(tab);
+      if (tab === 'terminals') setFocusArea('userTerminal');
+      else if (useAppStore.getState().focusArea === 'userTerminal') setFocusArea('sidebar');
+    },
+    [setFocusArea]
+  );
 
   // Overview mode shows every agent terminal side by side in a grid
   const [isOverviewMode, setIsOverviewMode] = useState(false);
@@ -204,6 +232,11 @@ export function Layout() {
   const exitOverview = useCallback(() => {
     setIsOverviewMode(false);
   }, []);
+
+  const focusUserTerminal = useCallback(() => {
+    exitOverview();
+    setRightPanelTab('terminals');
+  }, [exitOverview]);
 
   const toggleOverview = useCallback(() => {
     const next = !isOverviewMode;
@@ -292,12 +325,14 @@ export function Layout() {
   }, [activeTerminalId, setSidebarFocusedItemId]);
 
   // Sidebar resize state
+  const { start: lockResizeSelection } = useResizeSelectionLock();
   const SIDEBAR_MIN_WIDTH = 250;
   const SIDEBAR_MAX_WIDTH = 400;
   const [sidebarWidth, setSidebarWidth] = useState(windowState.sidebarWidth);
   const isResizingSidebar = useRef(false);
 
   const startResizingSidebar = useCallback(() => {
+    lockResizeSelection();
     isResizingSidebar.current = true;
     let lastWidth = sidebarWidth;
     let rafId: number | null = null;
@@ -319,6 +354,7 @@ export function Layout() {
       isResizingSidebar.current = false;
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
+      window.removeEventListener('blur', stopResizing);
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
@@ -330,17 +366,19 @@ export function Layout() {
 
     document.addEventListener('mousemove', resize);
     document.addEventListener('mouseup', stopResizing);
-  }, [sidebarWidth, updateSidebarWidth]);
+    window.addEventListener('blur', stopResizing);
+  }, [sidebarWidth, updateSidebarWidth, lockResizeSelection]);
 
   // File changes pane resize state
   const FILE_CHANGES_MIN_WIDTH = 300;
-  const FILE_CHANGES_MAX_WIDTH = 600;
+  const FILE_CHANGES_MAX_WIDTH = 2000;
   const [fileChangesPaneWidth, setFileChangesPaneWidth] = useState(
     windowState.fileChangesPaneWidth
   );
   const isResizingFileChangesPane = useRef(false);
 
   const startResizingFileChangesPane = useCallback(() => {
+    lockResizeSelection();
     isResizingFileChangesPane.current = true;
     let lastWidth = fileChangesPaneWidth;
     let rafId: number | null = null;
@@ -366,6 +404,7 @@ export function Layout() {
       isResizingFileChangesPane.current = false;
       document.removeEventListener('mousemove', resize);
       document.removeEventListener('mouseup', stopResizing);
+      window.removeEventListener('blur', stopResizing);
       if (rafId !== null) {
         cancelAnimationFrame(rafId);
         rafId = null;
@@ -377,55 +416,16 @@ export function Layout() {
 
     document.addEventListener('mousemove', resize);
     document.addEventListener('mouseup', stopResizing);
-  }, [fileChangesPaneWidth, setFileChangesPaneWidth, updateFileChangesPaneWidth]);
+    window.addEventListener('blur', stopResizing);
+  }, [
+    fileChangesPaneWidth,
+    setFileChangesPaneWidth,
+    updateFileChangesPaneWidth,
+    lockResizeSelection,
+  ]);
 
-  // User terminal panel resize state (vertical split between source control and user terminals)
-  const USER_TERMINAL_MIN_RATIO = 0.3;
-  const USER_TERMINAL_MAX_RATIO = 0.7;
-  const [userTerminalPanelRatio, setUserTerminalPanelRatio] = useState(
-    windowState.userTerminalPanelRatio
-  );
-  const isResizingUserTerminalPanel = useRef(false);
   const rightPanelRef = useRef<HTMLDivElement>(null);
-
-  const startResizingUserTerminalPanel = useCallback(() => {
-    isResizingUserTerminalPanel.current = true;
-    let lastRatio = userTerminalPanelRatio;
-    let rafId: number | null = null;
-
-    const resize = (e: MouseEvent) => {
-      if (isResizingUserTerminalPanel.current && rightPanelRef.current) {
-        const panelRect = rightPanelRef.current.getBoundingClientRect();
-        // Calculate ratio based on mouse Y position within the panel
-        // User terminal is at the bottom, so ratio = (panel bottom - mouse Y) / panel height
-        const ratio = (panelRect.bottom - e.clientY) / panelRect.height;
-        lastRatio = Math.min(USER_TERMINAL_MAX_RATIO, Math.max(USER_TERMINAL_MIN_RATIO, ratio));
-        // Coalesce to one state update (Layout re-render) per frame
-        if (rafId === null) {
-          rafId = requestAnimationFrame(() => {
-            rafId = null;
-            setUserTerminalPanelRatio(lastRatio);
-          });
-        }
-      }
-    };
-
-    const stopResizing = () => {
-      isResizingUserTerminalPanel.current = false;
-      document.removeEventListener('mousemove', resize);
-      document.removeEventListener('mouseup', stopResizing);
-      if (rafId !== null) {
-        cancelAnimationFrame(rafId);
-        rafId = null;
-      }
-      setUserTerminalPanelRatio(lastRatio);
-      // Persist the final ratio to store when drag ends
-      updateUserTerminalPanelRatio(lastRatio);
-    };
-
-    document.addEventListener('mousemove', resize);
-    document.addEventListener('mouseup', stopResizing);
-  }, [userTerminalPanelRatio, updateUserTerminalPanelRatio]);
+  const isUserTerminalPanelCollapsed = rightPanelTab !== 'terminals';
 
   // Dialog states
   const [closeWarningOpen, setCloseWarningOpen] = useState(false);
@@ -471,21 +471,11 @@ export function Layout() {
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setFileChangesPaneWidth(windowState.fileChangesPaneWidth);
     }
-    // Don't sync user terminal panel ratio while user is resizing
-    if (
-      !isResizingUserTerminalPanel.current &&
-      userTerminalPanelRatio !== windowState.userTerminalPanelRatio
-    ) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setUserTerminalPanelRatio(windowState.userTerminalPanelRatio);
-    }
   }, [
     windowState.sidebarWidth,
     windowState.fileChangesPaneWidth,
-    windowState.userTerminalPanelRatio,
     sidebarWidth,
     fileChangesPaneWidth,
-    userTerminalPanelRatio,
   ]);
 
   // Handle before close event from main process
@@ -716,6 +706,19 @@ export function Layout() {
   }, [activeTerminalId, allSessions]);
 
   const activeSession = activeSessionInfo?.session ?? null;
+  const currentReviewCount = activeSession ? reviewCounts[activeSession.path] : undefined;
+  const currentChangeCount = activeSession ? changeCounts[activeSession.path] : undefined;
+  const rightPanelCounts = {
+    changes: currentChangeCount,
+    review:
+      currentReviewCount?.count ??
+      (currentReviewCount?.base && currentReviewCount.base !== 'HEAD'
+        ? undefined
+        : currentChangeCount),
+    reviewBase: currentReviewCount?.base,
+    terminals: activeTerminalId ? getUserTabsForWorktree(activeTerminalId).length : 0,
+    ...getScopeIndicators(activeSessionInfo?.repository, activeSession ?? undefined),
+  };
 
   // Get tabs for the active worktree
   const tabsForActiveWorktree = useMemo(() => {
@@ -844,142 +847,27 @@ export function Layout() {
     [activeTerminalId, updateTabScrollPosition]
   );
 
-  // Review store hooks
-  const { openWorkingTreeReview, setSelectedFile, markFileUnviewed, isFileViewed } =
-    useReviewStore();
-
-  // Threshold for auto-loading hunks (files with more changes require manual expand)
-  const AUTO_LOAD_THRESHOLD = 500;
-
-  // Helper to load optimized diff data with lazy loading for large files
-  const loadOptimizedDiffData = useCallback(
-    async (
-      repoPath: string,
-      clickedFilePath?: string
-    ): Promise<{ files: DiffFile[]; headCommit: string } | null> => {
-      // Fetch lightweight stats first (fast)
-      const statsResult = await window.terminal.getWorkingTreeStats(repoPath);
-      if (!statsResult || statsResult.files.length === 0) return null;
-
-      // Determine which files need hunks loaded (small files auto-load)
-      const smallFiles = statsResult.files.filter(
-        (f) => f.additions + f.deletions < AUTO_LOAD_THRESHOLD
+  useEffect(() => {
+    if (rightPanelTab === 'review' && activeSession) {
+      setVisitedReviews((previous) =>
+        previous[activeSession.id] === activeSession.path
+          ? previous
+          : { ...previous, [activeSession.id]: activeSession.path }
       );
-
-      // Always load the clicked file's hunks (even if large)
-      const filesToLoad = clickedFilePath
-        ? [...new Set([...smallFiles.map((f) => f.path), clickedFilePath])]
-        : smallFiles.map((f) => f.path);
-
-      // Load hunks for small files + clicked file with a single git diff
-      const hunksMap = new Map<string, DiffFile['hunks']>();
-      try {
-        const diffFiles = await window.terminal.getWorkingTreeFileDiffs(repoPath, filesToLoad);
-        for (const diffFile of diffFiles) {
-          hunksMap.set(diffFile.path, diffFile.hunks);
-        }
-      } catch {
-        // Ignore errors; files render without hunks
-      }
-
-      // Build the final files array with hunks where available
-      const files: DiffFile[] = statsResult.files.map((stat: DiffFileStat) => {
-        const hunks = hunksMap.get(stat.path) || [];
-        return {
-          ...stat,
-          hunks,
-          // These properties help FileDiff know if lazy loading is needed
-          hunksLoaded: hunksMap.has(stat.path),
-          isLoadingHunks: false,
-        } as DiffFile;
-      });
-
-      return { files, headCommit: statsResult.headCommit };
-    },
-    []
-  );
-
-  // Handler for viewing diff from source control pane (opens diff in separate window)
-  // Diffs are fetched on-demand when user clicks, not continuously polled
-  const handleViewDiff = useCallback(
-    async (fileStatus: FileStatus) => {
-      if (!activeSession) return;
-
-      // Fetch optimized diff data (stats + hunks for small files + clicked file)
-      const diffResult = await loadOptimizedDiffData(activeSession.path, fileStatus.path);
-      if (!diffResult || diffResult.files.length === 0) return;
-
-      // Find the corresponding DiffFile by path
-      const diffFile = diffResult.files.find((f) => f.path === fileStatus.path);
-      if (diffFile) {
-        // Must await to ensure openWorkingTreeReview completes before setting the selected file
-        await openWorkingTreeReview(
-          activeSession.path,
-          diffResult.files,
-          diffResult.headCommit ?? 'HEAD'
-        );
-        // If the file was previously marked as viewed, unmark it so it renders in the diff viewer
-        if (isFileViewed(diffFile.path)) {
-          await markFileUnviewed(diffFile.path);
-        }
-        setSelectedFile(diffFile.path);
-
-        // Get the updated store state after the above operations
-        const store = useReviewStore.getState();
-        if (store.currentReview && store.reviewData) {
-          // Open the diff in a separate window
-          const result = await window.diffWindow.open({
-            currentReview: store.currentReview,
-            reviewData: store.reviewData,
-            projectPath: activeSession.path,
-            selectedFile: diffFile.path,
-          });
-          if (!result.success) {
-            toast.error(`Failed to open diff viewer: ${result.error}`);
-          }
-        }
-      }
-    },
-    [
-      activeSession,
-      loadOptimizedDiffData,
-      openWorkingTreeReview,
-      setSelectedFile,
-      isFileViewed,
-      markFileUnviewed,
-    ]
-  );
-
-  // Handler for starting review (opens diff viewer in separate window with all changed files)
-  // Diffs are fetched on-demand when user clicks, not continuously polled
-  const handleStartReview = useCallback(async () => {
-    if (!activeSession) return;
-
-    // Fetch optimized diff data (stats + hunks for small files only)
-    const diffResult = await loadOptimizedDiffData(activeSession.path);
-    if (!diffResult || diffResult.files.length === 0) return;
-
-    await openWorkingTreeReview(
-      activeSession.path,
-      diffResult.files,
-      diffResult.headCommit ?? 'HEAD'
-    );
-
-    // Get the updated store state after openWorkingTreeReview
-    const store = useReviewStore.getState();
-    if (store.currentReview && store.reviewData) {
-      // Open the diff in a separate window
-      const result = await window.diffWindow.open({
-        currentReview: store.currentReview,
-        reviewData: store.reviewData,
-        projectPath: activeSession.path,
-        selectedFile: store.selectedFile,
-      });
-      if (!result.success) {
-        toast.error(`Failed to open diff viewer: ${result.error}`);
-      }
     }
-  }, [activeSession, loadOptimizedDiffData, openWorkingTreeReview]);
+  }, [rightPanelTab, activeSession]);
+
+  const handleViewDiff = useCallback(
+    (file: FileStatus) => {
+      if (!activeSession) return;
+      setReviewRequests((previous) => ({
+        ...previous,
+        [activeSession.id]: { id: (previous[activeSession.id]?.id ?? 0) + 1, filePath: file.path },
+      }));
+      selectRightPanelTab('review');
+    },
+    [activeSession, selectRightPanelTab]
+  );
 
   // Handler for opening file in external editor
   const handleOpenInEditor = useCallback(
@@ -1019,6 +907,7 @@ export function Layout() {
     (sessionId: string, tabId: string) => {
       setActiveTerminal(sessionId);
       setActiveTab(tabId);
+      setReviewExpanded(false);
       exitOverview();
       setFocusArea('mainTerminal');
     },
@@ -1079,6 +968,7 @@ export function Layout() {
     onOpenSettings: handleKeyboardOpenSettings,
     onAddRepository: handleKeyboardAddRepository,
     onToggleOverview: toggleOverview,
+    onFocusUserTerminal: focusUserTerminal,
     onOpenRepositoryOverview: () => {
       const repositoryId =
         (isOverviewMode && overviewRepositoryId) || activeSessionInfo?.repository.id;
@@ -1136,7 +1026,15 @@ export function Layout() {
           ) : (
             <>
               {/* Terminal Panel with WorktreeBar */}
-              <div className="flex-1 flex flex-col min-w-0">
+              <div
+                className="flex-1 flex flex-col min-w-0"
+                style={{
+                  display:
+                    !isOverviewMode && reviewExpanded && rightPanelTab === 'review'
+                      ? 'none'
+                      : undefined,
+                }}
+              >
                 {/* Overview replaces the per-session header while it is open */}
                 {isOverviewMode && (
                   <OverviewHeader
@@ -1160,8 +1058,6 @@ export function Layout() {
                     sessionId={activeTerminalId}
                     sessionPath={activeSession?.path}
                     branchName={activeSession?.branchName}
-                    notesOpen={notesOpen}
-                    onToggleNotes={() => setNotesOpen((prev) => !prev)}
                     onError={(message) => toast.error(message)}
                   />
                 )}
@@ -1206,16 +1102,6 @@ export function Layout() {
                       : 'p-2 bg-muted'
                   )}
                 >
-                  {/* Notes panel - overlay on top of terminal */}
-                  {!isOverviewMode && notesOpen && activeSessionInfo && (
-                    <NotesPanel
-                      repositoryId={activeSessionInfo.repository.id}
-                      worktreeSessionId={activeSessionInfo.session.id}
-                      repositoryName={activeSessionInfo.repository.name}
-                      worktreeLabel={activeSessionInfo.session.label}
-                    />
-                  )}
-
                   {/* Render terminals for each tab across all worktrees.
                       Overview mode shows them all at once instead of only the active tab. */}
                   {allTerminalConfigs.map((config) => {
@@ -1224,9 +1110,8 @@ export function Layout() {
                     const isVisible = isOverviewMode
                       ? (!overviewRepositoryId || config.repositoryId === overviewRepositoryId) &&
                         !hiddenOverviewAgents.has(config.terminalId)
-                      : isWorktreeGrid
-                        ? config.sessionId === activeTerminalId
-                        : isActiveTab;
+                      : !(reviewExpanded && rightPanelTab === 'review') &&
+                        (isWorktreeGrid ? config.sessionId === activeTerminalId : isActiveTab);
 
                     return (
                       <AgentTile
@@ -1339,14 +1224,15 @@ export function Layout() {
                 </div>
               </div>
 
-              {/* Right Panel - Source Control + User Terminals
+              {/* Workspace tools. Hidden tabs stay mounted to retain their state.
                   Always rendered so user terminal TerminalViews remain mounted across repo switches.
                   Hidden via display:none when no session is active. */}
               <div
                 ref={rightPanelRef}
-                className="h-full flex-shrink-0 relative bg-card"
+                className="h-full min-w-0 flex-shrink-0 relative bg-card flex flex-col"
                 style={{
-                  width: fileChangesPaneWidth,
+                  width:
+                    reviewExpanded && rightPanelTab === 'review' ? '100%' : fileChangesPaneWidth,
                   display:
                     activeSession && activeSessionInfo && !isOverviewMode ? undefined : 'none',
                 }}
@@ -1355,37 +1241,105 @@ export function Layout() {
                 {/* Horizontal resize handle (for panel width) */}
                 <div
                   className="absolute left-0 top-0 h-full w-1 cursor-ew-resize hover:bg-primary/30 z-10"
-                  onMouseDown={startResizingFileChangesPane}
+                  style={{
+                    display: reviewExpanded && rightPanelTab === 'review' ? 'none' : undefined,
+                  }}
+                  onMouseDown={(event) => {
+                    if (event.button !== 0) return;
+                    event.preventDefault();
+                    startResizingFileChangesPane();
+                  }}
                 />
 
-                {/* Vertical resize handle (for panel split) */}
-                <div
-                  className="absolute left-0 w-full cursor-ns-resize z-10 group flex items-center py-1 -translate-y-1/2"
-                  style={{ top: `${(1 - userTerminalPanelRatio) * 100}%` }}
-                  onMouseDown={startResizingUserTerminalPanel}
-                >
-                  <div className="w-full h-px bg-border group-hover:bg-primary/30 transition-colors" />
+                <div className="flex min-h-[49px] shrink-0 items-center px-3 py-2">
+                  <RightPanelTabs
+                    active={rightPanelTab}
+                    onChange={selectRightPanelTab}
+                    counts={rightPanelCounts}
+                  />
                 </div>
 
-                {/* Top Panel: Source Control */}
-                {activeSession && (
+                {/* Changes, Notes, and Todos stay mounted so git watchers and an in-progress commit
+                    message survive tab switches. */}
+                {activeSession && activeSessionInfo && (
                   <div
-                    className="absolute top-0 left-0 right-0 overflow-hidden"
-                    style={{ height: `${(1 - userTerminalPanelRatio) * 100}%` }}
+                    className="flex-1 min-h-0 overflow-hidden"
+                    style={{
+                      height: '100%',
+                      display:
+                        rightPanelTab === 'review' || rightPanelTab === 'terminals'
+                          ? 'none'
+                          : undefined,
+                    }}
+                    data-testid="right-panel-top"
                   >
-                    <SourceControlPane
-                      repoPath={activeSession.path}
-                      onViewDiff={handleViewDiff}
-                      onOpenInEditor={handleOpenInEditor}
-                      onStartReview={handleStartReview}
-                    />
+                    <div className={rightPanelTab === 'changes' ? 'h-full' : 'hidden'}>
+                      <SourceControlPane
+                        titleSlot={
+                          <span className="text-xs font-medium text-muted-foreground">
+                            Source control
+                          </span>
+                        }
+                        repoPath={activeSession.path}
+                        onViewDiff={handleViewDiff}
+                        onOpenInEditor={handleOpenInEditor}
+                        onFileCountChange={handleChangeCount}
+                      />
+                    </div>
+                    <div className={rightPanelTab === 'notes' ? 'h-full' : 'hidden'}>
+                      <NotesPanel
+                        titleSlot={null}
+                        repositoryId={activeSessionInfo.repository.id}
+                        worktreeSessionId={activeSessionInfo.session.id}
+                        repositoryName={activeSessionInfo.repository.name}
+                        worktreeLabel={activeSessionInfo.session.label}
+                      />
+                    </div>
+                    <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
+                      <TodosPanel
+                        titleSlot={null}
+                        repositoryId={activeSessionInfo.repository.id}
+                        worktreeSessionId={activeSessionInfo.session.id}
+                        repositoryName={activeSessionInfo.repository.name}
+                        worktreeLabel={activeSessionInfo.session.label}
+                      />
+                    </div>
                   </div>
                 )}
 
-                {/* Bottom Panel: User Terminals - Tab bar, controls, and stable terminal container */}
+                {Object.entries(visitedReviews)
+                  .filter(([sessionId]) =>
+                    allSessions.some(({ session }) => session.id === sessionId)
+                  )
+                  .map(([sessionId, repoPath]) => (
+                    <div
+                      key={sessionId}
+                      className={
+                        rightPanelTab === 'review' && activeTerminalId === sessionId
+                          ? 'flex-1 min-h-0'
+                          : 'hidden'
+                      }
+                    >
+                      <ReviewPanel
+                        repoPath={repoPath}
+                        active={rightPanelTab === 'review' && activeTerminalId === sessionId}
+                        enabled={activeTerminalId === sessionId}
+                        onFileCountChange={handleReviewCount}
+                        request={reviewRequests[sessionId]}
+                        expanded={reviewExpanded}
+                        onToggleExpanded={() => setReviewExpanded((value) => !value)}
+                      />
+                    </div>
+                  ))}
+
+                {/* Terminals tab: controls and a stable terminal container. */}
                 <div
-                  className="absolute bottom-0 left-0 right-0 overflow-hidden flex flex-col"
-                  style={{ height: `${userTerminalPanelRatio * 100}%` }}
+                  className="flex-1 min-h-0 overflow-hidden flex flex-col"
+                  style={{
+                    height: '100%',
+                    display: isUserTerminalPanelCollapsed ? 'none' : undefined,
+                  }}
+                  data-testid="user-terminal-panel"
                 >
                   {activeSession && activeSessionInfo && (
                     <UserTerminalSection
@@ -1417,7 +1371,10 @@ export function Layout() {
                         terminalId={config.terminalId}
                         cwd={config.cwd}
                         isVisible={
-                          config.sessionId === activeTerminalId && config.tabId === activeUserTabId
+                          !isOverviewMode &&
+                          !isUserTerminalPanelCollapsed &&
+                          config.sessionId === activeTerminalId &&
+                          config.tabId === activeUserTabId
                         }
                         terminalType="user"
                       />

@@ -401,6 +401,10 @@ export const TerminalView = memo(
       const fitAddon = fitAddonRef.current;
       if (!terminal || !fitAddon) return;
 
+      // A collapsed container would reflow the scrollback to a 1-column buffer
+      const container = containerRef.current;
+      if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return;
+
       const buffer = terminal.buffer.active;
       const wasAtBottom = buffer.viewportY >= buffer.baseY;
       const savedViewportY = buffer.viewportY;

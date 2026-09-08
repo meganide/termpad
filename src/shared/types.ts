@@ -131,6 +131,18 @@ export interface CustomShortcut {
   metaKey: boolean;
 }
 
+export type TodoPriority = 'low' | 'medium' | 'high';
+
+// A single todo entry. Scoped to either a repository or a worktree session.
+// Array position is the user's manual ordering.
+export interface TodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: string;
+  priority?: TodoPriority;
+}
+
 export interface WorktreeSession {
   id: string;
   label: string; // Worktree task name
@@ -143,6 +155,7 @@ export interface WorktreeSession {
   portOffset?: number; // Offset within repo's port range (0-99), assigned on creation
   isMainWorktree?: boolean; // True if this is the main worktree session (always first, cannot be deleted)
   notes?: string; // User notes for this worktree
+  todos?: TodoItem[]; // User todos for this worktree
 }
 
 // Individual terminal tab within a worktree
@@ -176,6 +189,7 @@ export interface Repository {
   scriptsConfig?: RepositoryScriptsConfig; // Optional scripts configuration
   portRangeStart?: number; // Base port for this repo (e.g., 10000), assigned on creation
   notes?: string; // User notes for this repository
+  todos?: TodoItem[]; // User todos for this repository
 }
 
 export interface WindowState {
@@ -572,7 +586,7 @@ export interface TerminalAPI {
   getCommitHash(repoPath: string, branch: string): Promise<string>;
   getDefaultBranch(repoPath: string): Promise<string>;
   getCurrentBranch(repoPath: string): Promise<string>;
-  getWorkingTreeDiff(repoPath: string): Promise<WorkingTreeDiffResult>;
+  getWorkingTreeDiff(repoPath: string, baseBranch?: string): Promise<WorkingTreeDiffResult>;
   getWorkingTreeStats(repoPath: string): Promise<WorkingTreeStatsResult>;
   getSingleWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<DiffFile | null>;
   getWorkingTreeFileDiffs(repoPath: string, filePaths: string[]): Promise<DiffFile[]>;

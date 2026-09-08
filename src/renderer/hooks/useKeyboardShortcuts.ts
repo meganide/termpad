@@ -98,6 +98,7 @@ interface UseKeyboardShortcutsOptions {
   onSessionSelect?: () => void;
   onOpenSettings?: () => void;
   onAddRepository?: () => void;
+  onFocusUserTerminal?: () => void;
   onToggleOverview?: () => void;
   onOpenRepositoryOverview?: () => void;
 }
@@ -113,6 +114,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     onSessionSelect,
     onOpenSettings,
     onAddRepository,
+    onFocusUserTerminal,
     onToggleOverview,
     onOverviewKeyDown,
     onOpenRepositoryOverview,
@@ -199,6 +201,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
       // Handle Ctrl+U to focus user terminal (direct navigation, works globally)
       if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'u') {
         e.preventDefault();
+        onFocusUserTerminal?.();
         setFocusArea('userTerminal');
         return;
       }
@@ -341,6 +344,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
       onSessionSelect,
       onOpenSettings,
       onAddRepository,
+      onFocusUserTerminal,
       onToggleOverview,
       onOverviewKeyDown,
       onOpenRepositoryOverview,
