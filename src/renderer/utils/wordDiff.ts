@@ -10,6 +10,9 @@ export interface DiffSegment {
 
 // Create a single instance for reuse
 const dmp = new DiffMatchPatch();
+const wordDiffCache = new Map<string, DiffSegment[]>();
+let cachedCharacters = 0;
+const MAX_CACHED_CHARACTERS = 2 * 1024 * 1024;
 
 /**
  * Compute word-level (actually character-level) diff between two lines.
@@ -19,10 +22,7 @@ const dmp = new DiffMatchPatch();
  * @param newLine - The new line (added line)
  * @returns Array of DiffSegment objects
  */
-export function computeWordDiff(
-  oldLine: string,
-  newLine: string
-): DiffSegment[] {
+export function computeWordDiff(oldLine: string, newLine: string): DiffSegment[] {
   // Handle edge cases
   if (!oldLine && !newLine) {
     return [];
@@ -102,5 +102,16 @@ export function computeWordDiffWithLimit(
     return result;
   }
 
-  return computeWordDiff(oldLine, newLine);
+  const key = JSON.stringify([oldLine, newLine]);
+  const cached = wordDiffCache.get(key);
+  if (cached) return cached;
+  const result = computeWordDiff(oldLine, newLine);
+  wordDiffCache.set(key, result);
+  cachedCharacters += key.length;
+  while (cachedCharacters > MAX_CACHED_CHARACTERS || wordDiffCache.size > 5000) {
+    const oldest = wordDiffCache.keys().next().value!;
+    cachedCharacters -= oldest.length;
+    wordDiffCache.delete(oldest);
+  }
+  return result;
 }

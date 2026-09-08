@@ -2,7 +2,8 @@ import { exec, execFile, ExecOptions, spawn, ChildProcess } from 'child_process'
 import { promisify } from 'util';
 import path from 'path';
 import fs from 'fs/promises';
-import * as fsSync from 'fs';
+import { GitReadCache, mapConcurrent } from './gitReadCache';
+import { FileContentCache } from './fileContentCache';
 import type { IpcMain } from 'electron';
 import type {
   GitStatus,
@@ -45,44 +46,47 @@ const execFileAsync = promisify(execFile);
 // Cache for simple-git instances to avoid creating new ones on every operation
 const simpleGitCache = new Map<string, SimpleGit>();
 
-// Short-TTL result cache with in-flight dedup for read-only git operations.
-// Several change-driven refreshers (useGitStatus, useSourceControl,
-// useWorkingTreeDiff) react to the same repoChanged signal at once; sharing
-// results collapses their subprocess fan-out into one execution.
-const GIT_OP_CACHE_TTL_MS = 1000;
-const gitOpCache = new Map<string, { expiresAt: number; promise: Promise<unknown> }>();
+const gitReadCache = new GitReadCache();
+const cachedGitOp = gitReadCache.read.bind(gitReadCache);
+const METADATA_TTL_MS = 30_000;
 
-function cachedGitOp<T>(op: string, repoPath: string, run: () => Promise<T>): Promise<T> {
-  const key = `${op}\0${repoPath}`;
-  const entry = gitOpCache.get(key);
-  if (entry && entry.expiresAt > Date.now()) {
-    return entry.promise as Promise<T>;
+export function invalidateGitOpCache(repoPath?: string, scope?: 'worktree'): void {
+  gitReadCache.invalidate(repoPath, scope);
+  if (!scope) {
+    untrackedDiffCache.clear(repoPath);
+    if (repoPath) defaultBranchCache.delete(repoPath);
+    else defaultBranchCache.clear();
   }
-  const promise = run();
-  gitOpCache.set(key, { expiresAt: Date.now() + GIT_OP_CACHE_TTL_MS, promise });
-  promise.catch(() => {
-    // Don't serve cached failures
-    if (gitOpCache.get(key)?.promise === promise) {
-      gitOpCache.delete(key);
-    }
-  });
-  return promise;
 }
 
-/**
- * Drop cached read results after a mutating operation so the UI refresh that
- * follows a stage/commit/pull sees fresh state instead of a <1s stale entry.
- */
-export function invalidateGitOpCache(repoPath?: string): void {
-  if (!repoPath) {
-    gitOpCache.clear();
-    return;
-  }
-  for (const key of gitOpCache.keys()) {
-    if (key.endsWith(`\0${repoPath}`)) {
-      gitOpCache.delete(key);
-    }
-  }
+// Shared raw reads feed both sidebar badges and source control.
+function readPorcelain(repoPath: string): Promise<{ stdout: string; stderr: string }> {
+  return cachedGitOp('porcelain', repoPath, () =>
+    execAsync('git --no-optional-locks status --porcelain -u', {
+      cwd: repoPath,
+      maxBuffer: 8 * 1024 * 1024,
+    })
+  );
+}
+
+function readBranch(repoPath: string): Promise<{ stdout: string; stderr: string }> {
+  return cachedGitOp(
+    'branch',
+    repoPath,
+    () => execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath }),
+    METADATA_TTL_MS,
+    'metadata'
+  );
+}
+
+function readRemotes(repoPath: string) {
+  return cachedGitOp(
+    'remotes',
+    repoPath,
+    async () => (await getSimpleGit(repoPath)).getRemotes(true),
+    METADATA_TTL_MS,
+    'metadata'
+  );
 }
 
 // Track active operations per repo for cancellation support
@@ -145,13 +149,11 @@ function unregisterOperation(repoPath: string): void {
 }
 
 /**
- * Check if a directory exists synchronously.
- * Used for fast pre-validation before git operations to avoid
- * unnecessary work when the directory has been deleted externally.
+ * Validate paths asynchronously so slow disks and WSL cannot block terminal IPC.
  */
-function directoryExistsSync(dirPath: string): boolean {
+async function directoryExists(dirPath: string): Promise<boolean> {
   try {
-    const stats = fsSync.statSync(dirPath);
+    const stats = await fs.stat(dirPath);
     return stats.isDirectory();
   } catch (error) {
     // Check for ENOENT specifically - other errors should be logged
@@ -186,9 +188,9 @@ export class RepositoryNotFoundError extends Error {
  * This reduces memory usage by reusing instances instead of creating new ones.
  * Throws RepositoryNotFoundError if the directory doesn't exist.
  */
-function getSimpleGit(repoPath: string): SimpleGit {
+async function getSimpleGit(repoPath: string): Promise<SimpleGit> {
   // Check if directory exists before creating/reusing instance
-  if (!directoryExistsSync(repoPath)) {
+  if (!(await directoryExists(repoPath))) {
     // Clear from cache if it existed
     simpleGitCache.delete(repoPath);
     throw new RepositoryNotFoundError(repoPath);
@@ -209,6 +211,7 @@ function getSimpleGit(repoPath: string): SimpleGit {
 export function clearSimpleGitCache(repoPath: string): void {
   simpleGitCache.delete(repoPath);
   defaultBranchCache.delete(repoPath);
+  invalidateGitOpCache(repoPath);
 }
 
 /**
@@ -423,7 +426,7 @@ export async function isGitRepo(folderPath: string): Promise<boolean> {
 export async function getGitStatus(repoPath: string): Promise<GitStatus | null> {
   try {
     // Check if directory exists before attempting git operations
-    if (!directoryExistsSync(repoPath)) {
+    if (!(await directoryExists(repoPath))) {
       console.log(`[Git] Repository directory does not exist: ${repoPath}`);
       return null;
     }
@@ -432,8 +435,8 @@ export async function getGitStatus(repoPath: string): Promise<GitStatus | null> 
     // git from opportunistically rewriting .git/index during these background
     // reads, which would re-trigger the repo change watcher.
     const [branchResult, statusResult] = await Promise.allSettled([
-      execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath }),
-      execAsync('git --no-optional-locks status --porcelain -u', { cwd: repoPath }),
+      readBranch(repoPath),
+      readPorcelain(repoPath),
     ]);
 
     // Handle potential failures in parallel operations
@@ -525,7 +528,18 @@ const BINARY_PROBE_BYTES = 8000;
  * git processes per status poll. Uses git's binary heuristic (NUL byte near
  * the start of the file).
  */
-async function countUntrackedFileLines(
+const lineCountCache = new FileContentCache<{ lineCount: number; isBinary: boolean }>();
+async function countUntrackedFileLines(repoPath: string, filePath: string) {
+  try {
+    return await lineCountCache.read(path.join(repoPath, filePath), () =>
+      countUntrackedFileLinesUncached(repoPath, filePath)
+    );
+  } catch {
+    return { lineCount: 0, isBinary: false };
+  }
+}
+
+async function countUntrackedFileLinesUncached(
   repoPath: string,
   filePath: string
 ): Promise<{ lineCount: number; isBinary: boolean }> {
@@ -1056,7 +1070,7 @@ export async function getDiff(
     };
   }
 
-  const git = getSimpleGit(repoPath);
+  const git = await getSimpleGit(repoPath);
 
   // Get commit hashes for the branches
   const baseCommit = await git.revparse([baseBranch]);
@@ -1099,7 +1113,7 @@ export async function getFileDiff(
     return files[0] || null;
   }
 
-  const git = getSimpleGit(repoPath);
+  const git = await getSimpleGit(repoPath);
 
   // Get the diff for the specific file
   const diffOutput = await git.diff([`${baseBranch}...${compareBranch}`, '--', filePath]);
@@ -1123,7 +1137,7 @@ export async function getCommitHash(repoPath: string, branch: string): Promise<s
     return stdout.trim();
   }
 
-  const git = getSimpleGit(repoPath);
+  const git = await getSimpleGit(repoPath);
   const commit = await git.revparse([branch]);
   return commit.trim();
 }
@@ -1168,7 +1182,7 @@ async function resolveDefaultBranch(repoPath: string): Promise<string> {
         return match[1];
       }
     } else {
-      const git = getSimpleGit(repoPath);
+      const git = await getSimpleGit(repoPath);
       // Try to get the default branch from origin (network round-trip)
       const remotes = await git.remote(['show', 'origin']);
       if (remotes) {
@@ -1195,19 +1209,67 @@ async function resolveDefaultBranch(repoPath: string): Promise<string> {
  */
 export async function getCurrentBranch(repoPath: string): Promise<string> {
   // Check if directory exists before attempting git operations
-  if (!directoryExistsSync(repoPath)) {
+  if (!(await directoryExists(repoPath))) {
     console.log(`[Git] Repository directory does not exist: ${repoPath}`);
     return '';
   }
 
-  if (isWslPath(repoPath)) {
-    const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath });
-    return stdout.trim();
-  }
+  return (await readBranch(repoPath)).stdout.trim();
+}
 
-  const git = getSimpleGit(repoPath);
-  const branch = await git.revparse(['--abbrev-ref', 'HEAD']);
-  return branch.trim();
+async function runReviewGit(repoPath: string, args: string[]): Promise<string> {
+  const wsl = isWslPath(repoPath);
+  let command = 'git';
+  if (wsl) {
+    const distro = getWslDistro(repoPath);
+    if (!distro) throw new Error(`Invalid WSL path: ${repoPath}`);
+    command = 'wsl.exe';
+    args = ['-d', distro, '--cd', toWslInternalPath(repoPath), '--exec', 'git', ...args];
+  }
+  const result = await execFileAsync(command, args, {
+    cwd: wsl ? undefined : repoPath,
+    maxBuffer: DIFF_MAX_BUFFER,
+  });
+  return result.stdout;
+}
+
+const untrackedDiffCache = new FileContentCache<DiffFile>(
+  (file) =>
+    256 +
+    file.hunks.reduce(
+      (total, hunk) =>
+        total + 128 + hunk.lines.reduce((bytes, line) => bytes + 128 + line.content.length * 2, 0),
+      0
+    ),
+  16 * 1024 * 1024
+);
+
+export async function getReviewFileCount(repoPath: string, baseBranch: string): Promise<number> {
+  const commit = (
+    await runReviewGit(repoPath, [
+      'rev-parse',
+      '--verify',
+      '--end-of-options',
+      `${baseBranch}^{commit}`,
+    ])
+  ).trim();
+  const base =
+    baseBranch === 'HEAD'
+      ? commit
+      : (await runReviewGit(repoPath, ['merge-base', commit, 'HEAD'])).trim();
+  const [tracked, untracked] = await Promise.all([
+    runReviewGit(repoPath, [
+      'diff',
+      '--no-ext-diff',
+      '--no-textconv',
+      '--name-only',
+      '-z',
+      base,
+      '--',
+    ]),
+    runReviewGit(repoPath, ['ls-files', '--others', '--exclude-standard', '-z']),
+  ]);
+  return new Set([...tracked.split('\0'), ...untracked.split('\0')].filter(Boolean)).size;
 }
 
 /**
@@ -1220,21 +1282,7 @@ export async function getWorkingTreeDiff(
   // The review panel compares the complete working tree to HEAD or to the
   // merge base of another branch. Pass arguments directly, never through a shell.
   if (baseBranch !== undefined) {
-    const runGit = async (args: string[]) => {
-      const wsl = isWslPath(repoPath);
-      let command = 'git';
-      if (wsl) {
-        const distro = getWslDistro(repoPath);
-        if (!distro) throw new Error(`Invalid WSL path: ${repoPath}`);
-        command = 'wsl.exe';
-        args = ['-d', distro, '--cd', toWslInternalPath(repoPath), '--exec', 'git', ...args];
-      }
-      const result = await execFileAsync(command, args, {
-        cwd: wsl ? undefined : repoPath,
-        maxBuffer: DIFF_MAX_BUFFER,
-      });
-      return result.stdout;
-    };
+    const runGit = (args: string[]) => runReviewGit(repoPath, args);
     const commit = (
       await runGit(['rev-parse', '--verify', '--end-of-options', `${baseBranch}^{commit}`])
     ).trim();
@@ -1247,38 +1295,40 @@ export async function getWorkingTreeDiff(
       .split('\0')
       .filter(Boolean);
     const trackedPaths = new Set(files.map((file) => file.path));
-    for (const filePath of untracked) {
-      if (!trackedPaths.has(filePath)) {
-        const nullDevice =
-          process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
-        const diff = await runGit([
-          'diff',
-          '--no-ext-diff',
-          '--no-textconv',
-          '--no-index',
-          '--',
-          nullDevice,
-          filePath,
-        ]).catch((error: { code?: number; stdout?: string }) => {
-          // --no-index returns 1 for differences; other failures must remain visible.
-          if (error.code === 1 && typeof error.stdout === 'string') return error.stdout;
-          throw error;
-        });
-        const file = parseDiff(diff)[0];
-        files.push(
-          file
+    const addedFiles = await mapConcurrent(
+      untracked.filter((filePath) => !trackedPaths.has(filePath)),
+      4,
+      async (filePath) => {
+        return untrackedDiffCache.read(path.join(repoPath, filePath), async () => {
+          const nullDevice =
+            process.platform === 'win32' && !isWslPath(repoPath) ? 'NUL' : '/dev/null';
+          const diff = await runGit([
+            'diff',
+            '--no-ext-diff',
+            '--no-textconv',
+            '--no-index',
+            '--',
+            nullDevice,
+            filePath,
+          ]).catch((error: { code?: number; stdout?: string }) => {
+            if (error.code === 1 && typeof error.stdout === 'string') return error.stdout;
+            throw error;
+          });
+          const file = parseDiff(diff)[0];
+          return file
             ? { ...file, path: filePath }
             : {
                 path: filePath,
-                status: 'added',
+                status: 'added' as const,
                 additions: 0,
                 deletions: 0,
                 isBinary: false,
                 hunks: [],
-              }
-        );
+              };
+        });
       }
-    }
+    );
+    files.push(...addedFiles);
     return { files, headCommit: baseCommit, isDirty: files.length > 0 };
   }
   if (isWslPath(repoPath)) {
@@ -1293,7 +1343,7 @@ export async function getWorkingTreeDiff(
     };
   }
 
-  const git = getSimpleGit(repoPath);
+  const git = await getSimpleGit(repoPath);
 
   // Get HEAD commit hash
   const headCommit = await git.revparse(['HEAD']);
@@ -1327,20 +1377,20 @@ export async function getWorkingTreeStats(repoPath: string): Promise<WorkingTree
       execAsync('git rev-parse HEAD', { cwd: repoPath }),
       execAsync('git diff --numstat HEAD', { cwd: repoPath }),
       execAsync('git diff --name-status HEAD', { cwd: repoPath }),
-      execAsync('git status --porcelain -u', { cwd: repoPath }),
+      readPorcelain(repoPath),
     ]);
     headCommit = headResult.stdout.trim();
     numstatOutput = numstatResult.stdout;
     statusOutput = statusResult.stdout;
     porcelainOutput = porcelainResult.stdout;
   } else {
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
     const [head, numstat, status, porcelainResult] = await Promise.all([
       git.revparse(['HEAD']),
       git.diff(['--numstat', 'HEAD']),
       git.diff(['--name-status', 'HEAD']),
       // Use execAsync for porcelain since simple-git returns a StatusResult object
-      execAsync('git status --porcelain -u', { cwd: repoPath }),
+      readPorcelain(repoPath),
     ]);
     headCommit = head.trim();
     numstatOutput = numstat;
@@ -1465,7 +1515,7 @@ export async function getSingleWorkingTreeFileDiff(
     });
     diffOutput = stdout;
   } else {
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
     diffOutput = await git.diff(['HEAD', '--', filePath]);
   }
 
@@ -1508,7 +1558,7 @@ export async function getWorkingTreeFileDiffs(
     });
     diffOutput = stdout;
   } else {
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
     diffOutput = await git.diff(['HEAD']);
   }
 
@@ -1742,17 +1792,14 @@ export async function getFileStatuses(repoPath: string): Promise<FileStatusResul
   };
 
   // Check if directory exists before attempting git operations
-  if (!directoryExistsSync(repoPath)) {
+  if (!(await directoryExists(repoPath))) {
     console.log(`[Git] Repository directory does not exist: ${repoPath}`);
     return result;
   }
 
   try {
     // Use -u flag to show individual files in untracked directories instead of just directory names
-    const { stdout } = await execAsync('git status --porcelain -u', {
-      cwd: repoPath,
-      maxBuffer: 1024 * 1024,
-    });
+    const { stdout } = await readPorcelain(repoPath);
 
     if (!stdout.trim()) {
       return result;
@@ -2006,7 +2053,7 @@ export async function commit(repoPath: string, message: string): Promise<CommitR
     }
 
     // Use simple-git for commit to avoid shell escaping issues
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
     const commitResult = await git.commit(message);
 
     // simple-git returns an empty commit hash when nothing was committed
@@ -2892,7 +2939,7 @@ export async function push(repoPath: string): Promise<GitOperationResult> {
       }
     }
 
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
 
     // Check if there's a remote configured
     const remotes = await git.getRemotes();
@@ -2974,7 +3021,7 @@ export async function pull(repoPath: string): Promise<GitOperationResult> {
       }
     }
 
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
 
     // Check if there's a remote configured
     const remotes = await git.getRemotes();
@@ -3031,7 +3078,7 @@ export async function getRemoteUrl(
   remoteName = 'origin'
 ): Promise<string | null> {
   // Check if directory exists before attempting git operations
-  if (!directoryExistsSync(repoPath)) {
+  if (!(await directoryExists(repoPath))) {
     console.log(`[Git] Repository directory does not exist: ${repoPath}`);
     return null;
   }
@@ -3043,8 +3090,7 @@ export async function getRemoteUrl(
       return url || null;
     }
 
-    const git = getSimpleGit(repoPath);
-    const remotes = await git.getRemotes(true);
+    const remotes = await readRemotes(repoPath);
 
     const remote = remotes.find((r) => r.name === remoteName);
     if (!remote || !remote.refs.fetch) {
@@ -3091,7 +3137,7 @@ export async function addRemote(
       return { success: true };
     }
 
-    const git = getSimpleGit(repoPath);
+    const git = await getSimpleGit(repoPath);
 
     // Check if remote already exists
     const remotes = await git.getRemotes();
@@ -3218,7 +3264,7 @@ export async function getHookManifest(repoPath: string): Promise<HookManifest> {
 
 export async function getAheadBehind(repoPath: string): Promise<AheadBehindResult> {
   // Check if directory exists before attempting git operations
-  if (!directoryExistsSync(repoPath)) {
+  if (!(await directoryExists(repoPath))) {
     console.log(`[Git] Repository directory does not exist: ${repoPath}`);
     return { ahead: 0, behind: 0, hasRemote: false };
   }
@@ -3234,22 +3280,17 @@ export async function getAheadBehind(repoPath: string): Promise<AheadBehindResul
       }
 
       // Get current branch
-      const { stdout: branchOut } = await execAsync('git rev-parse --abbrev-ref HEAD', {
-        cwd: repoPath,
-      });
+      const { stdout: branchOut } = await readBranch(repoPath);
       currentBranch = branchOut.trim();
     } else {
-      const git = getSimpleGit(repoPath);
-
       // Check if there's a remote configured
-      const remotes = await git.getRemotes();
+      const remotes = await readRemotes(repoPath);
       if (remotes.length === 0) {
         return { ahead: 0, behind: 0, hasRemote: false };
       }
 
       // Get current branch
-      const branch = await git.revparse(['--abbrev-ref', 'HEAD']);
-      currentBranch = branch.trim();
+      currentBranch = (await readBranch(repoPath)).stdout.trim();
     }
 
     // Check if origin/<currentBranch> exists
@@ -4049,12 +4090,22 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getCurrentBranch', async (_, repoPath: string) => {
-    return cachedGitOp('currentBranch', repoPath, () => getCurrentBranch(repoPath));
+    return cachedGitOp(
+      'currentBranch',
+      repoPath,
+      () => getCurrentBranch(repoPath),
+      METADATA_TTL_MS,
+      'metadata'
+    );
   });
 
   ipcMain.handle('git:getWorkingTreeDiff', async (_, repoPath: string, baseBranch?: string) => {
     return getWorkingTreeDiff(repoPath, baseBranch);
   });
+
+  ipcMain.handle('git:getReviewFileCount', (_, repoPath: string, base: string) =>
+    cachedGitOp(`reviewCount:${base}`, repoPath, () => getReviewFileCount(repoPath, base))
+  );
 
   ipcMain.handle('git:getWorkingTreeStats', async (_, repoPath: string) => {
     return cachedGitOp('workingTreeStats', repoPath, () => getWorkingTreeStats(repoPath));
@@ -4137,12 +4188,22 @@ export function setupGitIpcHandlers(ipcMain: IpcMain): void {
   });
 
   ipcMain.handle('git:getAheadBehind', async (_, repoPath: string) => {
-    return cachedGitOp('aheadBehind', repoPath, () => getAheadBehind(repoPath));
+    return cachedGitOp(
+      'aheadBehind',
+      repoPath,
+      () => getAheadBehind(repoPath),
+      METADATA_TTL_MS,
+      'metadata'
+    );
   });
 
   ipcMain.handle('git:getRemoteUrl', async (_, repoPath: string, remoteName?: string) => {
-    return cachedGitOp(`remoteUrl:${remoteName ?? ''}`, repoPath, () =>
-      getRemoteUrl(repoPath, remoteName)
+    return cachedGitOp(
+      `remoteUrl:${remoteName ?? ''}`,
+      repoPath,
+      () => getRemoteUrl(repoPath, remoteName),
+      METADATA_TTL_MS,
+      'metadata'
     );
   });
 

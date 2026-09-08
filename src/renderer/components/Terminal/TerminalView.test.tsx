@@ -175,6 +175,24 @@ describe('TerminalView', () => {
     vi.restoreAllMocks();
   });
 
+  it('acknowledges output only after xterm parses it and releases pending writes on teardown', async () => {
+    const { unmount } = render(<TerminalView {...defaultProps} />);
+    const consume = mockUseTerminalReturn.onData.mock.calls[0][0] as (
+      data: string
+    ) => Promise<void>;
+    const consumed = vi.fn();
+    const first = consume('first').then(consumed);
+    await Promise.resolve();
+    expect(consumed).not.toHaveBeenCalled();
+    mockTerminalInstance.write.mock.calls[0][1]();
+    await first;
+    expect(consumed).toHaveBeenCalledOnce();
+    const second = consume('second').then(consumed);
+    unmount();
+    await second;
+    expect(consumed).toHaveBeenCalledTimes(2);
+  });
+
   it('resizes an unfocused visible split without stealing focus, then focuses it when selected', () => {
     useAppStore.setState({ focusArea: 'mainTerminal' });
     const { rerender } = render(<TerminalView {...defaultProps} isFocused={false} />);

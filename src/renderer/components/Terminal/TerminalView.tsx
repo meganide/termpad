@@ -83,7 +83,25 @@ export const TerminalView = memo(
     const menuRef = useRef<HTMLDivElement>(null);
     const hasSpawnedRef = useRef(false);
     const isReplayingRef = useRef(false);
-    const pendingReplayWritesRef = useRef<string[]>([]);
+    const pendingReplayWritesRef = useRef<Array<{ data: string; resolve: () => void }>>([]);
+    const pendingWriteCallbacksRef = useRef(new Set<() => void>());
+    const writeOutput = useCallback((data: string): Promise<void> => {
+      const terminal = terminalRef.current;
+      if (!terminal) return Promise.resolve();
+      return new Promise<void>((resolve, reject) => {
+        const done = () => {
+          pendingWriteCallbacksRef.current.delete(done);
+          resolve();
+        };
+        pendingWriteCallbacksRef.current.add(done);
+        try {
+          terminal.write(transformTerminalColors(data), done);
+        } catch (error) {
+          pendingWriteCallbacksRef.current.delete(done);
+          reject(error);
+        }
+      });
+    }, []);
 
     // Use selector to only subscribe to specific state, preventing re-renders on unrelated store changes
     const focusArea = useAppStore((state) => state.focusArea);
@@ -143,23 +161,17 @@ export const TerminalView = memo(
     // This is separate from xterm UI so status updates work even when hidden
     useEffect(() => {
       const unsubscribe = onData((data) => {
-        if (isReplayingRef.current) {
-          pendingReplayWritesRef.current.push(data);
-          recordTerminalActivity(effectiveTerminalId);
-          return;
-        }
-        // Write to xterm if it exists
-        if (terminalRef.current) {
-          // Transform true color sequences to use muted colors for diff highlighting
-          const transformedData = transformTerminalColors(data);
-          terminalRef.current.write(transformedData);
-        }
-        // Mark that terminal has received output (enables notifications)
         recordTerminalActivity(effectiveTerminalId);
+        if (isReplayingRef.current) {
+          return new Promise<void>((resolve) => {
+            pendingReplayWritesRef.current.push({ data, resolve });
+          });
+        }
+        return writeOutput(data);
       });
 
       return unsubscribe;
-    }, [onData, effectiveTerminalId, recordTerminalActivity]);
+    }, [onData, effectiveTerminalId, recordTerminalActivity, writeOutput]);
 
     // Initialize xterm UI when container becomes available
     useEffect(() => {
@@ -241,7 +253,7 @@ export const TerminalView = memo(
             pendingReplayWritesRef.current = [];
             isReplayingRef.current = false;
             for (const chunk of pendingWrites) {
-              terminal.write(transformTerminalColors(chunk));
+              void writeOutput(chunk.data).then(chunk.resolve, chunk.resolve);
             }
           })
           .catch((error) => {
@@ -251,7 +263,7 @@ export const TerminalView = memo(
             pendingReplayWritesRef.current = [];
             isReplayingRef.current = false;
             for (const chunk of pendingWrites) {
-              terminal.write(transformTerminalColors(chunk));
+              void writeOutput(chunk.data).then(chunk.resolve, chunk.resolve);
             }
           });
       }
@@ -365,6 +377,9 @@ export const TerminalView = memo(
       return () => {
         disposed = true;
         container?.removeEventListener('click', handleContainerClick, true);
+        // xterm does not invoke queued write callbacks after disposal.
+        for (const done of pendingWriteCallbacksRef.current) done();
+        for (const chunk of pendingReplayWritesRef.current) chunk.resolve();
         terminal.dispose();
         terminalRef.current = null;
         fitAddonRef.current = null;

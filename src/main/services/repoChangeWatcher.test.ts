@@ -26,7 +26,7 @@ vi.mock('fs/promises', () => ({
     isDirectory: () => true,
     isFile: () => false,
   })),
-  readFile: vi.fn(),
+  readFile: vi.fn().mockResolvedValue(''),
 }));
 
 vi.mock('fs', () => ({
@@ -102,11 +102,28 @@ describe('RepoChangeWatcherService', () => {
     await vi.advanceTimersByTimeAsync(300);
 
     expect(mocks.invalidateGitOpCache).toHaveBeenCalledOnce();
-    expect(mocks.invalidateGitOpCache).toHaveBeenCalledWith('/repo');
+    expect(mocks.invalidateGitOpCache).toHaveBeenCalledWith('/repo', 'worktree');
     expect(send).toHaveBeenCalledWith('watcher:repoChanged', '/repo');
     expect(mocks.invalidateGitOpCache.mock.invocationCallOrder[0]).toBeLessThan(
       send.mock.invocationCallOrder[0]
     );
+  });
+
+  it('invalidates metadata when branch or remote refs change', async () => {
+    const sender = {
+      once: vi.fn(),
+      isDestroyed: vi.fn(() => false),
+      send: vi.fn(),
+    } as unknown as WebContents;
+    repoChangeWatcher.watch('/repo', sender);
+    await vi.waitFor(() => expect(mocks.chokidarWatchers).toHaveLength(1));
+    mocks.nativeWatchers[0].emitChange('source.ts');
+    mocks.chokidarWatchers[0].handlers.get('all')?.(
+      'change',
+      '/repo/.git/refs/remotes/origin/main'
+    );
+    await vi.advanceTimersByTimeAsync(300);
+    expect(mocks.invalidateGitOpCache).toHaveBeenCalledWith('/repo');
   });
 
   it('uses the native recursive watcher without crawling the working tree', async () => {

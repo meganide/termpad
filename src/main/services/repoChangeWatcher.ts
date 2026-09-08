@@ -25,6 +25,7 @@ interface WatchedRepo {
   lastEmitAt: number;
   disposed: boolean;
   failed: boolean;
+  metadataChanged: boolean;
 }
 
 function isIgnoredWorkingTreePath(filename: string | Buffer | null): boolean {
@@ -82,6 +83,7 @@ class RepoChangeWatcherService {
       lastEmitAt: 0,
       disposed: false,
       failed: false,
+      metadataChanged: false,
     };
     this.watched.set(repoPath, entry);
     this.addSubscriber(entry, sender);
@@ -156,6 +158,8 @@ class RepoChangeWatcherService {
       { recursive: true, persistent: true },
       (_eventType, filename) => {
         if (!isIgnoredWorkingTreePath(filename)) {
+          if (filename && path.basename(filename.toString()) === '.gitattributes')
+            entry.metadataChanged = true;
           onChange();
         }
       }
@@ -169,11 +173,25 @@ class RepoChangeWatcherService {
     // The tree watcher ignores .git, so watch the metadata files that change
     // on git operations: HEAD (branch switch), index (staging),
     // logs/HEAD (commit/reset/merge/rebase)
+    const commonPath = await fs.readFile(path.join(gitDir, 'commondir'), 'utf-8').catch(() => '');
+    if (entry.disposed || entry.failed) return;
+    const commonDir = commonPath ? path.resolve(gitDir, commonPath.trim()) : gitDir;
     const metaWatcher = chokidar.watch(
-      [path.join(gitDir, 'HEAD'), path.join(gitDir, 'index'), path.join(gitDir, 'logs', 'HEAD')],
+      [
+        path.join(gitDir, 'HEAD'),
+        path.join(gitDir, 'index'),
+        path.join(gitDir, 'logs', 'HEAD'),
+        path.join(commonDir, 'refs'),
+        path.join(commonDir, 'packed-refs'),
+        path.join(commonDir, 'config'),
+        path.join(commonDir, 'info', 'attributes'),
+      ],
       { ignoreInitial: true, persistent: true }
     );
-    metaWatcher.on('all', onChange);
+    metaWatcher.on('all', (_event, changedPath) => {
+      if (changedPath !== path.join(gitDir, 'index')) entry.metadataChanged = true;
+      onChange();
+    });
     metaWatcher.on('error', onError);
     entry.watchers.push(metaWatcher);
   }
@@ -194,7 +212,9 @@ class RepoChangeWatcherService {
     // Filesystem changes happen outside the IPC mutation handlers that normally
     // clear this cache. Invalidate before notifying renderers so their refresh
     // cannot reuse a pre-change result from the short read cache.
-    invalidateGitOpCache(entry.repoPath);
+    if (entry.metadataChanged) invalidateGitOpCache(entry.repoPath);
+    else invalidateGitOpCache(entry.repoPath, 'worktree');
+    entry.metadataChanged = false;
     for (const sender of entry.subscribers.keys()) {
       if (!sender.isDestroyed()) {
         sender.send('watcher:repoChanged', entry.repoPath);
@@ -204,7 +224,10 @@ class RepoChangeWatcherService {
 
   private startFallbackTimer(entry: WatchedRepo): void {
     if (entry.disposed || entry.fallbackTimer) return;
-    entry.fallbackTimer = setInterval(() => this.emit(entry), FALLBACK_INTERVAL_MS);
+    entry.fallbackTimer = setInterval(() => {
+      entry.metadataChanged = true;
+      this.emit(entry);
+    }, FALLBACK_INTERVAL_MS);
   }
 
   private closeWatchers(entry: WatchedRepo): void {

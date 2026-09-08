@@ -1,4 +1,4 @@
-import { useRef, forwardRef, useMemo, useCallback, Fragment, useState } from 'react';
+import { useRef, memo, forwardRef, useMemo, useCallback, Fragment, useState } from 'react';
 import { cn } from '@/lib/utils';
 import { FileDiffHeader } from './FileDiffHeader';
 import { DiffHunk } from './DiffHunk';
@@ -51,7 +51,7 @@ function extractContextHeader(header: string): string | undefined {
   return match?.[1]?.trim() || undefined;
 }
 
-interface FileDiffProps {
+export interface FileDiffProps {
   file: DiffFile;
   viewMode: DiffViewMode;
   isExpanded: boolean;
@@ -140,7 +140,7 @@ function buildSplitLines(lines: DiffLineType[]): SplitLine[] {
   return result;
 }
 
-export const FileDiff = forwardRef<HTMLDivElement, FileDiffProps>(
+const FileDiffView = forwardRef<HTMLDivElement, FileDiffProps>(
   (
     {
       file,
@@ -1294,7 +1294,8 @@ export const FileDiff = forwardRef<HTMLDivElement, FileDiffProps>(
   }
 );
 
-FileDiff.displayName = 'FileDiff';
+FileDiffView.displayName = 'FileDiff';
+export const FileDiff = memo(FileDiffView);
 
 // Split view line component - renders just the diff line, no comments
 // Comments are rendered separately as full-width rows spanning both panes
