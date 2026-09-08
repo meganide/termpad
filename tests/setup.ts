@@ -268,6 +268,7 @@ Object.defineProperty(window, 'terminal', {
     getCommitHash: vi.fn().mockResolvedValue('abc123'),
     getDefaultBranch: vi.fn().mockResolvedValue('main'),
     getCurrentBranch: vi.fn().mockResolvedValue('feature-branch'),
+    getReviewFileCount: vi.fn().mockResolvedValue(0),
     getWorkingTreeDiff: vi
       .fn()
       .mockResolvedValue({ files: [], headCommit: 'abc123', isDirty: false }),

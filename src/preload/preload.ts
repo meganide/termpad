@@ -82,19 +82,23 @@ const electronAPI: ElectronAPI = {
 // one filtered listener per terminal: with all terminals mounted, per-terminal
 // listeners mean O(N) handler invocations per output chunk plus
 // MaxListenersExceededWarning past 10 terminals.
-const terminalDataCallbacks = new Map<string, Set<(data: string) => void>>();
+const terminalDataCallbacks = new Map<string, Set<(data: string) => void | Promise<void>>>();
 const terminalExitCallbacks = new Map<string, Set<(code: number, signal?: number) => void>>();
 let terminalDispatchersAttached = false;
 
 function ensureTerminalDispatchers(): void {
   if (terminalDispatchersAttached) return;
   terminalDispatchersAttached = true;
-  ipcRenderer.on('terminal:data', (_: unknown, id: string, data: string) => {
-    const callbacks = terminalDataCallbacks.get(id);
-    if (callbacks) {
-      for (const callback of callbacks) callback(data);
+  ipcRenderer.on(
+    'terminal:data',
+    async (_: unknown, id: string, data: string, generation: number, sequence: number) => {
+      const callbacks = terminalDataCallbacks.get(id);
+      // Acknowledge only after every consumer has parsed the frame. No subscriber
+      // (during mounting/teardown) must never leave the producer paused.
+      await Promise.allSettled([...(callbacks ?? [])].map(async (callback) => callback(data)));
+      ipcRenderer.send('terminal:ack', id, generation, sequence);
     }
-  });
+  );
   ipcRenderer.on('terminal:exit', (_: unknown, id: string, code: number, signal?: number) => {
     const callbacks = terminalExitCallbacks.get(id);
     if (callbacks) {
@@ -203,6 +207,8 @@ const terminalAPI: TerminalAPI = {
   getCommitHash: (repoPath, branch) => ipcRenderer.invoke('git:getCommitHash', repoPath, branch),
   getDefaultBranch: (repoPath) => ipcRenderer.invoke('git:getDefaultBranch', repoPath),
   getCurrentBranch: (repoPath) => ipcRenderer.invoke('git:getCurrentBranch', repoPath),
+  getReviewFileCount: (repoPath, baseBranch) =>
+    ipcRenderer.invoke('git:getReviewFileCount', repoPath, baseBranch),
   getWorkingTreeDiff: (repoPath, baseBranch) =>
     ipcRenderer.invoke('git:getWorkingTreeDiff', repoPath, baseBranch),
   getWorkingTreeStats: (repoPath) => ipcRenderer.invoke('git:getWorkingTreeStats', repoPath),

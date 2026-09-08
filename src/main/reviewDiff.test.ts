@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { getWorkingTreeDiff } from './gitOperations';
+import { getReviewFileCount, getWorkingTreeDiff } from './gitOperations';
 
 const exec = promisify(execFile);
 const fixtures: string[] = [];
@@ -56,8 +56,19 @@ describe('review base comparisons', () => {
         'existing.txt',
         'untracked file.txt',
       ]);
+      expect(await getReviewFileCount(repo, 'HEAD')).toBe(local.files.length);
+      const again = await getWorkingTreeDiff(repo, 'HEAD');
+      expect(again.files.find((file) => file.path === 'untracked file.txt')).toBe(
+        local.files.find((file) => file.path === 'untracked file.txt')
+      );
+      await writeFile(join(repo, 'untracked file.txt'), 'new contents with the same line count\n');
+      const changed = await getWorkingTreeDiff(repo, 'HEAD');
+      expect(
+        changed.files.find((file) => file.path === 'untracked file.txt')?.hunks[0].lines[0].content
+      ).toBe('new contents with the same line count');
       const branch = await getWorkingTreeDiff(repo, base);
       expect(branch.headCommit).toBe(ancestor);
+      expect(await getReviewFileCount(repo, base)).toBe(branch.files.length);
       expect(branch.files.map((file) => file.path).sort()).toEqual([
         'committed.txt',
         'existing.txt',

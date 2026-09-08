@@ -1,7 +1,15 @@
 import { describe, it, expect } from 'vitest';
-import { TerminalOutputBuffer } from './terminalManager';
+import { TerminalOutputBuffer } from './terminalOutput';
 
 describe('TerminalOutputBuffer', () => {
+  it('bounds redraw output without newlines and preserves UTF-8 characters', () => {
+    const buffer = new TerminalOutputBuffer(10_000, 32);
+    for (let i = 0; i < 1000; i++) buffer.append('\r' + '🌍'.repeat(10));
+    expect(Buffer.byteLength(buffer.getAll())).toBeLessThanOrEqual(32);
+    expect(buffer.getAll()).not.toContain('�');
+    expect(buffer.getLineCount()).toBe(0);
+  });
+
   it('stores and retrieves appended data', () => {
     const buffer = new TerminalOutputBuffer();
     buffer.append('hello\n');
@@ -57,12 +65,12 @@ describe('TerminalOutputBuffer', () => {
     expect(buffer.getLineCount()).toBe(2);
   });
 
-  it('preserves single large chunk even if it exceeds max lines', () => {
+  it('bounds a single large chunk by the line limit', () => {
     const buffer = new TerminalOutputBuffer(3);
-    // Single chunk with 5 lines — can't trim because there's only one chunk
+    // One oversized chunk must also be trimmed.
     buffer.append('a\nb\nc\nd\ne\n');
-    expect(buffer.getAll()).toBe('a\nb\nc\nd\ne\n');
-    expect(buffer.getLineCount()).toBe(5);
+    expect(buffer.getAll()).toBe('c\nd\ne\n');
+    expect(buffer.getLineCount()).toBe(3);
   });
 
   it('trims correctly with many small chunks', () => {

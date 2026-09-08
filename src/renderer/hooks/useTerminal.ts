@@ -15,7 +15,7 @@ interface UseTerminalReturn {
   write: (data: string) => void;
   resize: (cols: number, rows: number) => void;
   kill: () => Promise<void>;
-  onData: (callback: (data: string) => void) => () => void;
+  onData: (callback: (data: string) => void | Promise<void>) => () => void;
 }
 
 // How often to check terminal state (ms)
@@ -121,7 +121,7 @@ export function useTerminal({
   }, [sessionId, unregisterTerminal]);
 
   const onData = useCallback(
-    (callback: (data: string) => void) => {
+    (callback: (data: string) => void | Promise<void>) => {
       return window.terminal.onData(sessionId, (data) => {
         // Append to output buffer (also updates lastDataTime)
         outputBufferRef.current.append(data);
@@ -154,7 +154,7 @@ export function useTerminal({
           currentStatusRef.current = detectedState;
         }
 
-        callback(data);
+        return callback(data);
       });
     },
     [sessionId, updateTerminalStatus]

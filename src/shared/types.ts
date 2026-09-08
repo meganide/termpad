@@ -535,7 +535,7 @@ export interface TerminalAPI {
   getBuffer(terminalId: string): Promise<string>;
 
   // Events
-  onData(sessionId: string, callback: (data: string) => void): () => void;
+  onData(sessionId: string, callback: (data: string) => void | Promise<void>): () => void;
   onExit(sessionId: string, callback: (code: number, signal?: number) => void): () => void;
   onDistroSwitched(
     callback: (payload: {
@@ -586,6 +586,7 @@ export interface TerminalAPI {
   getCommitHash(repoPath: string, branch: string): Promise<string>;
   getDefaultBranch(repoPath: string): Promise<string>;
   getCurrentBranch(repoPath: string): Promise<string>;
+  getReviewFileCount(repoPath: string, baseBranch: string): Promise<number>;
   getWorkingTreeDiff(repoPath: string, baseBranch?: string): Promise<WorkingTreeDiffResult>;
   getWorkingTreeStats(repoPath: string): Promise<WorkingTreeStatsResult>;
   getSingleWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<DiffFile | null>;

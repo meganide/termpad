@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports, @typescript-eslint/no-var-requires */
 import type { IPty, IDisposable } from 'node-pty';
-import type { IpcMain, BrowserWindow } from 'electron';
+import type { IpcMain, BrowserWindow, WebContents } from 'electron';
 import type { AppSettings, ShellInfo, Repository, WorktreeSession } from '../shared/types';
 import { loadAppState } from './storage';
 import { execFile } from 'child_process';
@@ -92,52 +92,13 @@ function killProcessTree(pid: number): Promise<void> {
   });
 }
 
-function countNewlines(data: string): number {
-  let count = 0;
-  for (let i = 0; i < data.length; i++) {
-    if (data[i] === '\n') count++;
-  }
-  return count;
-}
-
-export class TerminalOutputBuffer {
-  private chunks: string[] = [];
-  private lineCount = 0;
-  private maxLines: number;
-
-  constructor(maxLines = 10_000) {
-    this.maxLines = maxLines;
-  }
-
-  append(data: string): void {
-    this.chunks.push(data);
-    this.lineCount += countNewlines(data);
-    this.trim();
-  }
-
-  getAll(): string {
-    return this.chunks.join('');
-  }
-
-  clear(): void {
-    this.chunks = [];
-    this.lineCount = 0;
-  }
-
-  getLineCount(): number {
-    return this.lineCount;
-  }
-
-  private trim(): void {
-    while (this.lineCount > this.maxLines && this.chunks.length > 1) {
-      const removed = this.chunks.shift()!;
-      this.lineCount -= countNewlines(removed);
-    }
-  }
-}
+import { TerminalOutputBuffer, TerminalOutputFlow } from './terminalOutput';
+export { TerminalOutputBuffer } from './terminalOutput';
 
 interface TerminalEntry {
   pty: IPty;
+  generation: number;
+  flow: TerminalOutputFlow;
   disposables: IDisposable[];
   hasReceivedOutput: boolean;
   readyPromise: Promise<void>;
@@ -153,6 +114,8 @@ const OUTPUT_FLUSH_INTERVAL_MS = 8;
 const OUTPUT_FLUSH_MAX_CHARS = 64 * 1024;
 
 class TerminalManager {
+  private nextGeneration = 0;
+  private watchedRenderers = new WeakSet<WebContents>();
   private terminals: Map<string, TerminalEntry> = new Map();
   private outputBuffers: Map<string, TerminalOutputBuffer> = new Map();
   private spawningInProgress: Set<string> = new Set();
@@ -171,6 +134,13 @@ class TerminalManager {
   }
 
   setupIpcHandlers(ipcMain: IpcMain): void {
+    ipcMain.on('terminal:ack', (event, id: string, generation: number, sequence: number) => {
+      const entry = this.terminals.get(id);
+      if (event.sender === this.mainWindow()?.webContents && entry?.generation === generation) {
+        entry.flow.acknowledge(sequence);
+      }
+    });
+
     ipcMain.handle(
       'terminal:spawn',
       async (_, worktreeSessionId: string, cwd: string, initialCommand?: string): Promise<void> => {
@@ -296,6 +266,17 @@ class TerminalManager {
   }
 
   async spawn(worktreeSessionId: string, cwd: string, initialCommand?: string): Promise<void> {
+    const renderer = this.mainWindow()?.webContents;
+    if (renderer && !this.watchedRenderers.has(renderer)) {
+      this.watchedRenderers.add(renderer);
+      renderer.on('did-start-loading', () => {
+        // Reloading a renderer loses its pending acknowledgements.
+        for (const entry of this.terminals.values()) {
+          entry.generation = ++this.nextGeneration;
+          entry.flow.reset();
+        }
+      });
+    }
     // If terminal already exists for this session, don't recreate it
     // This prevents issues with React Strict Mode double-mounting
     if (this.terminals.has(worktreeSessionId)) {
@@ -449,6 +430,8 @@ class TerminalManager {
 
       const terminalEntry: TerminalEntry = {
         pty: ptyProcess,
+        generation: ++this.nextGeneration,
+        flow: new TerminalOutputFlow(ptyProcess),
         disposables,
         hasReceivedOutput: false,
         readyPromise,
@@ -557,7 +540,8 @@ class TerminalManager {
     entry.pendingOutput = '';
     const win = this.mainWindow();
     if (win && !win.isDestroyed()) {
-      win.webContents.send('terminal:data', worktreeSessionId, data);
+      const sequence = entry.flow.sent(data.length);
+      win.webContents.send('terminal:data', worktreeSessionId, data, entry.generation, sequence);
     }
   }
 
@@ -615,6 +599,7 @@ class TerminalManager {
         // On Windows, kill the entire process tree first to release file locks
         // This ensures child processes (like Claude Code) are terminated
         killProcessTree(pid).then(() => {
+          entry.flow.reset();
           entry.pty.kill();
           this.terminals.delete(worktreeSessionId);
           this.clearBuffer(worktreeSessionId);
@@ -631,6 +616,7 @@ class TerminalManager {
       }
       // On Windows, kill the entire process tree first to release file locks
       await killProcessTree(pid);
+      entry.flow.reset();
       entry.pty.kill();
       this.terminals.delete(worktreeSessionId);
       this.clearBuffer(worktreeSessionId);
@@ -713,6 +699,7 @@ class TerminalManager {
 
     // Now call pty.kill() on each
     for (const entry of this.terminals.values()) {
+      entry.flow.reset();
       entry.pty.kill();
     }
     this.terminals.clear();

@@ -14,6 +14,7 @@ import { useAppStore } from '../../stores/appStore';
 import { ReviewIconButton } from './components/ReviewIconButton';
 import { DiffReviewModal } from './DiffReviewModal';
 import { ReviewToolbar } from './components/ReviewToolbar';
+import { reconcileDiffFiles } from './utils/reconcileDiffFiles';
 
 export interface ReviewRequest {
   id: number;
@@ -227,34 +228,24 @@ function ComparisonContent({
         const loadError = store.getState().error;
         if (loadError) throw new Error(loadError);
       } else {
-        if (
-          state.reviewData?.baseCommit === result.headCommit &&
-          JSON.stringify(state.currentReview.files) === JSON.stringify(result.files)
-        )
-          return;
-        // Keep mounted file components and draft comments when refreshing.
-        // Viewed markers are invalidated when the file's diff changes.
         const previousFiles = state.currentReview.files;
+        const files = reconcileDiffFiles(previousFiles, result.files);
+        if (state.reviewData?.baseCommit === result.headCommit && files === previousFiles) return;
+        const previousByPath = new Map(previousFiles.map((file) => [file.path, file]));
         const unchanged = new Set(
-          result.files
-            .filter(
-              (file) =>
-                JSON.stringify(file) ===
-                JSON.stringify(previousFiles.find((previous) => previous.path === file.path))
-            )
-            .map((file) => file.path)
+          files.filter((file) => file === previousByPath.get(file.path)).map((file) => file.path)
         );
         const reviewData = state.reviewData && {
           ...state.reviewData,
           baseCommit: result.headCommit,
           lastCommitHash: result.headCommit,
-          files: result.files.map((file) => ({
+          files: files.map((file) => ({
             path: file.path,
             viewed: unchanged.has(file.path) && state.isFileViewed(file.path),
           })),
         };
         store.setState({
-          currentReview: { ...state.currentReview, files: result.files },
+          currentReview: { ...state.currentReview, files },
           reviewData,
           expandedRanges: new Map(
             [...state.expandedRanges].filter(([path]) => unchanged.has(path))
@@ -276,7 +267,7 @@ function ComparisonContent({
   }, [repoPath, base, store]);
 
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !active) return;
     void refresh();
     // Reuse the app's throttled repository watcher for live updates.
     void window.watcher.watchRepoChanges(repoPath, throttleMs);
@@ -296,7 +287,46 @@ function ComparisonContent({
       void window.watcher.unwatchRepoChanges(repoPath);
       window.removeEventListener('focus', onFocus);
     };
-  }, [enabled, refresh, repoPath, throttleMs]);
+  }, [enabled, active, refresh, repoPath, throttleMs]);
+
+  // Hidden comparisons keep only their badge current. Full hunks and drafts
+  // remain mounted in the store and reconcile when the user opens Review again.
+  useEffect(() => {
+    if (!enabled || active || !onFileCountChange) return;
+    let disposed = false;
+    let fetching = false;
+    let queued = false;
+    const refreshCount = async () => {
+      if (disposed) return;
+      if (fetching) {
+        queued = true;
+        return;
+      }
+      fetching = true;
+      try {
+        const count = await window.terminal.getReviewFileCount(repoPath, base);
+        if (!disposed) onFileCountChange(repoPath, base, count);
+      } catch {
+        if (!disposed) onFileCountChange(repoPath, base, null);
+      } finally {
+        fetching = false;
+        if (queued && !disposed) {
+          queued = false;
+          void refreshCount();
+        }
+      }
+    };
+    void refreshCount();
+    void window.watcher.watchRepoChanges(repoPath, throttleMs);
+    const unsubscribe = window.watcher.onRepoChanged(repoPath, refreshCount);
+    window.addEventListener('focus', refreshCount);
+    return () => {
+      disposed = true;
+      unsubscribe();
+      void window.watcher.unwatchRepoChanges(repoPath);
+      window.removeEventListener('focus', refreshCount);
+    };
+  }, [enabled, active, repoPath, base, throttleMs, onFileCountChange]);
 
   const appliedRequest = useRef<number | null>(null);
   useEffect(() => {

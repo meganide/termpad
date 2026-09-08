@@ -31,7 +31,8 @@ export function SourceControlPane({
   onOpenInEditor,
   onFileCountChange,
 }: SourceControlPaneProps) {
-  const { settings, updateSettings } = useAppStore();
+  const settings = useAppStore((state) => state.settings);
+  const updateSettings = useAppStore((state) => state.updateSettings);
   const {
     staged,
     unstaged,

@@ -330,6 +330,7 @@ export const createReviewStore = () =>
     },
 
     setSelectedFile: (filePath) => {
+      if (get().selectedFile === filePath && !get().commentingOnLine) return;
       set({ selectedFile: filePath, commentingOnLine: null });
     },
 

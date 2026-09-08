@@ -250,22 +250,25 @@ describe('ReviewPanel', () => {
     bounds.mockRestore();
   });
 
-  it('reports the selected base count and updates while another tab is visible', async () => {
+  it('updates hidden badges without loading hunks and refreshes hunks when opened', async () => {
     const onFileCountChange = vi.fn();
-    render(<ReviewPanel {...props} active={false} enabled onFileCountChange={onFileCountChange} />);
+    vi.mocked(window.terminal.getReviewFileCount).mockResolvedValue(1);
+    const { rerender } = render(
+      <ReviewPanel {...props} active={false} enabled onFileCountChange={onFileCountChange} />
+    );
     await waitFor(() => expect(onFileCountChange).toHaveBeenLastCalledWith('/repo', 'HEAD', 1));
-    vi.mocked(window.terminal.getWorkingTreeDiff).mockResolvedValue({
-      files: [file('a.txt'), file('b.txt')],
-      headCommit: 'abc',
-      isDirty: true,
-    });
+    expect(window.terminal.getWorkingTreeDiff).not.toHaveBeenCalled();
+    vi.mocked(window.terminal.getReviewFileCount).mockResolvedValue(2);
     const subscription = vi
       .mocked(window.watcher.onRepoChanged)
       .mock.calls.find(([path]) => path === '/repo');
     if (!subscription) throw new Error('Missing review watcher');
-    const onChanged = subscription[1];
-    await act(async () => onChanged());
+    await act(async () => subscription[1]());
     await waitFor(() => expect(onFileCountChange).toHaveBeenLastCalledWith('/repo', 'HEAD', 2));
+    expect(window.terminal.getWorkingTreeDiff).not.toHaveBeenCalled();
+    rerender(<ReviewPanel {...props} active enabled onFileCountChange={onFileCountChange} />);
+    await screen.findByText('local.txt', { selector: 'span' });
+    expect(window.terminal.getWorkingTreeDiff).toHaveBeenCalledTimes(1);
   });
 
   it('shows tooltips for the review icon actions', async () => {

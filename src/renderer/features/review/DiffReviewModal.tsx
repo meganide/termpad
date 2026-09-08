@@ -10,7 +10,7 @@ import { useReviewStore } from '@/stores/reviewStore';
 import { useReviewLayoutStore } from '@/stores/reviewLayoutStore';
 import { DiffReviewHeader } from './components/DiffReviewHeader';
 import { FileList } from './components/FileList';
-import { FileDiff } from './components/FileDiff';
+import { ReviewFile } from './components/ReviewFile';
 import { useLineSelection } from './hooks/useLineSelection';
 import { useResizeSelectionLock } from '../../hooks/useResizeSelectionLock';
 import type { CommentCategory } from '../../../shared/reviewTypes';
@@ -60,7 +60,6 @@ export function DiffReviewModal({
     markFileViewed,
     markFileUnviewed,
     closeReview,
-    getFileComments,
     isFileViewed,
   } = useReviewStore();
 
@@ -276,19 +275,17 @@ export function DiffReviewModal({
     onClose();
   }, [closeReview, onClose]);
 
-  // Get lines with comments for a file
-  const getLinesWithComments = useCallback(
-    (filePath: string): Set<number> => {
-      const comments = getFileComments(filePath);
-      const lines = new Set<number>();
-      for (const comment of comments) {
-        for (let i = comment.lineStart; i <= comment.lineEnd; i++) {
-          lines.add(i);
-        }
-      }
-      return lines;
+  const registerFile = useCallback((path: string, element: HTMLDivElement | null) => {
+    if (element) fileRefs.current.set(path, element);
+    else fileRefs.current.delete(path);
+  }, []);
+  const selectLine = useCallback(
+    (path: string, line: number, side: 'old' | 'new') => {
+      // Avoid notifying the store for each selection within the same file.
+      setSelectedFile(path);
+      handleLineMouseDown(line, side);
     },
-    [getFileComments]
+    [setSelectedFile, handleLineMouseDown]
   );
 
   if (!currentReview) {
@@ -409,51 +406,31 @@ export function DiffReviewModal({
             </div>
           ) : (
             unviewedFiles.map((file) => (
-              <div
+              <ReviewFile
                 key={file.path}
-                className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]"
-              >
-                <FileDiff
-                  ref={(el) => {
-                    if (el) {
-                      fileRefs.current.set(file.path, el);
-                    } else {
-                      fileRefs.current.delete(file.path);
-                    }
-                  }}
-                  file={file}
-                  viewMode={currentReview.viewMode}
-                  isExpanded={!collapsedFiles.has(file.path)}
-                  isViewed={isFileViewed(file.path)}
-                  selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
-                  linesWithComments={getLinesWithComments(file.path)}
-                  comments={getFileComments(file.path)}
-                  commentingOnLine={
-                    commentingOnLine && commentingOnLine.filePath === file.path
-                      ? {
-                          lineStart: commentingOnLine.lineStart,
-                          lineEnd: commentingOnLine.lineEnd,
-                          side: commentingOnLine.side,
-                        }
-                      : null
-                  }
-                  projectPath={projectPath ?? undefined}
-                  onToggleExpand={() => handleToggleExpand(file.path)}
-                  onMarkViewed={() => handleMarkViewed(file.path)}
-                  onCommentClick={(lineNumber, side) =>
-                    handleCommentClick(file.path, lineNumber, side)
-                  }
-                  onLineMouseDown={(lineNumber, side) => {
-                    setSelectedFile(file.path);
-                    handleLineMouseDown(lineNumber, side);
-                  }}
-                  onLineMouseEnter={handleLineMouseEnter}
-                  onCommentSubmit={handleCommentSubmit}
-                  onCommentCancel={handleCommentCancel}
-                  onCommentDelete={deleteComment}
-                  onCommentUpdate={updateComment}
-                />
-              </div>
+                onRegister={registerFile}
+                forceMount={selectedFile === file.path}
+                file={file}
+                viewMode={currentReview.viewMode}
+                isExpanded={!collapsedFiles.has(file.path)}
+                isViewed={false}
+                selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
+                commentingOnLine={
+                  commentingOnLine?.filePath === file.path ? commentingOnLine : null
+                }
+                projectPath={projectPath ?? undefined}
+                onToggleExpand={handleToggleExpand}
+                onMarkViewed={handleMarkViewed}
+                onCommentClick={handleCommentClick}
+                onLineMouseDown={selectLine}
+                onLineMouseEnter={handleLineMouseEnter}
+                onCommentSubmit={
+                  commentingOnLine?.filePath === file.path ? handleCommentSubmit : undefined
+                }
+                onCommentCancel={handleCommentCancel}
+                onCommentDelete={deleteComment}
+                onCommentUpdate={updateComment}
+              />
             ))
           )}
         </div>
