@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Check, Copy, Flag, GripVertical, Trash2 } from 'lucide-react';
+import { Check, Copy, Expand, Flag, GripVertical, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -16,6 +16,10 @@ import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type { TodoItem, TodoPriority } from '../../../shared/types';
 import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
+import { TodoDetailDialog } from './TodoDetailDialog';
+
+// Past this, the row clamps the text and keeps the expand button on show
+const LONG_TEXT_LENGTH = 120;
 
 interface TodoItemRowProps {
   todo: TodoItem;
@@ -37,6 +41,7 @@ export function TodoItemRow({
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(todo.text);
   const [justCopied, setJustCopied] = useState(false);
+  const [isDetailOpen, setIsDetailOpen] = useState(false);
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
 
   useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
@@ -76,6 +81,7 @@ export function TodoItemRow({
 
   const createdAt = new Date(todo.createdAt);
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
+  const isLong = todo.text.length > LONG_TEXT_LENGTH || todo.text.includes('\n');
 
   return (
     <li
@@ -132,7 +138,7 @@ export function TodoItemRow({
         <button
           type="button"
           onClick={startEditing}
-          className={`flex-1 whitespace-pre-wrap break-words text-left text-sm ${
+          className={`line-clamp-2 flex-1 whitespace-pre-wrap break-words text-left text-sm ${
             todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
           }`}
         >
@@ -150,6 +156,23 @@ export function TodoItemRow({
           </time>
         </TooltipTrigger>
         <TooltipContent side="left">Created {format(createdAt, 'PPp')}</TooltipContent>
+      </Tooltip>
+
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={() => setIsDetailOpen(true)}
+            aria-label={`Open "${todo.text}"`}
+            className={`h-6 w-6 shrink-0 text-muted-foreground transition-opacity hover:text-foreground ${
+              isLong ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+            }`}
+          >
+            <Expand className="h-3.5 w-3.5" />
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent side="left">Open full todo</TooltipContent>
       </Tooltip>
 
       <DropdownMenu>
@@ -214,6 +237,10 @@ export function TodoItemRow({
         </TooltipTrigger>
         <TooltipContent side="left">Delete</TooltipContent>
       </Tooltip>
+
+      {isDetailOpen && (
+        <TodoDetailDialog todo={todo} onClose={() => setIsDetailOpen(false)} onSave={onRename} />
+      )}
     </li>
   );
 }

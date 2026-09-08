@@ -282,6 +282,57 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository.map((t) => t.text)).toEqual(['B', 'A']);
   });
 
+  it('clamps the row text so a long todo cannot take over the list', () => {
+    seedRepository({ repository: [makeTodo({ text: 'x'.repeat(400) })] });
+    renderPanel();
+
+    expect(screen.getByText('x'.repeat(400))).toHaveClass('line-clamp-2');
+  });
+
+  it('opens the full todo in a dialog and saves an edit', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    await user.click(screen.getByLabelText('Open "Write tests"'));
+
+    const editor = await screen.findByLabelText('Todo text');
+    expect(editor).toHaveValue('Write tests');
+
+    await user.clear(editor);
+    await user.type(editor, 'A much longer rewritten todo');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(getStoredTodos().repository[0].text).toBe('A much longer rewritten todo');
+    expect(screen.queryByTestId('todo-detail-dialog')).not.toBeInTheDocument();
+  });
+
+  it('discards a dialog edit on cancel', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    await user.click(screen.getByLabelText('Open "Write tests"'));
+    const editor = await screen.findByLabelText('Todo text');
+    await user.clear(editor);
+    await user.type(editor, 'Never saved');
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(getStoredTodos().repository[0].text).toBe('Write tests');
+  });
+
+  it('cannot save an empty todo from the dialog', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    await user.click(screen.getByLabelText('Open "Write tests"'));
+    const editor = await screen.findByLabelText('Todo text');
+    await user.clear(editor);
+
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
   it('deletes a todo', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()], worktree: [makeTodo({ id: 'todo-2' })] });
