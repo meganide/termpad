@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
+import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
 import {
   DndContext,
@@ -26,22 +27,24 @@ import {
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { useAppStore, type TodoScope } from '../../stores/appStore';
-import type { TodoItem, TodoPriority } from '../../../shared/types';
+import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
 import { TodoItemRow } from './TodoItemRow';
 
 interface TodoListProps {
   label: string;
   scope: TodoScope;
   todos: TodoItem[];
+  moveTargets?: WorktreeSession[];
 }
 
-export function TodoList({ label, scope, todos }: TodoListProps) {
-  const { addTodo, updateTodo, removeTodo, reorderTodos } = useAppStore(
+export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
+  const { addTodo, updateTodo, removeTodo, reorderTodos, moveGlobalTodoToWorktree } = useAppStore(
     useShallow((s) => ({
       addTodo: s.addTodo,
       updateTodo: s.updateTodo,
       removeTodo: s.removeTodo,
       reorderTodos: s.reorderTodos,
+      moveGlobalTodoToWorktree: s.moveGlobalTodoToWorktree,
     }))
   );
   const [draft, setDraft] = useState('');
@@ -94,6 +97,15 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
         updateTodo(scope, todo.id, { priority })
       }
       onRemove={() => removeTodo(scope, todo.id)}
+      moveTargets={moveTargets}
+      onMove={(targetId) => {
+        if (scope.type !== 'repository') return;
+        if (moveGlobalTodoToWorktree(scope.repositoryId, todo.id, targetId))
+          toast.success(
+            `Moved to ${moveTargets?.find((target) => target.id === targetId)?.label ?? 'worktree'}`
+          );
+        else toast.error('Could not move todo. The worktree or todo may no longer be available.');
+      }}
     />
   );
 
@@ -120,7 +132,14 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
           aria-label={`Add a todo to ${label}`}
           className="min-h-14 max-h-40 resize-none rounded-lg border-obsidian-400 bg-obsidian-800/60 py-1.5 text-sm focus-visible:border-primary"
         />
-        <Button type="submit" size="icon" disabled={!draft.trim()} className="h-8 w-8 shrink-0">
+        <Button
+          type="submit"
+          size="icon"
+          aria-label={`Add todo to ${label}`}
+          title="Add todo"
+          disabled={!draft.trim()}
+          className="h-8 w-8 shrink-0"
+        >
           <Plus className="h-4 w-4" />
         </Button>
       </form>

@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
-import { RefreshCw, FileText, Eye } from 'lucide-react';
+import { RefreshCw, FileText } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from '@/components/ui/tooltip';
@@ -21,7 +21,7 @@ interface SourceControlPaneProps {
   titleSlot: ReactNode;
   onViewDiff?: (file: FileStatus) => void;
   onOpenInEditor?: (file: FileStatus) => void;
-  onStartReview?: () => void;
+  onFileCountChange?: (repoPath: string, count: number) => void;
 }
 
 export function SourceControlPane({
@@ -29,7 +29,7 @@ export function SourceControlPane({
   titleSlot,
   onViewDiff,
   onOpenInEditor,
-  onStartReview,
+  onFileCountChange,
 }: SourceControlPaneProps) {
   const { settings, updateSettings } = useAppStore();
   const {
@@ -58,6 +58,7 @@ export function SourceControlPane({
   } = useSourceControl({
     repoPath,
     enabled: !!repoPath,
+    onFileCountChange,
   });
 
   // Discard confirmation dialog state
@@ -311,30 +312,6 @@ export function SourceControlPane({
         <div className="flex items-center justify-between px-3 h-[49px]">
           {titleSlot}
           <div className="flex items-center gap-1">
-            {onStartReview && (
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-7 w-7"
-                    onClick={onStartReview}
-                    disabled={
-                      staged.length === 0 && unstaged.length === 0 && untracked.length === 0
-                    }
-                    data-testid="start-review-button"
-                  >
-                    <Eye className="size-4" />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent className="max-w-[200px]">
-                  <p className="font-medium">Review changes</p>
-                  <p className="text-xs text-muted-foreground">
-                    Add comments, then copy to your LLM to fix issues
-                  </p>
-                </TooltipContent>
-              </Tooltip>
-            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button

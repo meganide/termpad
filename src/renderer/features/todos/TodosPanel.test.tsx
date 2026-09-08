@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useAppStore } from '../../stores/appStore';
 import { resetAllStores, createMockRepositoryWithWorktreeSessions } from '../../../../tests/utils';
@@ -20,7 +20,10 @@ const renderPanel = () =>
     />
   );
 
-const seedRepository = (todos: { repository?: TodoItem[]; worktree?: TodoItem[] } = {}) => {
+const seedRepository = (
+  todos: { repository?: TodoItem[]; worktree?: TodoItem[] } = {},
+  global = true
+) => {
   const repository = createMockRepositoryWithWorktreeSessions({ id: REPOSITORY_ID }, 1);
   useAppStore.setState({
     repositories: [
@@ -29,6 +32,7 @@ const seedRepository = (todos: { repository?: TodoItem[]; worktree?: TodoItem[] 
         todos: todos.repository,
         worktreeSessions: repository.worktreeSessions.map((ws) => ({
           ...ws,
+          isMainWorktree: global,
           todos: todos.worktree,
         })),
       },
@@ -44,7 +48,7 @@ const makeTodo = (overrides: Partial<TodoItem> = {}): TodoItem => ({
   ...overrides,
 });
 
-const repositoryList = () => screen.getByLabelText('Add a todo to Repository: Termpad');
+const repositoryList = () => screen.getByLabelText('Add a todo to Global: Termpad');
 const worktreeList = () => screen.getByLabelText('Add a todo to Worktree: feature-x');
 
 const getStoredTodos = () => {
@@ -61,11 +65,13 @@ describe('TodosPanel', () => {
     vi.clearAllMocks();
   });
 
-  it('shows an empty state for both scopes', () => {
+  it('shows only the global empty state in the primary checkout', () => {
     seedRepository();
     renderPanel();
 
-    expect(screen.getAllByText('No todos yet')).toHaveLength(2);
+    expect(screen.getAllByText('No todos yet')).toHaveLength(1);
+    expect(repositoryList()).toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a todo to Worktree: feature-x')).not.toBeInTheDocument();
   });
 
   it('adds a todo to the repository scope only', async () => {
@@ -82,13 +88,14 @@ describe('TodosPanel', () => {
 
   it('adds a todo to the worktree scope only', async () => {
     const user = userEvent.setup();
-    seedRepository();
+    seedRepository({}, false);
     renderPanel();
 
     await user.type(worktreeList(), 'Rebase branch{Enter}');
 
     expect(getStoredTodos().worktree.map((t) => t.text)).toEqual(['Rebase branch']);
     expect(getStoredTodos().repository).toEqual([]);
+    expect(screen.queryByLabelText('Add a todo to Global: Termpad')).not.toBeInTheDocument();
   });
 
   it('trims the new todo text and clears the input', async () => {
@@ -225,12 +232,15 @@ describe('TodosPanel', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    await user.click(screen.getByLabelText('Priority for "Write tests"'));
-    await user.click(await screen.findByRole('menuitem', { name: 'High' }));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Priority' }));
+    // JSDOM has no submenu geometry for pointer travel between the two menus.
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'High' }));
     expect(getStoredTodos().repository[0].priority).toBe('high');
 
-    await user.click(screen.getByLabelText('Priority for "Write tests"'));
-    await user.click(await screen.findByRole('menuitem', { name: 'None' }));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Priority' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'None' }));
     expect(getStoredTodos().repository[0].priority).toBeUndefined();
   });
 
@@ -241,7 +251,8 @@ describe('TodosPanel', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    await user.click(screen.getByLabelText('Copy "Write tests"'));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Copy' }));
 
     expect(writeText).toHaveBeenCalledWith('Write tests');
   });
@@ -294,7 +305,8 @@ describe('TodosPanel', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    await user.click(screen.getByLabelText('Open "Write tests"'));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Open full todo' }));
 
     const editor = await screen.findByLabelText('Todo text');
     expect(editor).toHaveValue('Write tests');
@@ -312,7 +324,8 @@ describe('TodosPanel', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    await user.click(screen.getByLabelText('Open "Write tests"'));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Open full todo' }));
     const editor = await screen.findByLabelText('Todo text');
     await user.clear(editor);
     await user.type(editor, 'Never saved');
@@ -326,28 +339,27 @@ describe('TodosPanel', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    await user.click(screen.getByLabelText('Open "Write tests"'));
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Open full todo' }));
     const editor = await screen.findByLabelText('Todo text');
     await user.clear(editor);
 
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('collapses one scope so the other can be worked on exclusively', async () => {
+  it('collapses and expands the global scope', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
-    const repositoryHeader = screen.getByRole('button', { name: /Repository: Termpad/ });
+    const repositoryHeader = screen.getByRole('button', { name: 'Global: Termpad' });
     expect(repositoryHeader).toHaveAttribute('aria-expanded', 'true');
     expect(repositoryList()).toBeInTheDocument();
 
     await user.click(repositoryHeader);
 
     expect(repositoryHeader).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByLabelText('Add a todo to Repository: Termpad')).not.toBeInTheDocument();
-    // The sibling scope is untouched
-    expect(worktreeList()).toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a todo to Global: Termpad')).not.toBeInTheDocument();
 
     await user.click(repositoryHeader);
     expect(repositoryList()).toBeInTheDocument();
@@ -360,7 +372,7 @@ describe('TodosPanel', () => {
     });
     renderPanel();
 
-    await user.click(screen.getByRole('button', { name: /Repository: Termpad/ }));
+    await user.click(screen.getByRole('button', { name: 'Global: Termpad' }));
 
     expect(screen.getByText('1/2')).toBeInTheDocument();
   });
@@ -371,9 +383,107 @@ describe('TodosPanel', () => {
     renderPanel();
 
     const [repositorySection] = screen.getAllByTestId('todo-item');
-    await user.click(within(repositorySection).getByLabelText('Delete "Write tests"'));
+    await user.click(within(repositorySection).getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Delete' })
+    );
 
     expect(getStoredTodos().repository).toEqual([]);
     expect(getStoredTodos().worktree).toHaveLength(1);
+  });
+
+  it.each(['dropdown', 'right-click'])(
+    'moves a global todo to a worktree from the %s menu',
+    async (entry) => {
+      const user = userEvent.setup();
+      const todo = makeTodo({ priority: 'high' });
+      seedRepository({ repository: [todo] });
+      const repository = useAppStore.getState().repositories[0];
+      const target = {
+        ...repository.worktreeSessions[0],
+        id: 'target',
+        label: 'Feature work',
+        path: '/repo/feature',
+        branchName: 'feature',
+        isMainWorktree: false,
+      };
+      useAppStore.setState({
+        repositories: [
+          { ...repository, worktreeSessions: [...repository.worktreeSessions, target] },
+        ],
+      });
+      renderPanel();
+      if (entry === 'dropdown')
+        await user.click(screen.getByLabelText('Actions for "Write tests"'));
+      else fireEvent.contextMenu(screen.getByTestId('todo-item'));
+      await user.click(await screen.findByRole('menuitem', { name: 'Move to worktree' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: /Feature work/ }));
+      const updated = useAppStore.getState().repositories[0];
+      expect(updated.todos).toEqual([]);
+      expect(updated.worktreeSessions[1].todos).toEqual([todo]);
+      expect(updated.worktreeSessions[0].todos).toBeUndefined();
+    }
+  );
+
+  it('does not offer moving a worktree todo or reveal global todos there', async () => {
+    const user = userEvent.setup();
+    seedRepository(
+      { repository: [makeTodo({ id: 'global', text: 'Global task' })], worktree: [makeTodo()] },
+      false
+    );
+    renderPanel();
+    expect(screen.queryByText('Global task')).not.toBeInTheDocument();
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    expect(screen.queryByRole('menuitem', { name: 'Move to worktree' })).not.toBeInTheDocument();
+  });
+
+  it('offers the same edit action on right-click and focuses the editor', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    const editor = screen.getByLabelText('Edit "Write tests"');
+    expect(editor).toHaveFocus();
+    await user.clear(editor);
+    await user.type(editor, 'Updated{Enter}');
+    expect(getStoredTodos().repository[0].text).toBe('Updated');
+  });
+
+  it('can cancel deletion from the action menu', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Delete' }));
+    await user.click(
+      within(await screen.findByRole('alertdialog')).getByRole('button', { name: 'Cancel' })
+    );
+    expect(getStoredTodos().repository).toHaveLength(1);
+  });
+
+  it('supports keyboard navigation through priority options', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    screen.getByLabelText('Actions for "Write tests"').focus();
+    await user.keyboard('{Enter}');
+    await screen.findByRole('menuitem', { name: 'Open full todo' });
+    await user.keyboard('{ArrowDown}{ArrowDown}{ArrowDown}{ArrowRight}');
+    await screen.findByRole('menuitemradio', { name: 'High' });
+    await user.keyboard('{Enter}');
+    expect(getStoredTodos().repository[0].priority).toBe('high');
+  });
+
+  it('explains when there are no worktrees to move a global todo to', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to worktree' }));
+    expect(await screen.findByRole('menuitem', { name: 'No worktrees available' })).toHaveAttribute(
+      'data-disabled'
+    );
   });
 });

@@ -1,5 +1,5 @@
 import { X, GitBranch, LayoutList, Columns } from 'lucide-react';
-import { Button } from '@/components/ui/button';
+import { ReviewIconButton } from './ReviewIconButton';
 import { cn } from '@/lib/utils';
 import type { DiffViewMode } from '../../../../shared/reviewTypes';
 import { ReviewToolbar } from './ReviewToolbar';
@@ -77,9 +77,9 @@ export function DiffReviewHeader({
       <div className="flex items-center gap-2">
         <ReviewToolbar onClearAll={onClearAllComments} />
         {onClose && (
-          <Button variant="ghost" size="icon" onClick={onClose} data-testid="close-button">
+          <ReviewIconButton label="Close review" onClick={onClose} data-testid="close-button">
             <X className="h-4 w-4" />
-          </Button>
+          </ReviewIconButton>
         )}
       </div>
     </div>

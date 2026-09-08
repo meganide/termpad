@@ -583,7 +583,7 @@ export interface TerminalAPI {
   getCommitHash(repoPath: string, branch: string): Promise<string>;
   getDefaultBranch(repoPath: string): Promise<string>;
   getCurrentBranch(repoPath: string): Promise<string>;
-  getWorkingTreeDiff(repoPath: string): Promise<WorkingTreeDiffResult>;
+  getWorkingTreeDiff(repoPath: string, baseBranch?: string): Promise<WorkingTreeDiffResult>;
   getWorkingTreeStats(repoPath: string): Promise<WorkingTreeStatsResult>;
   getSingleWorkingTreeFileDiff(repoPath: string, filePath: string): Promise<DiffFile | null>;
   getWorkingTreeFileDiffs(repoPath: string, filePaths: string[]): Promise<DiffFile[]>;

@@ -17,6 +17,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/too
 import { PanelSection } from '../../components/RightPanel/PanelSection';
 import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
+import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
 interface NotesPanelProps {
   repositoryId: string;
@@ -28,11 +29,16 @@ interface NotesPanelProps {
 
 function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
   const timeoutRef = useRef<ReturnType<typeof setTimeout>>(undefined);
+  const pendingSaveRef = useRef<(() => void) | undefined>(undefined);
 
   const debouncedSave = useCallback(
     (value: string) => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      timeoutRef.current = setTimeout(() => save(value), delayMs);
+      pendingSaveRef.current = () => save(value);
+      timeoutRef.current = setTimeout(() => {
+        pendingSaveRef.current?.();
+        pendingSaveRef.current = undefined;
+      }, delayMs);
     },
     [save, delayMs]
   );
@@ -40,6 +46,8 @@ function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
   useEffect(() => {
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      pendingSaveRef.current?.();
+      pendingSaveRef.current = undefined;
     };
   }, []);
 
@@ -356,6 +364,9 @@ export function NotesPanel({
 
   const repoNotes = repository?.notes ?? '';
   const worktreeNotes = worktree?.notes ?? '';
+  const global = isGlobalWorkspace(worktree);
+  const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
+  const scopeKey = global ? 'repository' : 'worktree';
 
   const handleRepoNotesChange = useCallback(
     (notes: string) => updateRepositoryNotes(repositoryId, notes),
@@ -369,30 +380,19 @@ export function NotesPanel({
 
   return (
     <div className="h-full flex flex-col" data-testid="notes-panel">
-      <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>
+      {titleSlot && <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>}
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
         <PanelSection
-          label={`Repository: ${repositoryName}`}
-          collapsed={collapsed.repository}
-          onToggle={() => toggle('repository')}
+          label={label}
+          collapsed={collapsed[scopeKey]}
+          onToggle={() => toggle(scopeKey)}
         >
           <NoteEditor
-            label={`Repository: ${repositoryName}`}
-            value={repoNotes}
-            identity={repositoryId}
-            onChange={handleRepoNotesChange}
-          />
-        </PanelSection>
-        <PanelSection
-          label={`Worktree: ${worktreeLabel}`}
-          collapsed={collapsed.worktree}
-          onToggle={() => toggle('worktree')}
-        >
-          <NoteEditor
-            label={`Worktree: ${worktreeLabel}`}
-            value={worktreeNotes}
-            identity={worktreeSessionId}
-            onChange={handleWorktreeNotesChange}
+            key={global ? repositoryId : worktreeSessionId}
+            label={label}
+            value={global ? repoNotes : worktreeNotes}
+            identity={global ? repositoryId : worktreeSessionId}
+            onChange={global ? handleRepoNotesChange : handleWorktreeNotesChange}
           />
         </PanelSection>
       </div>

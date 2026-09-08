@@ -73,15 +73,25 @@ export function FileDiffHeader({
       data-testid="file-diff-header"
     >
       {/* Expand/collapse button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 w-6 p-0"
-        onClick={onToggleExpand}
-        data-testid="expand-toggle"
-      >
-        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={onToggleExpand}
+            data-testid="expand-toggle"
+            aria-label={isExpanded ? 'Collapse file diff' : 'Expand file diff'}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{isExpanded ? 'Collapse file diff' : 'Expand file diff'}</TooltipContent>
+      </Tooltip>
 
       {/* Expand All button - expands all hidden context lines */}
       {onExpandAll && (
@@ -90,7 +100,7 @@ export function FileDiffHeader({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground @max-[480px]/review:hidden"
               onClick={(e) => {
                 e.stopPropagation();
                 onExpandAll();
@@ -119,7 +129,12 @@ export function FileDiffHeader({
         {file.oldPath && file.status === 'renamed' && (
           <span className="text-xs text-muted-foreground truncate">(from {file.oldPath})</span>
         )}
-        <span className={cn('text-xs px-1.5 py-0.5 rounded', statusBadge.className)}>
+        <span
+          className={cn(
+            'text-xs px-1.5 py-0.5 rounded @max-[480px]/review:hidden',
+            statusBadge.className
+          )}
+        >
           {statusBadge.text}
         </span>
       </div>

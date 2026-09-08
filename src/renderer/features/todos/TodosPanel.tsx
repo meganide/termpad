@@ -5,6 +5,7 @@ import { useAppStore } from '../../stores/appStore';
 import type { TodoScope } from '../../stores/appStore';
 import { TodoList } from './TodoList';
 import type { TodoItem } from '../../../shared/types';
+import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
 function TodoCount({ todos }: { todos: TodoItem[] }) {
   if (todos.length === 0) return null;
@@ -48,33 +49,31 @@ export function TodosPanel({
 
   const repositoryTodos = repository?.todos ?? [];
   const worktreeTodos = worktree?.todos ?? [];
+  const global = isGlobalWorkspace(worktree);
+  const scope = global ? repositoryScope : worktreeScope;
+  const todos = global ? repositoryTodos : worktreeTodos;
+  const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
+  const scopeKey = global ? 'repository' : 'worktree';
+  const moveTargets = global
+    ? repository?.worktreeSessions.filter((session) => !isGlobalWorkspace(session))
+    : undefined;
 
   return (
     <div className="h-full flex flex-col" data-testid="todos-panel">
-      <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>
+      {titleSlot && <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>}
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
         <PanelSection
-          label={`Repository: ${repositoryName}`}
-          collapsed={collapsed.repository}
-          onToggle={() => toggle('repository')}
-          headerAccessory={<TodoCount todos={repositoryTodos} />}
+          label={label}
+          collapsed={collapsed[scopeKey]}
+          onToggle={() => toggle(scopeKey)}
+          headerAccessory={<TodoCount todos={todos} />}
         >
           <TodoList
-            label={`Repository: ${repositoryName}`}
-            scope={repositoryScope}
-            todos={repositoryTodos}
-          />
-        </PanelSection>
-        <PanelSection
-          label={`Worktree: ${worktreeLabel}`}
-          collapsed={collapsed.worktree}
-          onToggle={() => toggle('worktree')}
-          headerAccessory={<TodoCount todos={worktreeTodos} />}
-        >
-          <TodoList
-            label={`Worktree: ${worktreeLabel}`}
-            scope={worktreeScope}
-            todos={worktreeTodos}
+            key={global ? repositoryId : worktreeSessionId}
+            label={label}
+            scope={scope}
+            todos={todos}
+            moveTargets={moveTargets}
           />
         </PanelSection>
       </div>

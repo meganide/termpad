@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback, useState, useMemo } from 'react';
+import { useEffect, useRef, useCallback, useState, useMemo, type ReactNode } from 'react';
 import {
   AlertDialog,
   AlertDialogContent,
@@ -7,21 +7,41 @@ import {
 } from '@/components/ui/alert-dialog';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { useReviewStore } from '@/stores/reviewStore';
+import { useReviewLayoutStore } from '@/stores/reviewLayoutStore';
 import { DiffReviewHeader } from './components/DiffReviewHeader';
 import { FileList } from './components/FileList';
 import { FileDiff } from './components/FileDiff';
 import { useLineSelection } from './hooks/useLineSelection';
+import { useResizeSelectionLock } from '../../hooks/useResizeSelectionLock';
 import type { CommentCategory } from '../../../shared/reviewTypes';
 
 interface DiffReviewModalProps {
   isOpen: boolean;
   onClose: () => void;
+  embedded?: boolean;
+  toolbar?: ReactNode;
+  treeCollapsed?: boolean;
 }
 
 // Stable empty set so unselected FileDiff rows keep identical prop identity
 const EMPTY_LINE_SET = new Set<number>();
 
-export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
+export function DiffReviewModal({
+  isOpen,
+  onClose,
+  embedded = false,
+  toolbar,
+  treeCollapsed = false,
+}: DiffReviewModalProps) {
+  const treeWidth = useReviewLayoutStore((state) => state.treeWidth);
+  const setTreeWidth = useReviewLayoutStore((state) => state.setTreeWidth);
+  const reviewBodyRef = useRef<HTMLDivElement>(null);
+  const resizingTree = useRef(false);
+  const { start: lockResizeSelection, stop: unlockResizeSelection } = useResizeSelectionLock();
+  const resizeTree = (width: number) => {
+    const available = reviewBodyRef.current?.getBoundingClientRect().width ?? 640;
+    setTreeWidth(Math.max(128, Math.min(width, 480, Math.max(128, available - 160))));
+  };
   const {
     currentReview,
     reviewData,
@@ -48,7 +68,7 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
 
   // Compute initial expanded files based on review branches
   const reviewKey = currentReview
-    ? `${currentReview.baseBranch}:${currentReview.compareBranch}`
+    ? `${projectPath}:${currentReview.baseBranch}:${currentReview.compareBranch}`
     : '';
   const initialExpanded = useMemo(() => {
     if (!currentReview?.files) return new Set<string>();
@@ -62,11 +82,12 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
   // Also ensure selected file is expanded if pre-selected
   useEffect(() => {
     const expanded = new Set(initialExpanded);
-    if (selectedFile) {
-      expanded.add(selectedFile);
-    }
     setExpandedFiles(expanded);
-  }, [initialExpanded, selectedFile]);
+  }, [initialExpanded]);
+
+  useEffect(() => {
+    if (selectedFile) setExpandedFiles((prev) => new Set([...prev, selectedFile]));
+  }, [selectedFile]);
 
   // Track if initial scroll has been done for this modal open
   const hasScrolledRef = useRef(false);
@@ -74,22 +95,24 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
 
   // Reset scroll tracking when modal closes
   useEffect(() => {
+    if (embedded) return;
     if (!isOpen) {
       hasScrolledRef.current = false;
       scrollTargetRef.current = null;
     }
-  }, [isOpen]);
+  }, [isOpen, embedded]);
 
   // Set scroll target when modal opens with a pre-selected file
   useEffect(() => {
+    if (embedded) return;
     if (isOpen && selectedFile && !hasScrolledRef.current) {
       scrollTargetRef.current = selectedFile;
     }
-  }, [isOpen, selectedFile]);
+  }, [isOpen, selectedFile, embedded]);
 
   // Scroll to target file when ref becomes available
   useEffect(() => {
-    if (!isOpen || !scrollTargetRef.current || hasScrolledRef.current || isLoading) {
+    if (embedded || !isOpen || !scrollTargetRef.current || hasScrolledRef.current || isLoading) {
       return;
     }
 
@@ -121,7 +144,7 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isOpen, isLoading, expandedFiles]);
+  }, [isOpen, isLoading, expandedFiles, embedded]);
 
   // Compute unviewed files for the diff viewer content area
   // Depends on reviewData?.files to recompute when viewed status changes
@@ -171,12 +194,19 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
     }
   }, []);
 
+  useEffect(() => {
+    if (!embedded || !selectedFile) return;
+    const frame = requestAnimationFrame(() => scrollToFile(selectedFile));
+    return () => cancelAnimationFrame(frame);
+  }, [embedded, selectedFile, scrollToFile]);
+
   const handleFileSelect = useCallback(
     (filePath: string) => {
+      if (isFileViewed(filePath)) void markFileUnviewed(filePath);
       setSelectedFile(filePath);
-      scrollToFile(filePath);
+      requestAnimationFrame(() => scrollToFile(filePath));
     },
-    [setSelectedFile, scrollToFile]
+    [setSelectedFile, scrollToFile, isFileViewed, markFileUnviewed]
   );
 
   const handleToggleExpand = useCallback((filePath: string) => {
@@ -268,6 +298,179 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
     return null;
   }
 
+  const content = (
+    <TooltipProvider>
+      {/* Header */}
+      {toolbar ?? (
+        <DiffReviewHeader
+          baseBranch={currentReview.baseBranch}
+          compareBranch={currentReview.compareBranch}
+          viewMode={currentReview.viewMode}
+          onViewModeChange={setViewMode}
+          onClose={embedded ? undefined : handleClose}
+        />
+      )}
+
+      {/* Main content */}
+      <div ref={reviewBodyRef} className="flex flex-1 min-h-0 overflow-hidden pointer-events-auto">
+        <aside
+          aria-label="Review file tree"
+          className={
+            embedded
+              ? '@container/review-tree shrink-0 min-h-0 overflow-hidden bg-sidebar/50'
+              : 'w-80 2xl:w-96 3xl:w-[420px] shrink-0 min-h-0 border-r border-border overflow-hidden bg-sidebar/50'
+          }
+          style={{
+            display: treeCollapsed ? 'none' : undefined,
+            width: embedded ? treeWidth : undefined,
+            maxWidth: embedded ? 'calc(100% - 160px)' : undefined,
+          }}
+          data-testid="file-list-sidebar"
+        >
+          <FileList
+            files={currentReview.files}
+            selectedFile={selectedFile}
+            isFileViewed={isFileViewed}
+            onFileSelect={handleFileSelect}
+            onToggleViewed={handleMarkViewed}
+          />
+        </aside>
+        {embedded && !treeCollapsed && (
+          <div
+            role="separator"
+            aria-label="Resize file tree"
+            aria-orientation="vertical"
+            aria-valuenow={treeWidth}
+            aria-valuemin={128}
+            aria-valuemax={480}
+            tabIndex={0}
+            title="Drag to resize file tree, or use the arrow keys"
+            className="w-1 shrink-0 cursor-col-resize touch-none bg-border hover:bg-primary/50 focus-visible:bg-primary focus-visible:outline-none"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              lockResizeSelection();
+              resizingTree.current = true;
+              event.currentTarget.setPointerCapture(event.pointerId);
+            }}
+            onPointerMove={(event) => {
+              if (resizingTree.current && reviewBodyRef.current)
+                resizeTree(event.clientX - reviewBodyRef.current.getBoundingClientRect().left);
+            }}
+            onPointerUp={(event) => {
+              resizingTree.current = false;
+              unlockResizeSelection();
+              event.currentTarget.releasePointerCapture(event.pointerId);
+            }}
+            onPointerCancel={() => {
+              resizingTree.current = false;
+              unlockResizeSelection();
+            }}
+            onLostPointerCapture={() => {
+              resizingTree.current = false;
+              unlockResizeSelection();
+            }}
+            onKeyDown={(event) => {
+              if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+              event.preventDefault();
+              resizeTree(
+                event.key === 'Home'
+                  ? 128
+                  : event.key === 'End'
+                    ? 480
+                    : treeWidth + (event.key === 'ArrowRight' ? 16 : -16)
+              );
+            }}
+          />
+        )}
+        {/* Main content - Diff view */}
+        <div
+          className="flex-1 min-h-0 overflow-auto p-3 bg-background/30"
+          data-testid="diff-content-area"
+        >
+          {isLoading ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-muted-foreground">Loading diff...</div>
+            </div>
+          ) : error ? (
+            <div className="flex items-center justify-center h-full">
+              <div className="text-red-500">{error}</div>
+            </div>
+          ) : unviewedFiles.length === 0 ? (
+            <div className="flex items-center justify-center h-full" data-testid="all-viewed-state">
+              <div className="text-center">
+                <div className="text-muted-foreground text-lg mb-2">
+                  {currentReview.files.length
+                    ? 'All files reviewed'
+                    : 'No changes against this base'}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  {currentReview.files.length
+                    ? 'Select a file to review it again'
+                    : 'Choose another base branch to see more changes.'}
+                </div>
+              </div>
+            </div>
+          ) : (
+            unviewedFiles.map((file) => (
+              <div
+                key={file.path}
+                className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]"
+              >
+                <FileDiff
+                  ref={(el) => {
+                    if (el) {
+                      fileRefs.current.set(file.path, el);
+                    } else {
+                      fileRefs.current.delete(file.path);
+                    }
+                  }}
+                  file={file}
+                  viewMode={currentReview.viewMode}
+                  isExpanded={expandedFiles.has(file.path)}
+                  isViewed={isFileViewed(file.path)}
+                  selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
+                  linesWithComments={getLinesWithComments(file.path)}
+                  comments={getFileComments(file.path)}
+                  commentingOnLine={
+                    commentingOnLine && commentingOnLine.filePath === file.path
+                      ? {
+                          lineStart: commentingOnLine.lineStart,
+                          lineEnd: commentingOnLine.lineEnd,
+                          side: commentingOnLine.side,
+                        }
+                      : null
+                  }
+                  projectPath={projectPath ?? undefined}
+                  onToggleExpand={() => handleToggleExpand(file.path)}
+                  onMarkViewed={() => handleMarkViewed(file.path)}
+                  onCommentClick={(lineNumber, side) =>
+                    handleCommentClick(file.path, lineNumber, side)
+                  }
+                  onLineMouseDown={(lineNumber, side) => {
+                    setSelectedFile(file.path);
+                    handleLineMouseDown(lineNumber, side);
+                  }}
+                  onLineMouseEnter={handleLineMouseEnter}
+                  onCommentSubmit={handleCommentSubmit}
+                  onCommentCancel={handleCommentCancel}
+                  onCommentDelete={deleteComment}
+                  onCommentUpdate={updateComment}
+                />
+              </div>
+            ))
+          )}
+        </div>
+      </div>
+    </TooltipProvider>
+  );
+
+  if (embedded)
+    return (
+      <div className="flex h-full min-h-0 flex-col" data-testid="diff-review-panel">
+        {content}
+      </div>
+    );
+
   return (
     <AlertDialog open={isOpen} onOpenChange={(open) => !open && handleClose()}>
       <AlertDialogContent
@@ -275,117 +478,11 @@ export function DiffReviewModal({ isOpen, onClose }: DiffReviewModalProps) {
         data-testid="diff-review-modal"
         onEscapeKeyDown={handleEscapeKeyDown}
       >
-        <TooltipProvider>
-          {/* Visually hidden title and description for accessibility */}
-          <AlertDialogTitle className="sr-only">
-            Review changes from {currentReview.baseBranch} to {currentReview.compareBranch}
-          </AlertDialogTitle>
-          <AlertDialogDescription className="sr-only">
-            Full screen diff viewer showing file changes. Use the sidebar to navigate between files.
-          </AlertDialogDescription>
-
-          {/* Header */}
-          <DiffReviewHeader
-            baseBranch={currentReview.baseBranch}
-            compareBranch={currentReview.compareBranch}
-            viewMode={currentReview.viewMode}
-            onViewModeChange={setViewMode}
-            onClose={handleClose}
-          />
-
-          {/* Main content */}
-          <div className="flex flex-1 overflow-hidden pointer-events-auto">
-            {/* Sidebar - File list */}
-            <div
-              className="w-80 2xl:w-96 3xl:w-[420px] flex-shrink-0 border-r border-border overflow-y-auto bg-sidebar/50"
-              data-testid="file-list-sidebar"
-            >
-              <FileList
-                files={currentReview.files}
-                selectedFile={selectedFile}
-                isFileViewed={isFileViewed}
-                onFileSelect={handleFileSelect}
-                onToggleViewed={handleMarkViewed}
-              />
-            </div>
-
-            {/* Main content - Diff view */}
-            <div
-              className="flex-1 overflow-y-auto p-4 bg-background/30"
-              data-testid="diff-content-area"
-            >
-              {isLoading ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-muted-foreground">Loading diff...</div>
-                </div>
-              ) : error ? (
-                <div className="flex items-center justify-center h-full">
-                  <div className="text-red-500">{error}</div>
-                </div>
-              ) : unviewedFiles.length === 0 ? (
-                <div
-                  className="flex items-center justify-center h-full"
-                  data-testid="all-viewed-state"
-                >
-                  <div className="text-center">
-                    <div className="text-muted-foreground text-lg mb-2">All files reviewed</div>
-                    <div className="text-sm text-muted-foreground">
-                      Uncheck files in the sidebar to review them again
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                unviewedFiles.map((file) => (
-                  <div
-                    key={file.path}
-                    className="[content-visibility:auto] [contain-intrinsic-size:auto_600px]"
-                  >
-                    <FileDiff
-                      ref={(el) => {
-                        if (el) {
-                          fileRefs.current.set(file.path, el);
-                        } else {
-                          fileRefs.current.delete(file.path);
-                        }
-                      }}
-                      file={file}
-                      viewMode={currentReview.viewMode}
-                      isExpanded={expandedFiles.has(file.path)}
-                      isViewed={isFileViewed(file.path)}
-                      selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
-                      linesWithComments={getLinesWithComments(file.path)}
-                      comments={getFileComments(file.path)}
-                      commentingOnLine={
-                        commentingOnLine && commentingOnLine.filePath === file.path
-                          ? {
-                              lineStart: commentingOnLine.lineStart,
-                              lineEnd: commentingOnLine.lineEnd,
-                              side: commentingOnLine.side,
-                            }
-                          : null
-                      }
-                      projectPath={projectPath ?? undefined}
-                      onToggleExpand={() => handleToggleExpand(file.path)}
-                      onMarkViewed={() => handleMarkViewed(file.path)}
-                      onCommentClick={(lineNumber, side) =>
-                        handleCommentClick(file.path, lineNumber, side)
-                      }
-                      onLineMouseDown={(lineNumber, side) => {
-                        setSelectedFile(file.path);
-                        handleLineMouseDown(lineNumber, side);
-                      }}
-                      onLineMouseEnter={handleLineMouseEnter}
-                      onCommentSubmit={handleCommentSubmit}
-                      onCommentCancel={handleCommentCancel}
-                      onCommentDelete={deleteComment}
-                      onCommentUpdate={updateComment}
-                    />
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </TooltipProvider>
+        <AlertDialogTitle className="sr-only">Review changes</AlertDialogTitle>
+        <AlertDialogDescription className="sr-only">
+          Review file changes and add comments.
+        </AlertDialogDescription>
+        {content}
       </AlertDialogContent>
     </AlertDialog>
   );

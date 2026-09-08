@@ -319,6 +319,20 @@ vi.mock('../stores/reviewStore', () => ({
   })),
 }));
 
+vi.mock('../features/review/ReviewPanel', () => ({
+  ReviewPanel: ({
+    expanded,
+    onToggleExpanded,
+  }: {
+    expanded: boolean;
+    onToggleExpanded: () => void;
+  }) => (
+    <div data-testid="review-panel">
+      <button onClick={onToggleExpanded}>{expanded ? 'Collapse review' : 'Expand review'}</button>
+    </div>
+  ),
+}));
+
 describe('Layout', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -964,12 +978,12 @@ describe('Layout', () => {
       expect(pane.style.width).toBe('400px');
     });
 
-    it('shares the right panel with user terminals on the Changes tab', () => {
+    it('gives Changes the full panel without a terminal split', () => {
       setupGitRepo();
       render(<Layout />);
 
-      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
-      expect(document.querySelector('.cursor-ns-resize')).toBeInTheDocument();
+      expect(screen.getByTestId('user-terminal-panel')).not.toBeVisible();
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
     });
 
     it.each(['notes', 'todos'])('gives the %s tab the full right panel height', (tab) => {
@@ -987,7 +1001,7 @@ describe('Layout', () => {
       expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
     });
 
-    it('restores the user terminals when returning to Changes', () => {
+    it('shows user terminals in their own tab', () => {
       setupGitRepo();
       render(<Layout />);
 
@@ -995,11 +1009,38 @@ describe('Layout', () => {
         fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
       });
       act(() => {
-        fireEvent.click(screen.getByTestId('right-panel-tab-changes'));
+        fireEvent.click(screen.getByTestId('right-panel-tab-terminals'));
       });
 
       expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
-      expect(document.querySelector('.cursor-ns-resize')).toBeInTheDocument();
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
+    });
+
+    it('opens the Terminals tab with Ctrl+U', () => {
+      setupGitRepo();
+      render(<Layout />);
+      fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
+      fireEvent.keyDown(window, { key: 'u', ctrlKey: true });
+      expect(screen.getByTestId('right-panel-tab-terminals')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(useAppStore.getState().focusArea).toBe('userTerminal');
+    });
+
+    it('expands review inline and restores the previous panel width', () => {
+      setupGitRepo();
+      render(<Layout />);
+      const panel = screen.getByTestId('right-panel');
+      const width = panel.style.width;
+      fireEvent.click(screen.getByTestId('right-panel-tab-review'));
+      expect(screen.getByTestId('review-panel')).toBeVisible();
+      fireEvent.click(screen.getByText('Expand review'));
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByText('Collapse review'));
+      expect(panel.style.width).toBe(width);
+      expect(screen.queryByTestId('diff-review-modal')).not.toBeInTheDocument();
     });
   });
 

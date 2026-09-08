@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { format } from 'date-fns';
-import { Check, Copy, Expand, Flag, GripVertical, Trash2 } from 'lucide-react';
+import { GripVertical, MoreHorizontal } from 'lucide-react';
 import { toast } from 'sonner';
 import { useSortable } from '@dnd-kit/sortable';
 import { CSS } from '@dnd-kit/utilities';
@@ -9,17 +9,29 @@ import { Checkbox } from '../../components/ui/checkbox';
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuTrigger,
 } from '../../components/ui/dropdown-menu';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from '../../components/ui/context-menu';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../../components/ui/alert-dialog';
 import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import type { TodoItem, TodoPriority } from '../../../shared/types';
-import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
+import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import { PRIORITY_STYLES } from './priority';
 import { TodoDetailDialog } from './TodoDetailDialog';
-
-// Past this, the row clamps the text and keeps the expand button on show
-const LONG_TEXT_LENGTH = 120;
+import { TodoActionItems } from './TodoActionItems';
 
 interface TodoItemRowProps {
   todo: TodoItem;
@@ -28,6 +40,8 @@ interface TodoItemRowProps {
   onRename: (text: string) => void;
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   onRemove: () => void;
+  moveTargets?: WorktreeSession[];
+  onMove: (id: string) => void;
 }
 
 export function TodoItemRow({
@@ -37,14 +51,21 @@ export function TodoItemRow({
   onRename,
   onPriorityChange,
   onRemove,
+  moveTargets,
+  onMove,
 }: TodoItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(todo.text);
-  const [justCopied, setJustCopied] = useState(false);
   const [isDetailOpen, setIsDetailOpen] = useState(false);
-  const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined);
-
-  useEffect(() => () => clearTimeout(copiedTimerRef.current), []);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const afterMenuClose = useRef<(() => void) | null>(null);
+  const handleMenuCloseAutoFocus = (event: Event) => {
+    if (!afterMenuClose.current) return;
+    event.preventDefault();
+    const action = afterMenuClose.current;
+    afterMenuClose.current = null;
+    action();
+  };
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: todo.id,
     disabled: !sortable,
@@ -54,26 +75,19 @@ export function TodoItemRow({
     setDraft(todo.text);
     setIsEditing(true);
   };
-
   const commitEdit = () => {
     setIsEditing(false);
     const trimmed = draft.trim();
-    if (trimmed && trimmed !== todo.text) {
-      onRename(trimmed);
-    }
+    if (trimmed && trimmed !== todo.text) onRename(trimmed);
   };
-
   const cancelEdit = () => {
     setIsEditing(false);
     setDraft(todo.text);
   };
-
   const handleCopy = useCallback(async () => {
     try {
       await navigator.clipboard.writeText(todo.text);
-      setJustCopied(true);
-      clearTimeout(copiedTimerRef.current);
-      copiedTimerRef.current = setTimeout(() => setJustCopied(false), 1500);
+      toast.success('Todo copied');
     } catch {
       toast.error('Failed to copy to clipboard');
     }
@@ -81,166 +95,143 @@ export function TodoItemRow({
 
   const createdAt = new Date(todo.createdAt);
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
-  const isLong = todo.text.length > LONG_TEXT_LENGTH || todo.text.includes('\n');
+  const actions = {
+    todo,
+    onOpen: () => {
+      afterMenuClose.current = () => setIsDetailOpen(true);
+    },
+    onEdit: () => {
+      afterMenuClose.current = startEditing;
+    },
+    onCopy: handleCopy,
+    onRemove: () => {
+      afterMenuClose.current = () => setConfirmDelete(true);
+    },
+    onPriorityChange,
+    moveTargets,
+    onMove,
+  };
 
   return (
-    <li
-      ref={setNodeRef}
-      style={{ transform: CSS.Transform.toString(transform), transition }}
-      className={`group relative flex items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
-        priorityStyle ? 'pl-3' : 'pl-2'
-      } ${isDragging ? 'z-10 opacity-80' : ''}`}
-      data-testid="todo-item"
-    >
-      {priorityStyle && (
-        <span
-          aria-hidden
-          className={`absolute left-1 top-1.5 bottom-1.5 w-1 rounded-full ${priorityStyle.stripe}`}
-        />
-      )}
-
-      {sortable && (
-        <button
-          type="button"
-          aria-label={`Reorder "${todo.text}"`}
-          className="mt-0.5 shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-          {...attributes}
-          {...listeners}
-        >
-          <GripVertical className="h-3.5 w-3.5" />
-        </button>
-      )}
-
-      <Checkbox
-        checked={todo.completed}
-        onCheckedChange={(checked) => onToggle(checked === true)}
-        aria-label={todo.text}
-        className="mt-0.5"
-      />
-
-      {isEditing ? (
-        <Textarea
-          autoFocus
-          value={draft}
-          onChange={(event) => setDraft(event.target.value)}
-          onBlur={commitEdit}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault();
-              commitEdit();
-            }
-            if (event.key === 'Escape') cancelEdit();
-          }}
-          aria-label={`Edit "${todo.text}"`}
-          className="min-h-0 max-h-40 flex-1 resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0"
-        />
-      ) : (
-        <button
-          type="button"
-          onClick={startEditing}
-          className={`line-clamp-2 flex-1 whitespace-pre-wrap break-words text-left text-sm ${
-            todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
-          }`}
-        >
-          {todo.text}
-        </button>
-      )}
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <time
-            dateTime={todo.createdAt}
-            className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground"
+    <>
+      <ContextMenu>
+        <ContextMenuTrigger asChild disabled={isEditing}>
+          <li
+            ref={setNodeRef}
+            style={{ transform: CSS.Transform.toString(transform), transition }}
+            className={`group relative flex items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
+              priorityStyle ? 'pl-3' : 'pl-2'
+            } ${isDragging ? 'z-10 opacity-80' : ''}`}
+            data-testid="todo-item"
           >
-            {format(createdAt, 'MMM d')}
-          </time>
-        </TooltipTrigger>
-        <TooltipContent side="left">Created {format(createdAt, 'PPp')}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setIsDetailOpen(true)}
-            aria-label={`Open "${todo.text}"`}
-            className={`h-6 w-6 shrink-0 text-muted-foreground transition-opacity hover:text-foreground ${
-              isLong ? '' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
-            }`}
-          >
-            <Expand className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Open full todo</TooltipContent>
-      </Tooltip>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            aria-label={`Priority for "${todo.text}"`}
-            className={`h-6 w-6 shrink-0 transition-opacity ${
-              priorityStyle
-                ? 'text-foreground'
-                : 'text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
-            }`}
-          >
-            <Flag className="h-3.5 w-3.5" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end">
-          {PRIORITY_ORDER.map((priority) => (
-            <DropdownMenuItem key={priority} onSelect={() => onPriorityChange(priority)}>
-              <span className={`size-2 rounded-full ${PRIORITY_STYLES[priority].dot}`} />
-              {PRIORITY_STYLES[priority].label}
-            </DropdownMenuItem>
-          ))}
-          <DropdownMenuItem onSelect={() => onPriorityChange(undefined)}>
-            <span className="size-2 rounded-full bg-muted-foreground" />
-            None
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleCopy}
-            aria-label={`Copy "${todo.text}"`}
-            className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            {justCopied ? (
-              <Check className="h-3.5 w-3.5 text-primary" />
-            ) : (
-              <Copy className="h-3.5 w-3.5" />
+            {priorityStyle && (
+              <span
+                aria-hidden
+                className={`absolute left-1 top-1.5 bottom-1.5 w-1 rounded-full ${priorityStyle.stripe}`}
+              />
             )}
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">{justCopied ? 'Copied' : 'Copy'}</TooltipContent>
-      </Tooltip>
-
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={onRemove}
-            aria-label={`Delete "${todo.text}"`}
-            className="h-6 w-6 shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100 focus-visible:opacity-100"
-          >
-            <Trash2 className="h-3.5 w-3.5" />
-          </Button>
-        </TooltipTrigger>
-        <TooltipContent side="left">Delete</TooltipContent>
-      </Tooltip>
-
+            {sortable && (
+              <button
+                type="button"
+                aria-label={`Reorder "${todo.text}"`}
+                className="mt-0.5 shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                {...attributes}
+                {...listeners}
+              >
+                <GripVertical className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <Checkbox
+              checked={todo.completed}
+              onCheckedChange={(checked) => onToggle(checked === true)}
+              aria-label={todo.text}
+              className="mt-0.5"
+            />
+            {isEditing ? (
+              <Textarea
+                autoFocus
+                value={draft}
+                onChange={(event) => setDraft(event.target.value)}
+                onBlur={commitEdit}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' && !event.shiftKey) {
+                    event.preventDefault();
+                    commitEdit();
+                  }
+                  if (event.key === 'Escape') cancelEdit();
+                }}
+                aria-label={`Edit "${todo.text}"`}
+                className="min-h-0 max-h-40 flex-1 resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0"
+              />
+            ) : (
+              <button
+                type="button"
+                onClick={startEditing}
+                className={`line-clamp-2 flex-1 whitespace-pre-wrap break-words text-left text-sm ${
+                  todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                }`}
+              >
+                {todo.text}
+              </button>
+            )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <time
+                  dateTime={todo.createdAt}
+                  className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground"
+                >
+                  {format(createdAt, 'MMM d')}
+                </time>
+              </TooltipTrigger>
+              <TooltipContent side="left">Created {format(createdAt, 'PPp')}</TooltipContent>
+            </Tooltip>
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`Actions for "${todo.text}"`}
+                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                    >
+                      <MoreHorizontal className="size-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent side="left">Todo actions (or right-click)</TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                <TodoActionItems {...actions} />
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </li>
+        </ContextMenuTrigger>
+        <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
+          <TodoActionItems context {...actions} />
+        </ContextMenuContent>
+      </ContextMenu>
       {isDetailOpen && (
         <TodoDetailDialog todo={todo} onClose={() => setIsDetailOpen(false)} onSave={onRename} />
       )}
-    </li>
+      <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete todo?</AlertDialogTitle>
+            <AlertDialogDescription>This will permanently delete this todo.</AlertDialogDescription>
+          </AlertDialogHeader>
+          <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm">{todo.text}</p>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={onRemove}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

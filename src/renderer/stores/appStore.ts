@@ -24,6 +24,7 @@ import type {
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
+import { migrateGlobalContent } from '../utils/workspaceScope';
 
 // Track pending idle notifications with their timeouts
 // Key: terminalId, Value: timeout handle
@@ -157,6 +158,11 @@ interface AppStore extends AppState {
   updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
   removeTodo: (scope: TodoScope, todoId: string) => void;
   reorderTodos: (scope: TodoScope, orderedTodoIds: string[]) => void;
+  moveGlobalTodoToWorktree: (
+    repositoryId: string,
+    todoId: string,
+    worktreeSessionId: string
+  ) => boolean;
 
   // Terminal actions
   setActiveTerminal: (worktreeSessionId: string | null) => void;
@@ -382,6 +388,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
             console.error('[Store] Failed to migrate localStorage:', e);
           }
         }
+      }
+
+      const globalRepositories = state.repositories.map(migrateGlobalContent);
+      if (
+        globalRepositories.some((repository, index) => repository !== state.repositories[index])
+      ) {
+        state = { ...state, repositories: globalRepositories };
+        await window.storage.saveState(state);
       }
 
       // Migrate old string shortcuts to CustomShortcut objects
@@ -840,6 +854,39 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // Todo actions
+  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) => {
+    const state = get();
+    const repository = state.repositories.find((item) => item.id === repositoryId);
+    const target = repository?.worktreeSessions.find((session) => session.id === worktreeSessionId);
+    const todo = repository?.todos?.find((item) => item.id === todoId);
+    if (
+      !repository ||
+      !target ||
+      target.isMainWorktree ||
+      !todo ||
+      state.deletingPaths.has(target.path) ||
+      target.todos?.some((item) => item.id === todoId)
+    )
+      return false;
+    // Update both scopes together, preserving the todo's ID, date, completion, and priority.
+    set({
+      repositories: state.repositories.map((item) =>
+        item.id === repositoryId
+          ? {
+              ...item,
+              todos: item.todos?.filter((item) => item.id !== todoId),
+              worktreeSessions: item.worktreeSessions.map((session) =>
+                session.id === worktreeSessionId
+                  ? { ...session, todos: [todo, ...(session.todos ?? [])] }
+                  : session
+              ),
+            }
+          : item
+      ),
+    });
+    persistState(get());
+    return true;
+  },
   addTodo: (scope, text) => {
     const trimmed = text.trim();
     if (!trimmed) return;
