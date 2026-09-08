@@ -298,7 +298,7 @@ export function Layout() {
 
   // File changes pane resize state
   const FILE_CHANGES_MIN_WIDTH = 300;
-  const FILE_CHANGES_MAX_WIDTH = 1000;
+  const FILE_CHANGES_MAX_WIDTH = 2000;
   const [fileChangesPaneWidth, setFileChangesPaneWidth] = useState(
     windowState.fileChangesPaneWidth
   );
