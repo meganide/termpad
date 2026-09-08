@@ -1,7 +1,18 @@
-import { useRef, useCallback, useEffect, useState } from 'react';
-import { Settings, FolderPlus, Home, Bug, ListFilter, Terminal, LayoutGrid } from 'lucide-react';
+import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
+import {
+  Settings,
+  FolderPlus,
+  Home,
+  Bug,
+  ListFilter,
+  Terminal,
+  LayoutGrid,
+  Search,
+  X,
+} from 'lucide-react';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
+import { Input } from '../ui/input';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../stores/appStore';
@@ -48,6 +59,11 @@ export function Sidebar({
   hasAgents,
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [collapsedSearchRepositories, setCollapsedSearchRepositories] = useState<Set<string>>(
+    new Set()
+  );
   const [showTopShadow, setShowTopShadow] = useState(false);
   const [showBottomShadow, setShowBottomShadow] = useState(false);
   const {
@@ -60,6 +76,7 @@ export function Sidebar({
     focusArea,
     setFocusArea,
     setSidebarFocusedItemId,
+    setSidebarStatusFocus,
     reorderWorktreeSessions,
     reorderRepositories,
     worktreeTabs,
@@ -79,6 +96,7 @@ export function Sidebar({
       focusArea: s.focusArea,
       setFocusArea: s.setFocusArea,
       setSidebarFocusedItemId: s.setSidebarFocusedItemId,
+      setSidebarStatusFocus: s.setSidebarStatusFocus,
       reorderWorktreeSessions: s.reorderWorktreeSessions,
       reorderRepositories: s.reorderRepositories,
       worktreeTabs: s.worktreeTabs,
@@ -87,7 +105,56 @@ export function Sidebar({
       updateSettings: s.updateSettings,
     }))
   );
-  const visibleRepositories = useSidebarRepositories();
+  const matchingRepositories = useSidebarRepositories(searchQuery);
+  const visibleRepositories = useMemo(
+    () =>
+      searchQuery.trim()
+        ? matchingRepositories.map((repository) => ({
+            ...repository,
+            isExpanded: !collapsedSearchRepositories.has(repository.id),
+          }))
+        : matchingRepositories,
+    [matchingRepositories, searchQuery, collapsedSearchRepositories]
+  );
+  const updateSearchQuery = (query: string) => {
+    setSearchQuery(query);
+    setCollapsedSearchRepositories(new Set());
+    setSidebarFocusedItemId(null);
+    setSidebarStatusFocus(null);
+  };
+  const handleToggleExpand = useCallback(
+    (repositoryId: string) => {
+      if (!searchQuery.trim()) {
+        toggleRepositoryExpanded(repositoryId);
+        return;
+      }
+      setCollapsedSearchRepositories((previous) => {
+        const next = new Set(previous);
+        if (next.has(repositoryId)) next.delete(repositoryId);
+        else next.add(repositoryId);
+        return next;
+      });
+    },
+    [searchQuery, toggleRepositoryExpanded]
+  );
+
+  const handleReorderSessions = useCallback(
+    (repositoryId: string, fromIndex: number, toIndex: number) => {
+      const visibleSessions = visibleRepositories.find(
+        (repo) => repo.id === repositoryId
+      )?.worktreeSessions;
+      const sessions = repositories.find((repo) => repo.id === repositoryId)?.worktreeSessions;
+      const fromSession = visibleSessions?.[fromIndex];
+      const toSession = visibleSessions?.[toIndex];
+      if (!sessions || !fromSession || !toSession) return;
+      reorderWorktreeSessions(
+        repositoryId,
+        sessions.findIndex((session) => session.id === fromSession.id),
+        sessions.findIndex((session) => session.id === toSession.id)
+      );
+    },
+    [repositories, visibleRepositories, reorderWorktreeSessions]
+  );
 
   const handleReorderRepositories = useCallback(
     (fromIndex: number, toIndex: number) => {
@@ -108,6 +175,8 @@ export function Sidebar({
   }, [onSessionSelect]);
 
   const { focusedItemId, focusableItems, statusFocus, handleKeyDown } = useSidebarNavigation({
+    repositories: visibleRepositories,
+    onToggleExpand: handleToggleExpand,
     onSessionSelect: handleKeyboardSessionSelect,
     onAddRepository,
     onNewWorktree,
@@ -189,12 +258,12 @@ export function Sidebar({
 
   return (
     <aside
-      className="relative z-10 flex flex-col bg-sidebar"
+      className="relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar"
       style={{ width }}
       onClick={handleSidebarClick}
     >
       {/* Header */}
-      <div className="relative flex items-center justify-between gap-2 px-3 py-2.5 bg-muted/50">
+      <div className="relative flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 bg-muted/50">
         <div className="flex items-baseline gap-1.5">
           <span className="text-sm font-semibold">Repositories</span>
           {repositories.length > 0 && (
@@ -266,8 +335,55 @@ export function Sidebar({
         </div>
       </div>
 
+      <div className="shrink-0 px-3 py-2" onClick={(event) => event.stopPropagation()}>
+        <label htmlFor="repository-search" className="mb-1 block text-xs text-muted-foreground">
+          Search repositories and worktrees
+        </label>
+        <div className="relative">
+          <Search className="pointer-events-none absolute left-2 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            ref={searchRef}
+            id="repository-search"
+            type="text"
+            placeholder="Filter by name…"
+            value={searchQuery}
+            onChange={(event) => updateSearchQuery(event.target.value)}
+            onFocus={() => setFocusArea('app')}
+            onKeyDown={(event) => {
+              if (event.key === 'Escape') {
+                event.preventDefault();
+                event.stopPropagation();
+                updateSearchQuery('');
+              } else if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                event.stopPropagation();
+                setSidebarFocusedItemId(focusableItems[0]?.id ?? null);
+                setSidebarStatusFocus(null);
+                setFocusArea('sidebar');
+                event.currentTarget.blur();
+              }
+            }}
+            className="h-8 pl-8 pr-8 text-xs"
+          />
+          {searchQuery && (
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Clear repository search"
+              className="absolute right-0 top-0 h-8 w-8"
+              onClick={() => {
+                updateSearchQuery('');
+                searchRef.current?.focus();
+              }}
+            >
+              <X className="h-3.5 w-3.5" />
+            </Button>
+          )}
+        </div>
+      </div>
+
       {/* Project Tree with scroll gradients */}
-      <div className="relative flex-1 overflow-hidden">
+      <div className="relative min-h-0 flex-1 overflow-hidden">
         {/* Top fade gradient */}
         {showTopShadow && (
           <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10" />
@@ -290,6 +406,15 @@ export function Sidebar({
                 <FolderPlus className="h-4 w-4 mr-2" />
                 Add repository
               </Button>
+            </div>
+          ) : visibleRepositories.length === 0 && searchQuery.trim() ? (
+            <div className="p-8 text-center" role="status">
+              <p className="text-sm font-medium mb-1">No matching repositories or worktrees</p>
+              <p className="text-xs text-muted-foreground">
+                {showOnlyActiveRepositories
+                  ? 'Try another name or turn off the active repositories filter.'
+                  : 'Try another repository or worktree name.'}
+              </p>
             </div>
           ) : visibleRepositories.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
@@ -319,13 +444,22 @@ export function Sidebar({
               onSessionClick={handleSessionClick}
               onTabClick={handleTabClick}
               onNewWorktree={onNewWorktree}
-              onToggleExpand={toggleRepositoryExpanded}
-              onRepositoryDelete={onRepositoryDelete}
-              onOpenRepositorySettings={onOpenRepositorySettings}
+              onToggleExpand={handleToggleExpand}
+              onRepositoryDelete={(repository) => {
+                const original = repositories.find((repo) => repo.id === repository.id);
+                if (original) onRepositoryDelete(original);
+              }}
+              onOpenRepositorySettings={(repository) => {
+                const original = repositories.find((repo) => repo.id === repository.id);
+                if (original) onOpenRepositorySettings(original);
+              }}
               onOpenRepositoryOverview={onOpenRepositoryOverview}
               activeOverviewRepositoryId={activeOverviewRepositoryId}
-              onWorktreeRemove={onWorktreeRemove}
-              onReorderSessions={reorderWorktreeSessions}
+              onWorktreeRemove={(session, repository) => {
+                const original = repositories.find((repo) => repo.id === repository.id);
+                if (original) onWorktreeRemove(session, original);
+              }}
+              onReorderSessions={handleReorderSessions}
               onReorderRepositories={handleReorderRepositories}
               onDropdownOpen={() => setFocusArea('app')}
             />
@@ -339,7 +473,7 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="relative flex items-center justify-between gap-2 px-3 py-2.5 bg-sidebar">
+      <div className="relative flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 bg-sidebar">
         <Button
           variant="ghost"
           size="sm"

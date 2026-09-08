@@ -377,6 +377,8 @@ function RepositoryItem({
               <GripVertical className="h-3.5 w-3.5 text-muted-foreground" />
             </div>
             <button
+              aria-label={`${repository.isExpanded ? 'Collapse' : 'Expand'} ${repository.name}`}
+              aria-expanded={repository.isExpanded}
               onClick={(e) => {
                 e.stopPropagation();
                 onToggleExpand(repository.id);

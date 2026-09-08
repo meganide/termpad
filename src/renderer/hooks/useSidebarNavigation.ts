@@ -12,9 +12,16 @@ import {
   type FocusableItem,
 } from '../utils/sidebarNavigation';
 import { shortcutsEqual } from '../utils/shortcuts';
-import type { CustomShortcut, WorktreeSession, SidebarStatusFocus } from '../../shared/types';
+import type {
+  CustomShortcut,
+  WorktreeSession,
+  SidebarStatusFocus,
+  Repository,
+} from '../../shared/types';
 
 interface UseSidebarNavigationOptions {
+  repositories?: Repository[];
+  onToggleExpand?: (repositoryId: string) => void;
   onSessionSelect?: () => void;
   onAddRepository?: () => void;
   onNewWorktree?: (repositoryId: string) => void;
@@ -61,7 +68,8 @@ export function useSidebarNavigation(
   options: UseSidebarNavigationOptions = {}
 ): UseSidebarNavigationResult {
   const { onSessionSelect, onAddRepository, onNewWorktree } = options;
-  const repositories = useSidebarRepositories();
+  const defaultRepositories = useSidebarRepositories();
+  const repositories = options.repositories ?? defaultRepositories;
   const {
     focusArea,
     sidebarFocusedItemId,
@@ -73,7 +81,7 @@ export function useSidebarNavigation(
     setSidebarStatusFocus,
     setActiveTerminal,
     setActiveTab,
-    toggleRepositoryExpanded,
+    toggleRepositoryExpanded: toggleStoredRepositoryExpanded,
   } = useAppStore(
     useShallow((s) => ({
       focusArea: s.focusArea,
@@ -90,12 +98,19 @@ export function useSidebarNavigation(
     }))
   );
 
+  const toggleRepositoryExpanded = options.onToggleExpand ?? toggleStoredRepositoryExpanded;
+
   const focusableItems = useMemo(() => getSidebarFocusableItems(repositories), [repositories]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
       // Only handle keys when sidebar is focused
       if (focusArea !== 'sidebar') return;
+      if (
+        e.target instanceof HTMLElement &&
+        e.target.closest('input, textarea, select, [contenteditable="true"]')
+      )
+        return;
 
       const key = e.key;
 

@@ -63,9 +63,9 @@ export function FileList({
   }, [files]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full min-h-0 flex-col overflow-hidden">
       {/* Search and Filter */}
-      <div className="p-3 border-b space-y-2">
+      <div className="shrink-0 p-3 border-b space-y-2">
         <div className="relative">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -132,7 +132,7 @@ export function FileList({
       </div>
 
       {/* File Tree */}
-      <ScrollArea className="flex-1">
+      <ScrollArea className="min-h-0 flex-1 overflow-hidden">
         <div className="p-2">
           {filteredFiles.length === 0 ? (
             <div className="text-center text-sm text-muted-foreground py-8">
