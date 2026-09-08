@@ -1,11 +1,12 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Settings, FolderPlus, Home, Bug } from 'lucide-react';
+import { Settings, FolderPlus, Home, Bug, ListFilter, Terminal, LayoutGrid } from 'lucide-react';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../../stores/appStore';
 import { useSidebarNavigation } from '../../hooks/useSidebarNavigation';
+import { useSidebarRepositories } from '../../hooks/useSidebarRepositories';
 import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
 import { cn } from '../../lib/utils';
 import type { WorktreeSession, Repository } from '../../../shared/types';
@@ -21,6 +22,9 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
+  onToggleOverview: () => void;
+  isOverviewMode: boolean;
+  hasAgents: boolean;
 }
 
 export function Sidebar({
@@ -34,6 +38,9 @@ export function Sidebar({
   onOpenSettings,
   onOpenHome,
   onSessionSelect,
+  onToggleOverview,
+  isOverviewMode,
+  hasAgents,
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showTopShadow, setShowTopShadow] = useState(false);
@@ -52,6 +59,8 @@ export function Sidebar({
     reorderRepositories,
     worktreeTabs,
     getTerminalIdForTab,
+    showOnlyActiveRepositories,
+    updateSettings,
   } = useAppStore(
     // Store mutations always clone the terminals Map, so its identity is a
     // reliable change signal under shallow comparison.
@@ -69,7 +78,23 @@ export function Sidebar({
       reorderRepositories: s.reorderRepositories,
       worktreeTabs: s.worktreeTabs,
       getTerminalIdForTab: s.getTerminalIdForTab,
+      showOnlyActiveRepositories: s.settings.showOnlyActiveRepositories ?? false,
+      updateSettings: s.updateSettings,
     }))
+  );
+  const visibleRepositories = useSidebarRepositories();
+
+  const handleReorderRepositories = useCallback(
+    (fromIndex: number, toIndex: number) => {
+      const fromRepository = visibleRepositories[fromIndex];
+      const toRepository = visibleRepositories[toIndex];
+      if (!fromRepository || !toRepository) return;
+      reorderRepositories(
+        repositories.findIndex((repository) => repository.id === fromRepository.id),
+        repositories.findIndex((repository) => repository.id === toRepository.id)
+      );
+    },
+    [repositories, visibleRepositories, reorderRepositories]
   );
 
   // Wrap onSessionSelect to not require sessionId (keyboard navigation already handles selection)
@@ -110,7 +135,7 @@ export function Sidebar({
       element.removeEventListener('scroll', handleScroll);
       resizeObserver.disconnect();
     };
-  }, [handleScroll, repositories]);
+  }, [handleScroll, visibleRepositories]);
 
   // Handle click on sidebar to set focus
   const handleSidebarClick = useCallback(() => {
@@ -168,22 +193,72 @@ export function Sidebar({
         <div className="flex items-baseline gap-1.5">
           <span className="text-sm font-semibold">Repositories</span>
           {repositories.length > 0 && (
-            <span className="text-xs text-muted-foreground/60">({repositories.length})</span>
+            <span className="text-xs text-muted-foreground/60">({visibleRepositories.length})</span>
           )}
         </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 hover:bg-sidebar-accent"
-              onClick={onOpenHome}
-            >
-              <Home className="h-4 w-4" />
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Home</TooltipContent>
-        </Tooltip>
+        <div className="flex shrink-0 items-center gap-1">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Only show active repositories"
+                aria-pressed={showOnlyActiveRepositories}
+                className={cn(
+                  'h-8 w-8 hover:bg-sidebar-accent',
+                  showOnlyActiveRepositories && 'bg-sidebar-accent text-primary'
+                )}
+                onFocus={() => setFocusArea('app')}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  updateSettings({ showOnlyActiveRepositories: !showOnlyActiveRepositories });
+                }}
+              >
+                <ListFilter className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {showOnlyActiveRepositories
+                ? 'Show all repositories'
+                : 'Only show repositories with open terminals'}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-8 w-8 hover:bg-sidebar-accent',
+                  isOverviewMode && 'bg-sidebar-accent text-primary'
+                )}
+                onClick={onToggleOverview}
+                disabled={!hasAgents}
+                aria-pressed={isOverviewMode}
+                aria-label="Agent overview"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {hasAgents ? 'Agent overview (Ctrl+O)' : 'No agents yet'}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-8 w-8 hover:bg-sidebar-accent"
+                onClick={onOpenHome}
+                aria-label="Home"
+              >
+                <Home className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Home</TooltipContent>
+          </Tooltip>
+        </div>
       </div>
 
       {/* Project Tree with scroll gradients */}
@@ -211,9 +286,25 @@ export function Sidebar({
                 Add repository
               </Button>
             </div>
+          ) : visibleRepositories.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-8 text-center">
+              <Terminal className="h-8 w-8 text-muted-foreground/60 mb-4" />
+              <p className="text-sm font-medium mb-1">No active repositories</p>
+              <p className="text-xs text-muted-foreground mb-4">
+                Open a terminal in a repository to see it here.
+              </p>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => updateSettings({ showOnlyActiveRepositories: false })}
+                className="bg-sidebar hover:bg-sidebar-accent"
+              >
+                Show all repositories
+              </Button>
+            </div>
           ) : (
             <RepositoryTree
-              repositories={repositories}
+              repositories={visibleRepositories}
               activeSessionId={activeTerminalId}
               terminals={terminals}
               focusedItemId={focusedItemId}
@@ -228,7 +319,7 @@ export function Sidebar({
               onOpenRepositorySettings={onOpenRepositorySettings}
               onWorktreeRemove={onWorktreeRemove}
               onReorderSessions={reorderWorktreeSessions}
-              onReorderRepositories={reorderRepositories}
+              onReorderRepositories={handleReorderRepositories}
               onDropdownOpen={() => setFocusArea('app')}
             />
           )}

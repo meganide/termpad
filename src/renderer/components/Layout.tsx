@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Terminal as TerminalIcon } from 'lucide-react';
+import { cn } from '../lib/utils';
+import { FolderGit2, Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
 import type { FileStatus, Repository, TerminalTab, WorktreeSession } from '../../shared/types';
@@ -17,6 +18,8 @@ import { AddWorktreeScreen } from './AddWorktreeScreen';
 import { CloseWarningDialog } from './CloseWarningDialog';
 import { DeleteRepositoryDialog } from './DeleteRepositoryDialog';
 import { HomeScreen } from './HomeScreen';
+import { AgentTile, OverviewHeader, OVERVIEW_TERMINAL_FONT_SIZE } from './Overview';
+import { useOverviewNavigation } from './Overview/useOverviewNavigation';
 import { RemoveWorktreeDialog } from './RemoveWorktreeDialog';
 import { RepositorySettingsOverlay } from './RepositorySettingsOverlay';
 import type { SettingsTab } from './SettingsScreen';
@@ -216,12 +219,40 @@ export function Layout() {
     },
     [setFocusArea]
   );
-  const focusUserTerminal = useCallback(() => setRightPanelTab('terminals'), []);
+
+  // Overview mode shows every agent terminal side by side in a grid
+  const [isOverviewMode, setIsOverviewMode] = useState(false);
+  const overviewNavigation = useOverviewNavigation(
+    isOverviewMode && activeScreen.type === 'main',
+    activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null
+  );
+
+  const exitOverview = useCallback(() => {
+    setIsOverviewMode(false);
+  }, []);
+
+  const focusUserTerminal = useCallback(() => {
+    exitOverview();
+    setRightPanelTab('terminals');
+  }, [exitOverview]);
+
+  const toggleOverview = useCallback(() => {
+    setIsOverviewMode((prev) => {
+      const next = !prev;
+      if (next) {
+        // Overview lives in the main screen, and no terminal should capture keys
+        setActiveScreen({ type: 'main' });
+        setFocusArea('app');
+      }
+      return next;
+    });
+  }, [setFocusArea]);
 
   // Callback to close overlay screens when session is selected via keyboard
   const handleKeyboardSessionSelect = useCallback(() => {
     setActiveScreen({ type: 'main' });
-  }, []);
+    exitOverview();
+  }, [exitOverview]);
 
   // Callback to open settings via keyboard shortcut (Ctrl+,)
   const handleKeyboardOpenSettings = useCallback(() => {
@@ -239,18 +270,23 @@ export function Layout() {
     onOpenSettings: handleKeyboardOpenSettings,
     onAddRepository: handleKeyboardAddRepository,
     onFocusUserTerminal: focusUserTerminal,
+    onToggleOverview: toggleOverview,
   });
 
   // Handle Escape key for going back on overlay screens
   useEffect(() => {
     const handleEscapeKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
       // Only handle Escape when on an overlay screen with a back button
       if (e.key === 'Escape') {
         // Don't handle if user is in an input field (except for settings/repository screens)
         const isInputFocused =
           e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
-        if (activeScreen.type === 'settings') {
+        if (isOverviewMode) {
+          e.preventDefault();
+          exitOverview();
+        } else if (activeScreen.type === 'settings') {
           e.preventDefault();
           setActiveScreen({ type: 'main' });
         } else if (activeScreen.type === 'addRepository' && !isInputFocused) {
@@ -270,7 +306,7 @@ export function Layout() {
     return () => {
       window.removeEventListener('keydown', handleEscapeKey);
     };
-  }, [activeScreen.type]);
+  }, [activeScreen.type, isOverviewMode, exitOverview]);
 
   // Sync sidebar focus when active terminal changes
   useEffect(() => {
@@ -467,12 +503,13 @@ export function Layout() {
       }
       // Close any overlay screen (settings, addWorktree, etc.)
       setActiveScreen({ type: 'main' });
+      exitOverview();
       // Set focus to main terminal area so it receives keyboard input
       setFocusArea('mainTerminal');
     });
 
     return unsubscribe;
-  }, [setActiveTerminal, setActiveTab, setFocusArea]);
+  }, [setActiveTerminal, setActiveTab, setFocusArea, exitOverview]);
 
   // Handle folder drag and drop
   useEffect(() => {
@@ -565,7 +602,7 @@ export function Layout() {
   // Pre-compute all terminal configs as a flat list for stable rendering
   // This prevents React reconciliation issues with nested maps during reorder
   const allTerminalConfigs = useMemo(() => {
-    return allSessions.flatMap(({ session }) => {
+    return allSessions.flatMap(({ session, repository }) => {
       const tabs = getTabsForWorktree(session.id);
       return tabs.map((tab) => ({
         terminalId: getTerminalIdForTab(session.id, tab.id),
@@ -574,12 +611,24 @@ export function Layout() {
         tabId: tab.id,
         tabName: tab.name,
         tabCommand: tab.command,
+        tabIcon: tab.icon,
+        repositoryId: repository.id,
+        repositoryName: repository.name,
+        worktreeLabel: session.label,
       }));
     });
     // Note: worktreeTabs is needed to trigger recomputation when tabs change,
     // even though getTabsForWorktree reads it internally via get()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSessions, getTabsForWorktree, getTerminalIdForTab, worktreeTabs]);
+
+  const overviewRepoCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const config of allTerminalConfigs) {
+      counts.set(config.repositoryId, (counts.get(config.repositoryId) ?? 0) + 1);
+    }
+    return counts;
+  }, [allTerminalConfigs]);
 
   // Pre-compute all user terminal configs as a flat list for stable rendering
   // Spans ALL repositories so user terminals survive cross-repo worktree switches
@@ -801,7 +850,41 @@ export function Layout() {
   // Handler when a session is selected in sidebar - return to main screen
   const handleSessionSelect = useCallback(() => {
     setActiveScreen({ type: 'main' });
-  }, []);
+    exitOverview();
+  }, [exitOverview]);
+
+  // Handler when an agent tile is clicked in overview mode - jump to that agent
+  const handleAgentSelect = useCallback(
+    (sessionId: string, tabId: string) => {
+      setActiveTerminal(sessionId);
+      setActiveTab(tabId);
+      exitOverview();
+      setFocusArea('mainTerminal');
+    },
+    [setActiveTerminal, setActiveTab, exitOverview, setFocusArea]
+  );
+
+  const handleOverviewAgentClose = (terminalId: string, tabId: string) => {
+    const container = overviewNavigation.containerRef.current;
+    const cards = Array.from(
+      container?.querySelectorAll<HTMLButtonElement>('button[data-overview-terminal-id]') ?? []
+    );
+    const index = cards.findIndex((card) => card.dataset.overviewTerminalId === terminalId);
+    const nextCard = cards[index + 1] ?? cards[index - 1];
+
+    // closeTab resolves the owning worktree and kills its process, even when inactive.
+    unregisterTerminal(terminalId);
+    closeTab(tabId);
+
+    requestAnimationFrame(() => {
+      if (nextCard?.isConnected) {
+        nextCard.focus({ preventScroll: true });
+        nextCard.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+      } else {
+        container?.querySelector<HTMLButtonElement>('button[data-overview-terminal-id]')?.focus();
+      }
+    });
+  };
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -831,6 +914,9 @@ export function Layout() {
           onOpenSettings={handleOpenSettings}
           onOpenHome={handleOpenHome}
           onSessionSelect={handleSessionSelect}
+          onToggleOverview={toggleOverview}
+          isOverviewMode={isOverviewMode}
+          hasAgents={allTerminalConfigs.length > 0}
         />
 
         <main
@@ -850,19 +936,29 @@ export function Layout() {
               <div
                 className="flex-1 flex flex-col min-w-0"
                 style={{
-                  display: reviewExpanded && rightPanelTab === 'review' ? 'none' : undefined,
+                  display:
+                    !isOverviewMode && reviewExpanded && rightPanelTab === 'review'
+                      ? 'none'
+                      : undefined,
                 }}
               >
+                {/* Overview replaces the per-session header while it is open */}
+                {isOverviewMode && (
+                  <OverviewHeader agentCount={allTerminalConfigs.length} onClose={exitOverview} />
+                )}
+
                 {/* WorktreeBar Header - only spans terminal width */}
-                <WorktreeBar
-                  sessionId={activeTerminalId}
-                  sessionPath={activeSession?.path}
-                  branchName={activeSession?.branchName}
-                  onError={(message) => toast.error(message)}
-                />
+                {!isOverviewMode && (
+                  <WorktreeBar
+                    sessionId={activeTerminalId}
+                    sessionPath={activeSession?.path}
+                    branchName={activeSession?.branchName}
+                    onError={(message) => toast.error(message)}
+                  />
+                )}
 
                 {/* TabBar - show when a worktree is selected */}
-                {activeTerminalId && (
+                {!isOverviewMode && activeTerminalId && (
                   <TabBar
                     tabs={tabsForActiveWorktree}
                     activeTabId={activeTabId}
@@ -880,28 +976,84 @@ export function Layout() {
                   />
                 )}
 
-                {/* Terminal area */}
-                <div className="flex-1 relative min-h-0 p-2 bg-muted rounded-xl mx-3 mb-3 mt-2">
-                  {/* Render terminals for each tab across all worktrees */}
-                  {allTerminalConfigs.map((config) => {
-                    const isActiveWorktree = config.sessionId === activeTerminalId;
-                    const isActiveTab = isActiveWorktree && config.tabId === activeTabId;
+                {/* Terminal area - a grid of agent tiles while overview is open */}
+                <div
+                  ref={overviewNavigation.containerRef}
+                  onKeyDown={overviewNavigation.onKeyDown}
+                  className={cn(
+                    'flex-1 min-h-0 rounded-xl mx-3 mb-3 mt-2',
+                    isOverviewMode
+                      ? 'overview-agent-grid overflow-y-auto p-4 bg-obsidian-950/50'
+                      : 'relative p-2 bg-muted'
+                  )}
+                >
+                  {/* Render terminals for each tab across all worktrees.
+                      Overview mode shows them all at once instead of only the active tab. */}
+                  {allTerminalConfigs.flatMap((config, index) => {
+                    const isActiveTab =
+                      config.sessionId === activeTerminalId && config.tabId === activeTabId;
+                    const isVisible =
+                      isOverviewMode ||
+                      (isActiveTab && !(reviewExpanded && rightPanelTab === 'review'));
 
-                    return (
-                      <TerminalView
+                    // Headings are flat siblings so toggling grouping never remounts terminals.
+                    const startsRepository =
+                      index === 0 ||
+                      allTerminalConfigs[index - 1].repositoryId !== config.repositoryId;
+                    return [
+                      isOverviewMode && startsRepository && (
+                        <h2
+                          key={`repository:${config.repositoryId}`}
+                          className={cn(
+                            'col-span-full flex min-w-0 items-center gap-2 text-sm font-semibold',
+                            index > 0 && 'mt-4'
+                          )}
+                        >
+                          <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground" />
+                          <span className="truncate">{config.repositoryName}</span>
+                          <span className="text-xs font-normal text-muted-foreground">
+                            {overviewRepoCounts.get(config.repositoryId)}{' '}
+                            {overviewRepoCounts.get(config.repositoryId) === 1 ? 'agent' : 'agents'}
+                          </span>
+                        </h2>
+                      ),
+                      <AgentTile
                         key={config.terminalId}
-                        sessionId={config.sessionId}
                         terminalId={config.terminalId}
-                        cwd={config.cwd}
-                        isVisible={isActiveTab && !(reviewExpanded && rightPanelTab === 'review')}
-                        initialCommand={config.tabCommand}
-                        terminalType="main"
-                      />
-                    );
+                        isOverview={isOverviewMode}
+                        isVisible={isVisible}
+                        isActive={isActiveTab}
+                        repositoryName={config.repositoryName}
+                        worktreeLabel={config.worktreeLabel}
+                        tabName={config.tabName}
+                        tabIcon={config.tabIcon}
+                        status={terminals.get(config.terminalId)?.status ?? 'stopped'}
+                        onSelect={() => handleAgentSelect(config.sessionId, config.tabId)}
+                        onClose={() => handleOverviewAgentClose(config.terminalId, config.tabId)}
+                      >
+                        <TerminalView
+                          sessionId={config.sessionId}
+                          terminalId={config.terminalId}
+                          cwd={config.cwd}
+                          isVisible={isVisible}
+                          initialCommand={config.tabCommand}
+                          terminalType="main"
+                          fontSize={isOverviewMode ? OVERVIEW_TERMINAL_FONT_SIZE : undefined}
+                        />
+                      </AgentTile>,
+                    ];
                   })}
 
+                  {/* Overview open but no agent terminals exist yet */}
+                  {isOverviewMode && allTerminalConfigs.length === 0 && (
+                    <div className="col-span-full flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
+                      <TerminalIcon className="h-8 w-8 opacity-40" />
+                      <span className="text-sm">No agents yet</span>
+                    </div>
+                  )}
+
                   {/* Show empty state when worktree is selected but has no tabs */}
-                  {activeTerminalId && tabsForActiveWorktree.length === 0 && (
+                  {!isOverviewMode && activeTerminalId && tabsForActiveWorktree.length === 0 && (
                     <div
                       className="absolute inset-0"
                       onClick={(e) => {
@@ -927,7 +1079,8 @@ export function Layout() {
                 style={{
                   width:
                     reviewExpanded && rightPanelTab === 'review' ? '100%' : fileChangesPaneWidth,
-                  display: activeSession && activeSessionInfo ? undefined : 'none',
+                  display:
+                    activeSession && activeSessionInfo && !isOverviewMode ? undefined : 'none',
                 }}
                 data-testid="right-panel"
               >
@@ -1064,6 +1217,7 @@ export function Layout() {
                         terminalId={config.terminalId}
                         cwd={config.cwd}
                         isVisible={
+                          !isOverviewMode &&
                           !isUserTerminalPanelCollapsed &&
                           config.sessionId === activeTerminalId &&
                           config.tabId === activeUserTabId
@@ -1113,28 +1267,29 @@ export function Layout() {
           {/* HomeScreen: Show when explicitly requested OR when on main screen with no active terminal
               IMPORTANT: Must check activeScreen.type === 'main' to prevent blocking other overlays
               (Settings, AddWorktree, etc.) when activeTerminalId is null */}
-          {(activeScreen.type === 'home' ||
-            (activeScreen.type === 'main' && !activeTerminalId)) && (
-            <div className="absolute inset-0 z-40 bg-background">
-              <HomeScreen
-                onAddRepository={() => setActiveScreen({ type: 'addRepository' })}
-                onSelectRepository={(repository) => {
-                  // If repository has worktree sessions, activate the first one
-                  if (repository.worktreeSessions.length > 0) {
-                    setActiveTerminal(repository.worktreeSessions[0].id);
+          {!isOverviewMode &&
+            (activeScreen.type === 'home' ||
+              (activeScreen.type === 'main' && !activeTerminalId)) && (
+              <div className="absolute inset-0 z-40 bg-background">
+                <HomeScreen
+                  onAddRepository={() => setActiveScreen({ type: 'addRepository' })}
+                  onSelectRepository={(repository) => {
+                    // If repository has worktree sessions, activate the first one
+                    if (repository.worktreeSessions.length > 0) {
+                      setActiveTerminal(repository.worktreeSessions[0].id);
+                    }
+                    setActiveScreen({ type: 'main' });
+                  }}
+                  onAddWorktree={(repositoryId) =>
+                    setActiveScreen({ type: 'addWorktree', repositoryId })
                   }
-                  setActiveScreen({ type: 'main' });
-                }}
-                onAddWorktree={(repositoryId) =>
-                  setActiveScreen({ type: 'addWorktree', repositoryId })
-                }
-                onSelectWorktree={(worktree) => {
-                  setActiveTerminal(worktree.id);
-                  setActiveScreen({ type: 'main' });
-                }}
-              />
-            </div>
-          )}
+                  onSelectWorktree={(worktree) => {
+                    setActiveTerminal(worktree.id);
+                    setActiveScreen({ type: 'main' });
+                  }}
+                />
+              </div>
+            )}
           {activeScreen.type === 'addRepository' && (
             <div className="absolute inset-0 z-40 bg-background">
               <AddRepositoryScreen onBack={() => setActiveScreen({ type: 'main' })} />

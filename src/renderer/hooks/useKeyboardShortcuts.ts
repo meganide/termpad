@@ -98,6 +98,7 @@ interface UseKeyboardShortcutsOptions {
   onOpenSettings?: () => void;
   onAddRepository?: () => void;
   onFocusUserTerminal?: () => void;
+  onToggleOverview?: () => void;
 }
 
 /**
@@ -107,7 +108,13 @@ interface UseKeyboardShortcutsOptions {
  * Tab navigation: Ctrl+1-9 for jump to tab by index
  */
 export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) {
-  const { onSessionSelect, onOpenSettings, onAddRepository, onFocusUserTerminal } = options;
+  const {
+    onSessionSelect,
+    onOpenSettings,
+    onAddRepository,
+    onFocusUserTerminal,
+    onToggleOverview,
+  } = options;
   const {
     repositories,
     focusArea,
@@ -191,6 +198,13 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
         e.preventDefault();
         onFocusUserTerminal?.();
         setFocusArea('userTerminal');
+        return;
+      }
+
+      // Handle Ctrl+O to toggle the agent overview (works globally)
+      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') {
+        e.preventDefault();
+        onToggleOverview?.();
         return;
       }
 
@@ -318,6 +332,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
       onOpenSettings,
       onAddRepository,
       onFocusUserTerminal,
+      onToggleOverview,
     ]
   );
 

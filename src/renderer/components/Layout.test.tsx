@@ -1,4 +1,5 @@
-import { render, screen, fireEvent, act } from '@testing-library/react';
+import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Layout } from './Layout';
 import { useAppStore } from '../stores/appStore';
@@ -21,6 +22,9 @@ vi.mock('./Sidebar/index', () => ({
     onWorktreeRemove,
     onOpenSettings,
     onOpenHome,
+    onToggleOverview,
+    isOverviewMode,
+    hasAgents,
   }: {
     onAddRepository: () => void;
     onNewWorktree: (repositoryId: string) => void;
@@ -28,8 +32,14 @@ vi.mock('./Sidebar/index', () => ({
     onWorktreeRemove: (session: { id: string }, repository: { id: string }) => void;
     onOpenSettings: () => void;
     onOpenHome: () => void;
+    onToggleOverview: () => void;
+    isOverviewMode: boolean;
+    hasAgents: boolean;
   }) => (
-    <div data-testid="sidebar">
+    <div data-testid="sidebar" data-overview-mode={isOverviewMode} data-has-agents={hasAgents}>
+      <button data-testid="sidebar-toggle-overview" onClick={onToggleOverview}>
+        Overview
+      </button>
       <button data-testid="sidebar-add-repository" onClick={onAddRepository}>
         Add Repository
       </button>
@@ -1343,6 +1353,279 @@ describe('Layout', () => {
 
       // HomeScreen should now be visible (explicit user action to go home)
       expect(screen.getByTestId('home-screen')).toBeInTheDocument();
+    });
+  });
+  describe('agent overview', () => {
+    const setUpTwoAgents = () => {
+      const sessionA = createMockWorktreeSession({ id: 'session-1', label: 'main' });
+      const sessionB = createMockWorktreeSession({ id: 'session-2', label: 'feat-login' });
+      const repository = createMockRepository({
+        id: 'repo-1',
+        name: 'termpad',
+        worktreeSessions: [sessionA, sessionB],
+      });
+
+      useAppStore.setState({
+        repositories: [repository],
+        activeTerminalId: 'session-1',
+        activeTabId: 'tab-1',
+        worktreeTabs: [
+          {
+            worktreeSessionId: 'session-1',
+            tabs: [{ id: 'tab-1', name: 'claude', createdAt: new Date().toISOString(), order: 0 }],
+            activeTabId: 'tab-1',
+          },
+          {
+            worktreeSessionId: 'session-2',
+            tabs: [{ id: 'tab-2', name: 'codex', createdAt: new Date().toISOString(), order: 0 }],
+            activeTabId: 'tab-2',
+          },
+        ],
+        terminals: new Map(),
+      });
+    };
+
+    const openOverview = async () => {
+      await act(async () => {
+        fireEvent.click(screen.getByTestId('sidebar-toggle-overview'));
+      });
+    };
+
+    it('shows only the active agent terminal while closed', () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toHaveAttribute(
+        'data-visible',
+        'true'
+      );
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toHaveAttribute(
+        'data-visible',
+        'false'
+      );
+    });
+
+    it('shows every agent terminal when opened', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      await openOverview();
+
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toHaveAttribute(
+        'data-visible',
+        'true'
+      );
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toHaveAttribute(
+        'data-visible',
+        'true'
+      );
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      expect(screen.queryByTestId('worktree-bar')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('tab-bar')).not.toBeInTheDocument();
+    });
+
+    it('hides the right panel while open', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      await openOverview();
+
+      expect(screen.getByTestId('right-panel')).toHaveStyle({ display: 'none' });
+    });
+
+    it('focuses the active card, navigates with arrows, and opens with Enter', async () => {
+      setUpTwoAgents();
+      const user = userEvent.setup();
+      render(<Layout />);
+      await openOverview();
+
+      expect(screen.getByRole('button', { name: /Open claude in termpad/ })).toHaveFocus();
+      await user.keyboard('{ArrowRight}');
+      expect(screen.getByRole('button', { name: /Open codex in termpad/ })).toHaveFocus();
+      expect(useAppStore.getState().activeTerminalId).toBe('session-1');
+      await user.keyboard('{Enter}');
+
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(useAppStore.getState().activeTabId).toBe('tab-2');
+      expect(useAppStore.getState().focusArea).toBe('mainTerminal');
+      expect(screen.queryByText('Agent overview')).not.toBeInTheDocument();
+    });
+
+    it('groups by repository identity and keeps terminal nodes mounted when toggled', async () => {
+      setUpTwoAgents();
+      const [repo] = useAppStore.getState().repositories;
+      useAppStore.setState({
+        repositories: [
+          { ...repo, worktreeSessions: [repo.worktreeSessions[0]] },
+          { ...repo, id: 'repo-2', worktreeSessions: [repo.worktreeSessions[1]] },
+        ],
+      });
+      render(<Layout />);
+      const firstTerminal = screen.getByTestId('terminal-session-1:tab-1');
+      const secondTerminal = screen.getByTestId('terminal-session-2:tab-2');
+      await openOverview();
+
+      const headings = screen.getAllByRole('heading', { name: /termpad/ });
+      expect(headings).toHaveLength(2);
+      expect(headings[0].nextElementSibling).toBe(screen.getByTestId('agent-tile-session-1:tab-1'));
+      expect(headings[1].nextElementSibling).toBe(screen.getByTestId('agent-tile-session-2:tab-2'));
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toBe(firstTerminal);
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toBe(secondTerminal);
+
+      await openOverview();
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toBe(firstTerminal);
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toBe(secondTerminal);
+    });
+
+    it('opens the clicked agent and closes the overview', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      await openOverview();
+      await act(async () => {
+        fireEvent.click(screen.getByRole('button', { name: /Open codex in termpad/ }));
+      });
+
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(useAppStore.getState().activeTabId).toBe('tab-2');
+      expect(screen.getByTestId('worktree-bar')).toBeInTheDocument();
+    });
+
+    it('closes a card in another repository and keeps keyboard navigation in the overview', async () => {
+      setUpTwoAgents();
+      const [repo] = useAppStore.getState().repositories;
+      useAppStore.setState({
+        repositories: [
+          { ...repo, worktreeSessions: [repo.worktreeSessions[0]] },
+          {
+            ...repo,
+            id: 'repo-2',
+            name: 'other-repo',
+            worktreeSessions: [repo.worktreeSessions[1]],
+          },
+        ],
+      });
+      const user = userEvent.setup();
+      render(<Layout />);
+      await openOverview();
+      fireEvent.contextMenu(screen.getByRole('button', { name: /Open codex in other-repo/ }));
+      await user.click(screen.getByRole('menuitem', { name: 'Close' }));
+
+      expect(window.terminal.kill).toHaveBeenCalledWith('session-2:tab-2');
+      expect(window.terminal.kill).not.toHaveBeenCalledWith('session-1:tab-1');
+      expect(useAppStore.getState().activeTerminalId).toBe('session-1');
+      expect(screen.queryByTestId('agent-tile-session-2:tab-2')).not.toBeInTheDocument();
+      expect(screen.queryByRole('heading', { name: /other-repo/ })).not.toBeInTheDocument();
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      await waitFor(() => {
+        expect(screen.getByRole('button', { name: /Open claude in termpad/ })).toHaveFocus();
+      });
+    });
+
+    it.each(['running', 'waiting', 'starting'] as const)(
+      'confirms before closing a %s terminal',
+      async (status) => {
+        setUpTwoAgents();
+        useAppStore.setState({
+          terminals: new Map([
+            [
+              'session-2:tab-2',
+              {
+                id: 'session-2:tab-2',
+                status,
+                lastActivityTime: Date.now(),
+                hasReceivedOutput: true,
+              },
+            ],
+          ]),
+        });
+        const user = userEvent.setup();
+        render(<Layout />);
+        await openOverview();
+        fireEvent.contextMenu(screen.getByRole('button', { name: /Open codex in termpad/ }));
+        await user.click(screen.getByRole('menuitem', { name: 'Close' }));
+        expect(window.terminal.kill).not.toHaveBeenCalled();
+        const dialog = screen.getByRole('alertdialog');
+        expect(within(dialog).getByText(/Process "codex" is running/)).toBeInTheDocument();
+        await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+        expect(window.terminal.kill).toHaveBeenCalledWith('session-2:tab-2');
+        expect(useAppStore.getState().terminals.has('session-2:tab-2')).toBe(false);
+        expect(screen.queryByTestId('agent-tile-session-2:tab-2')).not.toBeInTheDocument();
+        expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      }
+    );
+
+    it('dismisses the menu and confirmation with Escape without leaving the overview', async () => {
+      setUpTwoAgents();
+      useAppStore.getState().registerTerminal('session-2:tab-2');
+      const user = userEvent.setup();
+      render(<Layout />);
+      await openOverview();
+      const card = screen.getByRole('button', { name: /Open codex in termpad/ });
+      fireEvent.contextMenu(card);
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      await waitFor(() => expect(card).toHaveFocus());
+
+      fireEvent.contextMenu(card);
+      await user.click(screen.getByRole('menuitem', { name: 'Close' }));
+      await user.keyboard('{Escape}');
+      expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      expect(window.terminal.kill).not.toHaveBeenCalled();
+      await waitFor(() => expect(card).toHaveFocus());
+    });
+
+    it('shows the empty overview after closing the last card', async () => {
+      setUpTwoAgents();
+      const user = userEvent.setup();
+      render(<Layout />);
+      await openOverview();
+      for (const name of [/Open claude in termpad/, /Open codex in termpad/]) {
+        fireEvent.contextMenu(screen.getByRole('button', { name }));
+        await user.click(screen.getByRole('menuitem', { name: 'Close' }));
+      }
+      expect(screen.getByText('No agents yet')).toBeInTheDocument();
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+    });
+
+    it('closes on Escape', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      await openOverview();
+      await act(async () => {
+        fireEvent.keyDown(window, { key: 'Escape' });
+      });
+
+      expect(screen.getByTestId('worktree-bar')).toBeInTheDocument();
+    });
+
+    it('toggles with Ctrl+O', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: 'o', ctrlKey: true });
+      });
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+
+      await act(async () => {
+        fireEvent.keyDown(window, { key: 'o', ctrlKey: true });
+      });
+      expect(screen.queryByText('Agent overview')).not.toBeInTheDocument();
+    });
+
+    it('tells the sidebar whether any agents exist', () => {
+      setUpTwoAgents();
+      const { unmount } = render(<Layout />);
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-has-agents', 'true');
+      unmount();
+
+      useAppStore.setState({ repositories: [], worktreeTabs: [], activeTerminalId: null });
+      render(<Layout />);
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-has-agents', 'false');
     });
   });
 });

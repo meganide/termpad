@@ -1,6 +1,7 @@
 import { useCallback, useMemo } from 'react';
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from '../stores/appStore';
+import { useSidebarRepositories } from './useSidebarRepositories';
 import {
   getSidebarFocusableItems,
   getNextItem,
@@ -60,8 +61,8 @@ export function useSidebarNavigation(
   options: UseSidebarNavigationOptions = {}
 ): UseSidebarNavigationResult {
   const { onSessionSelect, onAddRepository, onNewWorktree } = options;
+  const repositories = useSidebarRepositories();
   const {
-    repositories,
     focusArea,
     sidebarFocusedItemId,
     sidebarStatusFocus,
@@ -75,7 +76,6 @@ export function useSidebarNavigation(
     toggleRepositoryExpanded,
   } = useAppStore(
     useShallow((s) => ({
-      repositories: s.repositories,
       focusArea: s.focusArea,
       sidebarFocusedItemId: s.sidebarFocusedItemId,
       sidebarStatusFocus: s.sidebarStatusFocus,
