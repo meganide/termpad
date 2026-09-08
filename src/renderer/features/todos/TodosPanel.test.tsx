@@ -103,6 +103,21 @@ describe('TodosPanel', () => {
     expect(input).toHaveValue('');
   });
 
+  it('adds a new line on Shift+Enter instead of submitting', async () => {
+    const user = userEvent.setup();
+    seedRepository();
+    renderPanel();
+
+    const input = repositoryList();
+    await user.type(input, 'first{Shift>}{Enter}{/Shift}second');
+
+    expect(input).toHaveValue('first\nsecond');
+    expect(getStoredTodos().repository).toEqual([]);
+
+    await user.type(input, '{Enter}');
+    expect(getStoredTodos().repository[0].text).toBe('first\nsecond');
+  });
+
   it('does not add a blank todo', async () => {
     const user = userEvent.setup();
     seedRepository();
@@ -113,16 +128,31 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository).toEqual([]);
   });
 
-  it('completes and un-completes a todo', async () => {
+  it('moves a completed todo into the collapsed Completed accordion', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
 
     await user.click(screen.getByRole('checkbox', { name: 'Write tests' }));
-    expect(getStoredTodos().repository[0].completed).toBe(true);
 
-    await user.click(screen.getByRole('checkbox', { name: 'Write tests' }));
+    expect(getStoredTodos().repository[0].completed).toBe(true);
+    // Collapsed accordion content is unmounted, so the row is no longer reachable
+    expect(screen.queryByRole('checkbox', { name: 'Write tests' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Completed \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByText('All done')).toBeInTheDocument();
+  });
+
+  it('un-completes a todo from the Completed accordion', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo({ completed: true })] });
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /Completed \(1\)/ }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Write tests' }));
+
     expect(getStoredTodos().repository[0].completed).toBe(false);
+    expect(screen.queryByRole('button', { name: /Completed/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
   });
 
   it('shows a completed count', () => {

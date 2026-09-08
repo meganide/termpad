@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Trash2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Checkbox } from '../../components/ui/checkbox';
-import { Input } from '../../components/ui/input';
+import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import type { TodoItem } from '../../../shared/types';
 
@@ -37,33 +37,37 @@ export function TodoItemRow({ todo, onToggle, onRename, onRemove }: TodoItemRowP
 
   return (
     <li
-      className="group flex items-center gap-2 rounded-lg bg-obsidian-800/60 px-2 py-1.5 hover:bg-obsidian-800/80"
+      className="group flex items-start gap-2 rounded-lg bg-obsidian-800/60 px-2 py-1.5 hover:bg-obsidian-800/80"
       data-testid="todo-item"
     >
       <Checkbox
         checked={todo.completed}
         onCheckedChange={(checked) => onToggle(checked === true)}
         aria-label={todo.text}
+        className="mt-0.5"
       />
 
       {isEditing ? (
-        <Input
+        <Textarea
           autoFocus
           value={draft}
           onChange={(event) => setDraft(event.target.value)}
           onBlur={commitEdit}
           onKeyDown={(event) => {
-            if (event.key === 'Enter') commitEdit();
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              commitEdit();
+            }
             if (event.key === 'Escape') cancelEdit();
           }}
           aria-label={`Edit "${todo.text}"`}
-          className="h-6 flex-1 border-0 bg-transparent px-1 text-sm shadow-none focus-visible:ring-0"
+          className="min-h-0 max-h-40 flex-1 resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0"
         />
       ) : (
         <button
           type="button"
           onClick={startEditing}
-          className={`flex-1 break-words text-left text-sm ${
+          className={`flex-1 whitespace-pre-wrap break-words text-left text-sm ${
             todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
           }`}
         >
