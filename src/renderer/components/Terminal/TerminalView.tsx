@@ -34,6 +34,8 @@ interface TerminalViewProps {
   terminalId?: string; // Optional separate terminal ID (for tabs: worktreeSessionId:tabId)
   cwd: string;
   isVisible: boolean;
+  useParentContextMenu?: boolean;
+  isFocused?: boolean; // Visible split panes resize, but only the active pane receives focus
   initialCommand?: string; // Command to auto-run on terminal start (e.g., 'claude', 'gemini')
   matchSystemBackground?: boolean; // Use bg-background matching colors instead of default terminal colors
   terminalType?: 'main' | 'user'; // Which focus area this terminal responds to (default: 'main')
@@ -42,6 +44,8 @@ interface TerminalViewProps {
 
 export interface TerminalViewHandle {
   copyAllOutput: () => Promise<void>;
+  copySelection: () => Promise<void>;
+  paste: () => Promise<void>;
 }
 
 // System background color to override theme background when matchSystemBackground is true
@@ -62,6 +66,8 @@ export const TerminalView = memo(
       terminalId,
       cwd,
       isVisible,
+      isFocused = true,
+      useParentContextMenu = false,
       initialCommand,
       matchSystemBackground = false,
       terminalType = 'main',
@@ -100,6 +106,8 @@ export const TerminalView = memo(
 
     // Expose copyAllOutput method via ref
     useImperativeHandle(ref, () => ({
+      copySelection: handleCopy,
+      paste: handlePaste,
       copyAllOutput: async () => {
         const terminal = terminalRef.current;
         if (!terminal) return;
@@ -277,8 +285,8 @@ export const TerminalView = memo(
         if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 't') {
           return false; // Don't let xterm handle it, let it bubble to window
         }
-        // Let Ctrl+O pass through for toggling the agent overview
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') {
+        // Let the overview shortcuts reach the app instead of the terminal.
+        if (isTabSwitchModifier && ['o', 'i'].includes(e.key.toLowerCase())) {
           return false; // Don't let xterm handle it, let it bubble to window
         }
         // Let Ctrl+U pass through for switching to user terminal
@@ -468,7 +476,7 @@ export const TerminalView = memo(
           if (terminalRef.current) {
             resize(terminalRef.current.cols, terminalRef.current.rows);
             // Only focus if the focusArea matches this terminal's expected focus area
-            if (focusArea === expectedFocusArea) {
+            if (isFocused && focusArea === expectedFocusArea) {
               terminalRef.current.focus();
             }
           }
@@ -476,7 +484,7 @@ export const TerminalView = memo(
 
         return () => clearTimeout(timeoutId);
       }
-    }, [isVisible, resize, focusArea, expectedFocusArea, fitPreservingScroll]);
+    }, [isVisible, isFocused, resize, focusArea, expectedFocusArea, fitPreservingScroll]);
 
     // Focus terminal when focus area changes to this terminal's type (e.g., from sidebar via Ctrl+Space)
     const prevFocusAreaRef = useRef<FocusArea>(focusArea);
@@ -484,6 +492,7 @@ export const TerminalView = memo(
       // Only focus if transitioning TO this terminal's focus area (not on mount)
       if (
         isVisible &&
+        isFocused &&
         focusArea === expectedFocusArea &&
         prevFocusAreaRef.current !== expectedFocusArea &&
         terminalRef.current
@@ -491,7 +500,7 @@ export const TerminalView = memo(
         terminalRef.current.focus();
       }
       prevFocusAreaRef.current = focusArea;
-    }, [focusArea, isVisible, expectedFocusArea]);
+    }, [focusArea, isVisible, isFocused, expectedFocusArea]);
 
     // Track selection changes
     useEffect(() => {
@@ -549,14 +558,18 @@ export const TerminalView = memo(
       }
     }, [setFocusArea, terminalType]);
 
-    const handleContextMenu = useCallback((e: React.MouseEvent) => {
-      e.preventDefault();
-      setContextMenu({
-        isOpen: true,
-        x: e.clientX,
-        y: e.clientY,
-      });
-    }, []);
+    const handleContextMenu = useCallback(
+      (e: React.MouseEvent) => {
+        if (useParentContextMenu) return;
+        e.preventDefault();
+        setContextMenu({
+          isOpen: true,
+          x: e.clientX,
+          y: e.clientY,
+        });
+      },
+      [useParentContextMenu]
+    );
 
     const handleCopy = useCallback(async () => {
       const terminal = terminalRef.current;

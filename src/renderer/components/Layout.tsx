@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
-import { FolderGit2, Terminal as TerminalIcon } from 'lucide-react';
+import { Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
 import type { FileStatus, Repository, TerminalTab, WorktreeSession } from '../../shared/types';
@@ -18,8 +18,9 @@ import { AddWorktreeScreen } from './AddWorktreeScreen';
 import { CloseWarningDialog } from './CloseWarningDialog';
 import { DeleteRepositoryDialog } from './DeleteRepositoryDialog';
 import { HomeScreen } from './HomeScreen';
-import { AgentTile, OverviewHeader, OVERVIEW_TERMINAL_FONT_SIZE } from './Overview';
-import { useOverviewNavigation } from './Overview/useOverviewNavigation';
+import { AgentTile, OverviewHeader } from './Overview';
+import { useOverviewShortcuts } from './Overview/useOverviewShortcuts';
+import type { AgentTileActionsHandle } from './Overview/AgentTileActions';
 import { RemoveWorktreeDialog } from './RemoveWorktreeDialog';
 import { RepositorySettingsOverlay } from './RepositorySettingsOverlay';
 import type { SettingsTab } from './SettingsScreen';
@@ -64,6 +65,7 @@ export function Layout() {
     getTabsForWorktree,
     getTerminalIdForTab,
     worktreeTabs,
+    setWorktreeGridView,
     // Scroll position actions
     updateTabScrollPosition,
     getTabScrollPosition,
@@ -97,6 +99,7 @@ export function Layout() {
       getTabsForWorktree: s.getTabsForWorktree,
       getTerminalIdForTab: s.getTerminalIdForTab,
       worktreeTabs: s.worktreeTabs,
+      setWorktreeGridView: s.setWorktreeGridView,
       updateTabScrollPosition: s.updateTabScrollPosition,
       getTabScrollPosition: s.getTabScrollPosition,
       getUserTabsForWorktree: s.getUserTabsForWorktree,
@@ -222,10 +225,9 @@ export function Layout() {
 
   // Overview mode shows every agent terminal side by side in a grid
   const [isOverviewMode, setIsOverviewMode] = useState(false);
-  const overviewNavigation = useOverviewNavigation(
-    isOverviewMode && activeScreen.type === 'main',
-    activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null
-  );
+  const [overviewRepositoryId, setOverviewRepositoryId] = useState<string | null>(null);
+  const [hiddenOverviewAgents, setHiddenOverviewAgents] = useState<Set<string>>(() => new Set());
+  const terminalGridRef = useRef<HTMLDivElement>(null);
 
   const exitOverview = useCallback(() => {
     setIsOverviewMode(false);
@@ -237,16 +239,30 @@ export function Layout() {
   }, [exitOverview]);
 
   const toggleOverview = useCallback(() => {
-    setIsOverviewMode((prev) => {
-      const next = !prev;
-      if (next) {
-        // Overview lives in the main screen, and no terminal should capture keys
-        setActiveScreen({ type: 'main' });
-        setFocusArea('app');
-      }
-      return next;
-    });
-  }, [setFocusArea]);
+    const next = !isOverviewMode;
+    setIsOverviewMode(next);
+    if (next) {
+      setOverviewRepositoryId(null);
+      setActiveScreen({ type: 'main' });
+      setFocusArea('app');
+    }
+  }, [isOverviewMode, setFocusArea]);
+
+  const openRepositoryOverview = useCallback(
+    (repositoryId: string) => {
+      setOverviewRepositoryId(repositoryId);
+      setIsOverviewMode(true);
+      setActiveScreen({ type: 'main' });
+      setFocusArea('app');
+    },
+    [setFocusArea]
+  );
+
+  useEffect(() => {
+    if (overviewRepositoryId && !repositories.some((repo) => repo.id === overviewRepositoryId)) {
+      setOverviewRepositoryId(null);
+    }
+  }, [overviewRepositoryId, repositories]);
 
   // Callback to close overlay screens when session is selected via keyboard
   const handleKeyboardSessionSelect = useCallback(() => {
@@ -264,15 +280,6 @@ export function Layout() {
     setActiveScreen({ type: 'addRepository' });
   }, []);
 
-  // Enable keyboard shortcuts (Ctrl+B toggle, Ctrl+Shift+1-9 session shortcuts)
-  useKeyboardShortcuts({
-    onSessionSelect: handleKeyboardSessionSelect,
-    onOpenSettings: handleKeyboardOpenSettings,
-    onAddRepository: handleKeyboardAddRepository,
-    onFocusUserTerminal: focusUserTerminal,
-    onToggleOverview: toggleOverview,
-  });
-
   // Handle Escape key for going back on overlay screens
   useEffect(() => {
     const handleEscapeKey = (e: KeyboardEvent) => {
@@ -284,6 +291,8 @@ export function Layout() {
           e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
         if (isOverviewMode) {
+          // Escape belongs to the running agent while interacting with any overview pane.
+          if (e.target instanceof Element && e.target.closest('.xterm')) return;
           e.preventDefault();
           exitOverview();
         } else if (activeScreen.type === 'settings') {
@@ -622,13 +631,43 @@ export function Layout() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allSessions, getTabsForWorktree, getTerminalIdForTab, worktreeTabs]);
 
-  const overviewRepoCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const config of allTerminalConfigs) {
-      counts.set(config.repositoryId, (counts.get(config.repositoryId) ?? 0) + 1);
-    }
-    return counts;
-  }, [allTerminalConfigs]);
+  const overviewAgents = allTerminalConfigs.filter(
+    (config) => !overviewRepositoryId || config.repositoryId === overviewRepositoryId
+  );
+  const hiddenAgents = overviewAgents.filter((config) =>
+    hiddenOverviewAgents.has(config.terminalId)
+  );
+  const overviewAgentCount = overviewAgents.length - hiddenAgents.length;
+
+  const unhideOverviewAgent = (terminalId: string) => {
+    setHiddenOverviewAgents((previous) => {
+      const next = new Set(previous);
+      next.delete(terminalId);
+      return next;
+    });
+  };
+  const unhideAllOverviewAgents = () => {
+    setHiddenOverviewAgents((previous) => {
+      const next = new Set(previous);
+      for (const agent of hiddenAgents) next.delete(agent.terminalId);
+      return next;
+    });
+  };
+  const hideOverviewAgent = (terminalId: string) => {
+    setHiddenOverviewAgents((previous) => new Set(previous).add(terminalId));
+    setFocusArea('app');
+    requestAnimationFrame(() => {
+      const container = terminalGridRef.current;
+      const nextPane = Array.from(
+        container?.querySelectorAll<HTMLDivElement>('[data-overview-terminal-id]') ?? []
+      ).find(
+        (pane) => pane.dataset.overviewTerminalId !== terminalId && pane.style.display !== 'none'
+      );
+      (nextPane?.querySelector('textarea') ?? nextPane ?? container)?.focus({
+        preventScroll: true,
+      });
+    });
+  };
 
   // Pre-compute all user terminal configs as a flat list for stable rendering
   // Spans ALL repositories so user terminals survive cross-repo worktree switches
@@ -647,6 +686,8 @@ export function Layout() {
 
   // Refs for user terminal views (keyed by terminalId)
   const userTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const mainTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const agentActionRefs = useRef<Map<string, AgentTileActionsHandle>>(new Map());
 
   // Copy output from the active user terminal
   const handleCopyUserTerminalOutput = useCallback(async () => {
@@ -685,6 +726,13 @@ export function Layout() {
     return getTabsForWorktree(activeTerminalId);
   }, [activeTerminalId, getTabsForWorktree, worktreeTabs]);
 
+  const isWorktreeGrid =
+    !isOverviewMode &&
+    Boolean(worktreeTabs.find((wt) => wt.worktreeSessionId === activeTerminalId)?.isGridView);
+  const isInteractiveGrid = isOverviewMode || isWorktreeGrid;
+  const gridAgentCount = isOverviewMode ? overviewAgentCount : tabsForActiveWorktree.length;
+  const gridColumns = Math.max(1, Math.ceil(Math.sqrt(gridAgentCount)));
+
   // Helper to get terminal ID for a tab in the current worktree
   const getTerminalIdForActiveTab = useCallback(
     (tabId: string) => {
@@ -698,8 +746,9 @@ export function Layout() {
   const handleTabClick = useCallback(
     (tabId: string) => {
       setActiveTab(tabId);
+      setFocusArea('mainTerminal');
     },
-    [setActiveTab]
+    [setActiveTab, setFocusArea]
   );
 
   const handleTabClose = useCallback(
@@ -858,6 +907,7 @@ export function Layout() {
     (sessionId: string, tabId: string) => {
       setActiveTerminal(sessionId);
       setActiveTab(tabId);
+      setReviewExpanded(false);
       exitOverview();
       setFocusArea('mainTerminal');
     },
@@ -865,10 +915,10 @@ export function Layout() {
   );
 
   const handleOverviewAgentClose = (terminalId: string, tabId: string) => {
-    const container = overviewNavigation.containerRef.current;
+    const container = terminalGridRef.current;
     const cards = Array.from(
-      container?.querySelectorAll<HTMLButtonElement>('button[data-overview-terminal-id]') ?? []
-    );
+      container?.querySelectorAll<HTMLDivElement>('[data-overview-terminal-id]') ?? []
+    ).filter((pane) => pane.style.display !== 'none');
     const index = cards.findIndex((card) => card.dataset.overviewTerminalId === terminalId);
     const nextCard = cards[index + 1] ?? cards[index - 1];
 
@@ -878,13 +928,54 @@ export function Layout() {
 
     requestAnimationFrame(() => {
       if (nextCard?.isConnected) {
-        nextCard.focus({ preventScroll: true });
+        (nextCard.querySelector('textarea') ?? nextCard).focus({ preventScroll: true });
         nextCard.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
       } else {
-        container?.querySelector<HTMLButtonElement>('button[data-overview-terminal-id]')?.focus();
+        container?.querySelector<HTMLDivElement>('[data-overview-terminal-id]')?.focus();
       }
     });
   };
+
+  const onOverviewKeyDown = useOverviewShortcuts({
+    enabled: isOverviewMode && activeScreen.type === 'main',
+    terminalIds: overviewAgents
+      .filter((agent) => !hiddenOverviewAgents.has(agent.terminalId))
+      .map((agent) => agent.terminalId),
+    activeTerminalId:
+      activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null,
+    columns: gridColumns,
+    onFocus: (terminalId) => {
+      const agent = allTerminalConfigs.find((config) => config.terminalId === terminalId);
+      if (!agent) return;
+      setActiveTerminal(agent.sessionId);
+      setActiveTab(agent.tabId);
+      setFocusArea('mainTerminal');
+      const pane = Array.from(
+        terminalGridRef.current?.querySelectorAll<HTMLDivElement>('[data-overview-terminal-id]') ??
+          []
+      ).find((element) => element.dataset.overviewTerminalId === terminalId);
+      (pane?.querySelector('textarea') ?? pane)?.focus({ preventScroll: true });
+    },
+    onOpen: (terminalId) => {
+      const agent = allTerminalConfigs.find((config) => config.terminalId === terminalId);
+      if (agent) handleAgentSelect(agent.sessionId, agent.tabId);
+    },
+    onClose: (terminalId) => agentActionRefs.current.get(terminalId)?.requestClose(),
+  });
+
+  useKeyboardShortcuts({
+    onSessionSelect: handleKeyboardSessionSelect,
+    onOpenSettings: handleKeyboardOpenSettings,
+    onAddRepository: handleKeyboardAddRepository,
+    onToggleOverview: toggleOverview,
+    onFocusUserTerminal: focusUserTerminal,
+    onOpenRepositoryOverview: () => {
+      const repositoryId =
+        (isOverviewMode && overviewRepositoryId) || activeSessionInfo?.repository.id;
+      if (repositoryId) openRepositoryOverview(repositoryId);
+    },
+    onOverviewKeyDown,
+  });
 
   // Show loading state while initializing
   if (!isInitialized) {
@@ -915,7 +1006,9 @@ export function Layout() {
           onOpenHome={handleOpenHome}
           onSessionSelect={handleSessionSelect}
           onToggleOverview={toggleOverview}
+          onOpenRepositoryOverview={openRepositoryOverview}
           isOverviewMode={isOverviewMode}
+          activeOverviewRepositoryId={isOverviewMode ? overviewRepositoryId : null}
           hasAgents={allTerminalConfigs.length > 0}
         />
 
@@ -944,7 +1037,19 @@ export function Layout() {
               >
                 {/* Overview replaces the per-session header while it is open */}
                 {isOverviewMode && (
-                  <OverviewHeader agentCount={allTerminalConfigs.length} onClose={exitOverview} />
+                  <OverviewHeader
+                    agentCount={overviewAgentCount}
+                    onClose={exitOverview}
+                    repositories={repositories}
+                    repositoryId={overviewRepositoryId}
+                    hiddenAgents={hiddenAgents}
+                    onUnhideAgent={unhideOverviewAgent}
+                    onUnhideAll={unhideAllOverviewAgents}
+                    onRepositoryChange={(repositoryId) => {
+                      setOverviewRepositoryId(repositoryId);
+                      setFocusArea('app');
+                    }}
+                  />
                 )}
 
                 {/* WorktreeBar Header - only spans terminal width */}
@@ -973,82 +1078,131 @@ export function Layout() {
                     onScrollPositionChange={handleTabScrollPositionChange}
                     worktreeSessionId={activeTerminalId}
                     terminalPresets={settings.terminalPresets}
+                    isGridView={isWorktreeGrid}
+                    onToggleGridView={() => setWorktreeGridView(activeTerminalId, !isWorktreeGrid)}
                   />
                 )}
 
                 {/* Terminal area - a grid of agent tiles while overview is open */}
                 <div
-                  ref={overviewNavigation.containerRef}
-                  onKeyDown={overviewNavigation.onKeyDown}
+                  ref={terminalGridRef}
+                  tabIndex={-1}
+                  style={
+                    isInteractiveGrid
+                      ? {
+                          gridTemplateColumns: `repeat(${gridColumns}, minmax(0, 1fr))`,
+                          gridTemplateRows: `repeat(${Math.max(1, Math.ceil(gridAgentCount / gridColumns))}, minmax(0, 1fr))`,
+                        }
+                      : undefined
+                  }
                   className={cn(
-                    'flex-1 min-h-0 rounded-xl mx-3 mb-3 mt-2',
-                    isOverviewMode
-                      ? 'overview-agent-grid overflow-y-auto p-4 bg-obsidian-950/50'
-                      : 'relative p-2 bg-muted'
+                    'relative flex-1 min-h-0 rounded-xl mx-3 mb-3 mt-2',
+                    isInteractiveGrid
+                      ? 'grid gap-2 overflow-hidden p-2 bg-obsidian-950/50'
+                      : 'p-2 bg-muted'
                   )}
                 >
                   {/* Render terminals for each tab across all worktrees.
                       Overview mode shows them all at once instead of only the active tab. */}
-                  {allTerminalConfigs.flatMap((config, index) => {
+                  {allTerminalConfigs.map((config) => {
                     const isActiveTab =
                       config.sessionId === activeTerminalId && config.tabId === activeTabId;
-                    const isVisible =
-                      isOverviewMode ||
-                      (isActiveTab && !(reviewExpanded && rightPanelTab === 'review'));
+                    const isVisible = isOverviewMode
+                      ? (!overviewRepositoryId || config.repositoryId === overviewRepositoryId) &&
+                        !hiddenOverviewAgents.has(config.terminalId)
+                      : !(reviewExpanded && rightPanelTab === 'review') &&
+                        (isWorktreeGrid ? config.sessionId === activeTerminalId : isActiveTab);
 
-                    // Headings are flat siblings so toggling grouping never remounts terminals.
-                    const startsRepository =
-                      index === 0 ||
-                      allTerminalConfigs[index - 1].repositoryId !== config.repositoryId;
-                    return [
-                      isOverviewMode && startsRepository && (
-                        <h2
-                          key={`repository:${config.repositoryId}`}
-                          className={cn(
-                            'col-span-full flex min-w-0 items-center gap-2 text-sm font-semibold',
-                            index > 0 && 'mt-4'
-                          )}
-                        >
-                          <FolderGit2 className="h-4 w-4 shrink-0 text-muted-foreground" />
-                          <span className="truncate">{config.repositoryName}</span>
-                          <span className="text-xs font-normal text-muted-foreground">
-                            {overviewRepoCounts.get(config.repositoryId)}{' '}
-                            {overviewRepoCounts.get(config.repositoryId) === 1 ? 'agent' : 'agents'}
-                          </span>
-                        </h2>
-                      ),
+                    return (
                       <AgentTile
                         key={config.terminalId}
+                        actionsRef={(handle) => {
+                          if (handle) agentActionRefs.current.set(config.terminalId, handle);
+                          else agentActionRefs.current.delete(config.terminalId);
+                        }}
                         terminalId={config.terminalId}
-                        isOverview={isOverviewMode}
+                        isOverview={isOverviewMode || isWorktreeGrid}
                         isVisible={isVisible}
                         isActive={isActiveTab}
+                        onFocusPane={
+                          isVisible
+                            ? () => {
+                                if (!isActiveTab) {
+                                  if (config.sessionId !== activeTerminalId)
+                                    setActiveTerminal(config.sessionId);
+                                  setActiveTab(config.tabId);
+                                }
+                                setFocusArea('mainTerminal');
+                              }
+                            : undefined
+                        }
                         repositoryName={config.repositoryName}
                         worktreeLabel={config.worktreeLabel}
                         tabName={config.tabName}
                         tabIcon={config.tabIcon}
                         status={terminals.get(config.terminalId)?.status ?? 'stopped'}
-                        onSelect={() => handleAgentSelect(config.sessionId, config.tabId)}
+                        selectTooltip={
+                          isWorktreeGrid ? 'Show only this terminal' : 'Open in worktree'
+                        }
+                        onSelect={() => {
+                          if (isWorktreeGrid) setWorktreeGridView(config.sessionId, false);
+                          handleAgentSelect(config.sessionId, config.tabId);
+                        }}
                         onClose={() => handleOverviewAgentClose(config.terminalId, config.tabId)}
+                        onHide={
+                          isOverviewMode ? () => hideOverviewAgent(config.terminalId) : undefined
+                        }
+                        onMenuOpen={() => setFocusArea('app')}
+                        onCopy={() => {
+                          void mainTerminalRefs.current.get(config.terminalId)?.copySelection();
+                        }}
+                        onPaste={() => {
+                          void mainTerminalRefs.current.get(config.terminalId)?.paste();
+                        }}
                       >
                         <TerminalView
+                          ref={(handle) => {
+                            if (handle) mainTerminalRefs.current.set(config.terminalId, handle);
+                            else mainTerminalRefs.current.delete(config.terminalId);
+                          }}
                           sessionId={config.sessionId}
                           terminalId={config.terminalId}
                           cwd={config.cwd}
                           isVisible={isVisible}
+                          isFocused={isActiveTab}
+                          useParentContextMenu={isInteractiveGrid}
                           initialCommand={config.tabCommand}
                           terminalType="main"
-                          fontSize={isOverviewMode ? OVERVIEW_TERMINAL_FONT_SIZE : undefined}
                         />
-                      </AgentTile>,
-                    ];
+                      </AgentTile>
+                    );
                   })}
 
                   {/* Overview open but no agent terminals exist yet */}
-                  {isOverviewMode && allTerminalConfigs.length === 0 && (
+                  {isOverviewMode && overviewAgentCount === 0 && (
                     <div className="col-span-full flex flex-col items-center justify-center gap-2 py-16 text-muted-foreground">
                       <TerminalIcon className="h-8 w-8 opacity-40" />
-                      <span className="text-sm">No agents yet</span>
+                      <span className="text-sm">
+                        {hiddenAgents.length > 0
+                          ? 'All agents in this view are hidden'
+                          : overviewRepositoryId
+                            ? 'No agents open in this repository'
+                            : 'No agents yet'}
+                      </span>
+                      {hiddenAgents.length > 0 ? (
+                        <button
+                          className="text-sm text-primary underline underline-offset-4"
+                          onClick={unhideAllOverviewAgents}
+                        >
+                          Show hidden agents
+                        </button>
+                      ) : (
+                        overviewRepositoryId && (
+                          <span className="text-xs">
+                            Open a terminal in one of its worktrees to see it here.
+                          </span>
+                        )
+                      )}
                     </div>
                   )}
 

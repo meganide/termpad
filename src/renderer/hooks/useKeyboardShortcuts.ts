@@ -94,11 +94,13 @@ export function findSessionByShortcut(
 }
 
 interface UseKeyboardShortcutsOptions {
+  onOverviewKeyDown?: (event: KeyboardEvent) => boolean;
   onSessionSelect?: () => void;
   onOpenSettings?: () => void;
   onAddRepository?: () => void;
   onFocusUserTerminal?: () => void;
   onToggleOverview?: () => void;
+  onOpenRepositoryOverview?: () => void;
 }
 
 /**
@@ -114,6 +116,8 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
     onAddRepository,
     onFocusUserTerminal,
     onToggleOverview,
+    onOverviewKeyDown,
+    onOpenRepositoryOverview,
   } = options;
   const {
     repositories,
@@ -155,6 +159,7 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent) => {
+      if (onOverviewKeyDown?.(e)) return;
       // Handle Ctrl+Space (or Ctrl+Shift+Space on Linux) to focus sidebar (direct navigation, works globally)
       // Must check before input field check since xterm uses a textarea internally
       // On Linux, Ctrl+Space is reserved by input method frameworks, so we use Ctrl+Shift+Space instead
@@ -201,10 +206,18 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
         return;
       }
 
-      // Handle Ctrl+O to toggle the agent overview (works globally)
-      if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') {
+      // Toggle the agent overview with Cmd+O on Mac and Ctrl+O elsewhere.
+      const isOverviewModifier = isMac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey;
+      if (isOverviewModifier && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         onToggleOverview?.();
+        return;
+      }
+
+      if (isOverviewModifier && !e.shiftKey && !e.altKey && e.key.toLowerCase() === 'i') {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        onOpenRepositoryOverview?.();
         return;
       }
 
@@ -333,6 +346,8 @@ export function useKeyboardShortcuts(options: UseKeyboardShortcutsOptions = {}) 
       onAddRepository,
       onFocusUserTerminal,
       onToggleOverview,
+      onOverviewKeyDown,
+      onOpenRepositoryOverview,
     ]
   );
 

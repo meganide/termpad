@@ -175,6 +175,7 @@ export interface WorktreeTabState {
   tabs: TerminalTab[]; // Ordered list of tabs
   activeTabId: string | null; // Currently selected tab
   tabScrollPosition?: number; // Horizontal scroll position of tab bar
+  isGridView?: boolean; // Show all tabs together during the current app session
 }
 
 export interface Repository {

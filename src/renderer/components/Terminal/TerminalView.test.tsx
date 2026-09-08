@@ -175,6 +175,22 @@ describe('TerminalView', () => {
     vi.restoreAllMocks();
   });
 
+  it('resizes an unfocused visible split without stealing focus, then focuses it when selected', () => {
+    useAppStore.setState({ focusArea: 'mainTerminal' });
+    const { rerender } = render(<TerminalView {...defaultProps} isFocused={false} />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockUseTerminalReturn.resize).toHaveBeenCalled();
+    expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+    rerender(<TerminalView {...defaultProps} isFocused />);
+    act(() => {
+      vi.advanceTimersByTime(300);
+    });
+    expect(mockTerminalInstance.focus).toHaveBeenCalledTimes(1);
+    expect(mockTerminalInstance.dispose).not.toHaveBeenCalled();
+  });
+
   describe('rendering', () => {
     it('renders terminal container div', () => {
       const { container } = render(<TerminalView {...defaultProps} />);
@@ -381,6 +397,22 @@ describe('TerminalView', () => {
   });
 
   describe('context menu', () => {
+    it('lets the grid handle right-click without opening a second terminal menu', () => {
+      const onContextMenu = vi.fn((event: React.MouseEvent) =>
+        expect(event.defaultPrevented).toBe(false)
+      );
+      const { container } = render(
+        <div onContextMenu={onContextMenu}>
+          <TerminalView {...defaultProps} useParentContextMenu />
+        </div>
+      );
+      const terminalContainer = container.querySelector('[tabindex="-1"]');
+      expect(terminalContainer).not.toBeNull();
+      fireEvent.contextMenu(terminalContainer as Element);
+      expect(onContextMenu).toHaveBeenCalledOnce();
+      expect(screen.queryByText('Copy')).not.toBeInTheDocument();
+    });
+
     it('opens context menu on right click', () => {
       const { container } = render(<TerminalView {...defaultProps} />);
       const terminalContainer = container.querySelector('.h-full.w-full')!;
@@ -857,6 +889,27 @@ describe('TerminalView', () => {
   });
 
   describe('keyboard shortcut passthrough', () => {
+    it.each(['MacIntel', 'Linux x86_64'])(
+      'releases the repository overview shortcut on %s',
+      (platform) => {
+        const platformMock = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+        try {
+          render(<TerminalView {...defaultProps} />);
+          const handler = mockTerminalInstance.attachCustomKeyEventHandler.mock.calls[0][0];
+          const mac = platform === 'MacIntel';
+          expect(
+            handler(new KeyboardEvent('keydown', { key: 'i', metaKey: mac, ctrlKey: !mac }))
+          ).toBe(false);
+          if (mac) {
+            // Ctrl+I remains terminal input on Mac (Tab); only Cmd+I is reserved.
+            expect(handler(new KeyboardEvent('keydown', { key: 'i', ctrlKey: true }))).toBe(true);
+          }
+        } finally {
+          platformMock.mockRestore();
+        }
+      }
+    );
+
     it('registers custom key event handler', () => {
       render(<TerminalView {...defaultProps} />);
       expect(mockTerminalInstance.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);

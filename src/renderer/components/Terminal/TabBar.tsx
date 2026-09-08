@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
-import { Terminal, X, Plus, Loader, GripVertical, Pencil } from 'lucide-react';
+import { Terminal, X, Plus, Loader, GripVertical, Pencil, LayoutGrid } from 'lucide-react';
 import { PRESET_ICONS } from '../IconPicker';
 import { cn } from '../../lib/utils';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
@@ -68,6 +68,8 @@ interface TabBarProps {
   worktreeSessionId?: string;
   /** Terminal presets to show in the dropdown menu */
   terminalPresets?: TerminalPreset[];
+  isGridView?: boolean;
+  onToggleGridView?: () => void;
 }
 
 const statusTooltips: Record<TerminalStatus, string> = {
@@ -309,6 +311,8 @@ export function TabBar({
   onScrollPositionChange,
   worktreeSessionId,
   terminalPresets = [],
+  isGridView = false,
+  onToggleGridView,
 }: TabBarProps) {
   const [editingTabId, setEditingTabId] = useState<string | null>(null);
   const [pendingCloseTabId, setPendingCloseTabId] = useState<string | null>(null);
@@ -520,7 +524,10 @@ export function TabBar({
     : null;
 
   return (
-    <div className="flex items-center py-1 bg-muted/60 backdrop-blur-sm mx-3 mt-3 rounded-lg">
+    <div
+      className="flex items-center py-1 bg-muted/60 backdrop-blur-sm mx-3 mt-3 rounded-lg"
+      onClick={(event) => event.stopPropagation()}
+    >
       {/* Scrollable tabs container */}
       <div
         ref={tabsScrollRef}
@@ -595,6 +602,32 @@ export function TabBar({
           </DropdownMenu>
         </Tooltip>
       </div>
+
+      {onToggleGridView && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              className={cn(
+                'mx-2 shrink-0 rounded p-1.5 text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                isGridView && 'bg-accent text-primary'
+              )}
+              aria-label="Worktree grid view"
+              aria-pressed={isGridView}
+              disabled={!isGridView && tabs.length < 2}
+              onClick={onToggleGridView}
+            >
+              <LayoutGrid className="h-4 w-4" />
+            </button>
+          </TooltipTrigger>
+          <TooltipContent>
+            {isGridView
+              ? 'Return to selected terminal'
+              : tabs.length < 2
+                ? 'Open another terminal to use grid view'
+                : 'Show all terminals in this worktree'}
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Close confirmation dialog for running terminals */}
       <AlertDialog open={pendingCloseTabId !== null}>

@@ -166,6 +166,31 @@ describe('TabBar', () => {
     vi.clearAllMocks();
   });
 
+  it('toggles all worktree terminals with a single grid control', () => {
+    const onToggleGridView = vi.fn();
+    const { rerender } = render(<TabBar {...defaultProps} onToggleGridView={onToggleGridView} />);
+    const button = screen.getByRole('button', { name: 'Worktree grid view' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(button);
+    expect(onToggleGridView).toHaveBeenCalledOnce();
+    rerender(<TabBar {...defaultProps} isGridView onToggleGridView={onToggleGridView} />);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.queryByRole('button', { name: /Split right|Split down/ })
+    ).not.toBeInTheDocument();
+  });
+
+  it('requires two tabs to enter grid view but lets users exit after closing tabs', () => {
+    const { rerender } = render(
+      <TabBar {...defaultProps} tabs={[mockTabs[0]]} onToggleGridView={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: 'Worktree grid view' })).toBeDisabled();
+    rerender(
+      <TabBar {...defaultProps} tabs={[mockTabs[0]]} isGridView onToggleGridView={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: 'Worktree grid view' })).toBeEnabled();
+  });
+
   it('renders tabs correctly', () => {
     render(<TabBar {...defaultProps} />);
 

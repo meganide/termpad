@@ -212,6 +212,8 @@ interface AppStore extends AppState {
   getTerminalIdForTab: (worktreeSessionId: string, tabId: string) => string;
   getWorktreeSessionIdFromTabId: (tabId: string) => string | null;
 
+  setWorktreeGridView: (worktreeSessionId: string, enabled: boolean) => void;
+
   // User terminal tab actions
   createUserTab: (worktreeSessionId: string, name?: string, scriptId?: string) => TerminalTab;
   findUserTabsWithScript: (
@@ -1518,6 +1520,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     }));
 
     persistState(get());
+  },
+
+  setWorktreeGridView: (worktreeSessionId, enabled) => {
+    set((state) => ({
+      worktreeTabs: state.worktreeTabs.map((wt) =>
+        wt.worktreeSessionId === worktreeSessionId ? { ...wt, isGridView: enabled } : wt
+      ),
+    }));
   },
 
   getTabsForWorktree: (worktreeSessionId) => {

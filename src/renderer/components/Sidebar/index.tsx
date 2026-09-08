@@ -9,6 +9,7 @@ import { useSidebarNavigation } from '../../hooks/useSidebarNavigation';
 import { useSidebarRepositories } from '../../hooks/useSidebarRepositories';
 import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
 import { cn } from '../../lib/utils';
+import { isMac } from '../../utils/shortcuts';
 import type { WorktreeSession, Repository } from '../../../shared/types';
 
 interface SidebarProps {
@@ -23,7 +24,9 @@ interface SidebarProps {
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
   onToggleOverview: () => void;
+  onOpenRepositoryOverview?: (repositoryId: string) => void;
   isOverviewMode: boolean;
+  activeOverviewRepositoryId?: string | null;
   hasAgents: boolean;
 }
 
@@ -39,7 +42,9 @@ export function Sidebar({
   onOpenHome,
   onSessionSelect,
   onToggleOverview,
+  onOpenRepositoryOverview,
   isOverviewMode,
+  activeOverviewRepositoryId,
   hasAgents,
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -241,7 +246,7 @@ export function Sidebar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {hasAgents ? 'Agent overview (Ctrl+O)' : 'No agents yet'}
+              {hasAgents ? `Agent overview (${isMac ? 'Cmd' : 'Ctrl'}+O)` : 'No agents yet'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
@@ -317,6 +322,8 @@ export function Sidebar({
               onToggleExpand={toggleRepositoryExpanded}
               onRepositoryDelete={onRepositoryDelete}
               onOpenRepositorySettings={onOpenRepositorySettings}
+              onOpenRepositoryOverview={onOpenRepositoryOverview}
+              activeOverviewRepositoryId={activeOverviewRepositoryId}
               onWorktreeRemove={onWorktreeRemove}
               onReorderSessions={reorderWorktreeSessions}
               onReorderRepositories={handleReorderRepositories}
