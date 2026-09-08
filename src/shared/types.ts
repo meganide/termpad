@@ -120,6 +120,7 @@ export interface AppSettings {
   defaultPresetId: string | null; // ID of default preset, null = "Terminal"
   suppressCloseWarning?: boolean; // default: false - skip warning when closing with active terminals
   suppressDiscardWarning?: boolean; // default: false - skip warning when discarding changes
+  showOnlyActiveRepositories?: boolean; // default: false - only show repos with open terminal tabs
 }
 
 export interface CustomShortcut {
@@ -450,6 +451,7 @@ export function getDefaultAppState(): AppState {
         CODEX_DEFAULT_PRESET,
       ],
       defaultPresetId: null, // null = "Terminal" is default
+      showOnlyActiveRepositories: false,
     },
     repositories: [],
     window: {
