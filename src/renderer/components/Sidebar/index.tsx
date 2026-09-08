@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react';
-import { Settings, FolderPlus, Home, Bug, ListFilter, Terminal } from 'lucide-react';
+import { Settings, FolderPlus, Home, Bug, ListFilter, Terminal, LayoutGrid } from 'lucide-react';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
@@ -22,6 +22,9 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
+  onToggleOverview: () => void;
+  isOverviewMode: boolean;
+  hasAgents: boolean;
 }
 
 export function Sidebar({
@@ -35,6 +38,9 @@ export function Sidebar({
   onOpenSettings,
   onOpenHome,
   onSessionSelect,
+  onToggleOverview,
+  isOverviewMode,
+  hasAgents,
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const [showTopShadow, setShowTopShadow] = useState(false);
@@ -215,6 +221,27 @@ export function Sidebar({
               {showOnlyActiveRepositories
                 ? 'Show all repositories'
                 : 'Only show repositories with open terminals'}
+            </TooltipContent>
+          </Tooltip>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  'h-8 w-8 hover:bg-sidebar-accent',
+                  isOverviewMode && 'bg-sidebar-accent text-primary'
+                )}
+                onClick={onToggleOverview}
+                disabled={!hasAgents}
+                aria-pressed={isOverviewMode}
+                aria-label="Agent overview"
+              >
+                <LayoutGrid className="h-4 w-4" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              {hasAgents ? 'Agent overview (Ctrl+O)' : 'No agents yet'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>
