@@ -1,4 +1,5 @@
-import { Eye, EyeOff, LayoutGrid, X } from 'lucide-react';
+import { Eye, EyeOff, Keyboard, LayoutGrid, X } from 'lucide-react';
+import { isMac } from '../../utils/shortcuts';
 import type { Repository } from '../../../shared/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
@@ -110,13 +111,31 @@ export function OverviewHeader({
               variant="ghost"
               size="icon"
               className="h-8 w-8"
+              aria-label="Overview keyboard shortcuts"
+            >
+              <Keyboard className="h-4 w-4" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <div>{isMac ? 'Cmd' : 'Ctrl'} + I: overview for current repository</div>
+            <div>{isMac ? 'Cmd' : 'Ctrl'} + Arrow keys: select agent</div>
+            <div>{isMac ? 'Cmd' : 'Ctrl'} + Shift + Enter: open in worktree</div>
+            <div>{isMac ? 'Cmd' : 'Ctrl'} + -: close agent</div>
+          </TooltipContent>
+        </Tooltip>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
               onClick={onClose}
               aria-label="Close overview"
             >
               <X className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Close overview (Ctrl+O)</TooltipContent>
+          <TooltipContent>Close overview ({isMac ? 'Cmd' : 'Ctrl'}+O)</TooltipContent>
         </Tooltip>
       </div>
     </div>

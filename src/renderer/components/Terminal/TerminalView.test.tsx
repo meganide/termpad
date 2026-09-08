@@ -884,6 +884,27 @@ describe('TerminalView', () => {
   });
 
   describe('keyboard shortcut passthrough', () => {
+    it.each(['MacIntel', 'Linux x86_64'])(
+      'releases the repository overview shortcut on %s',
+      (platform) => {
+        const platformMock = vi.spyOn(navigator, 'platform', 'get').mockReturnValue(platform);
+        try {
+          render(<TerminalView {...defaultProps} />);
+          const handler = mockTerminalInstance.attachCustomKeyEventHandler.mock.calls[0][0];
+          const mac = platform === 'MacIntel';
+          expect(
+            handler(new KeyboardEvent('keydown', { key: 'i', metaKey: mac, ctrlKey: !mac }))
+          ).toBe(false);
+          if (mac) {
+            // Ctrl+I remains terminal input on Mac (Tab); only Cmd+I is reserved.
+            expect(handler(new KeyboardEvent('keydown', { key: 'i', ctrlKey: true }))).toBe(true);
+          }
+        } finally {
+          platformMock.mockRestore();
+        }
+      }
+    );
+
     it('registers custom key event handler', () => {
       render(<TerminalView {...defaultProps} />);
       expect(mockTerminalInstance.attachCustomKeyEventHandler).toHaveBeenCalledTimes(1);

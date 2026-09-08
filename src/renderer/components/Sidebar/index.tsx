@@ -9,6 +9,7 @@ import { useSidebarNavigation } from '../../hooks/useSidebarNavigation';
 import { useSidebarRepositories } from '../../hooks/useSidebarRepositories';
 import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
 import { cn } from '../../lib/utils';
+import { isMac } from '../../utils/shortcuts';
 import type { WorktreeSession, Repository } from '../../../shared/types';
 
 interface SidebarProps {
@@ -245,7 +246,7 @@ export function Sidebar({
               </Button>
             </TooltipTrigger>
             <TooltipContent>
-              {hasAgents ? 'Agent overview (Ctrl+O)' : 'No agents yet'}
+              {hasAgents ? `Agent overview (${isMac ? 'Cmd' : 'Ctrl'}+O)` : 'No agents yet'}
             </TooltipContent>
           </Tooltip>
           <Tooltip>

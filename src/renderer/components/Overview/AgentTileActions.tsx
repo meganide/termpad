@@ -1,4 +1,4 @@
-import { useRef, useState, type ReactElement } from 'react';
+import { useImperativeHandle, useRef, useState, type ReactElement, type Ref } from 'react';
 import { X, Maximize2, Copy, ClipboardPaste, EyeOff } from 'lucide-react';
 import type { TerminalStatus } from '../../../shared/types';
 import {
@@ -19,7 +19,12 @@ import {
   AlertDialogTitle,
 } from '../ui/alert-dialog';
 
+export interface AgentTileActionsHandle {
+  requestClose: () => void;
+}
+
 interface AgentTileActionsProps {
+  actionsRef?: Ref<AgentTileActionsHandle>;
   enabled: boolean;
   children: ReactElement;
   tabName: string;
@@ -36,6 +41,7 @@ interface AgentTileActionsProps {
 
 // Keep this wrapper mounted in every layout so its terminal child never remounts.
 export function AgentTileActions({
+  actionsRef,
   enabled,
   children,
   tabName,
@@ -53,12 +59,15 @@ export function AgentTileActions({
   const navigating = useRef(false);
 
   const attemptClose = () => {
+    onMenuOpen?.();
     if (status === 'running' || status === 'waiting' || status === 'starting') {
       setConfirmClose(true);
     } else {
       onClose();
     }
   };
+
+  useImperativeHandle(actionsRef, () => ({ requestClose: attemptClose }));
 
   return (
     <>

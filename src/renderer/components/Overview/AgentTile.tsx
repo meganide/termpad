@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react';
+import { useRef, type ReactNode, type Ref } from 'react';
 import { Terminal, Maximize2 } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
 import { cn } from '../../lib/utils';
@@ -9,9 +9,10 @@ import {
   isStatusPulsing,
 } from '../../utils/terminalStatusStyles';
 import type { TerminalStatus } from '../../../shared/types';
-import { AgentTileActions } from './AgentTileActions';
+import { AgentTileActions, type AgentTileActionsHandle } from './AgentTileActions';
 
 interface AgentTileProps {
+  actionsRef?: Ref<AgentTileActionsHandle>;
   terminalId: string;
   isOverview: boolean;
   isVisible: boolean;
@@ -41,6 +42,7 @@ interface AgentTileProps {
  * unmount it and destroy the agent's scrollback.
  */
 export function AgentTile({
+  actionsRef,
   terminalId,
   isOverview,
   isVisible,
@@ -65,6 +67,7 @@ export function AgentTile({
 
   return (
     <AgentTileActions
+      actionsRef={actionsRef}
       enabled={isOverview}
       tabName={tabName}
       status={status}

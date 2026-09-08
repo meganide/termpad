@@ -2,6 +2,7 @@ import { render, screen, fireEvent, act, waitFor, within } from '@testing-librar
 import userEvent from '@testing-library/user-event';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Layout } from './Layout';
+import { App } from '../App';
 import { useAppStore } from '../stores/appStore';
 import {
   resetAllStores,
@@ -1556,6 +1557,111 @@ describe('Layout', () => {
       fireEvent.click(screen.getByRole('button', { name: 'Show hidden agents' }));
       expect(first).toHaveAttribute('data-visible', 'true');
       expect(second).toHaveAttribute('data-visible', 'true');
+      expect(window.terminal.kill).not.toHaveBeenCalled();
+    });
+
+    it('navigates overview agents before terminal input and opens the selected worktree', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+      await openOverview();
+      const first = screen.getByTestId('terminal-session-1:tab-1');
+      const input = document.createElement('textarea');
+      input.className = 'xterm';
+      first.appendChild(input);
+      const terminalKey = vi.fn();
+      input.addEventListener('keydown', terminalKey);
+      fireEvent.keyDown(input, { key: 'ArrowRight', ctrlKey: true });
+      expect(terminalKey).not.toHaveBeenCalled();
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: 'Enter', ctrlKey: true, shiftKey: true });
+      expect(screen.queryByText('Agent overview')).not.toBeInTheDocument();
+      expect(useAppStore.getState().activeTabId).toBe('tab-2');
+    });
+
+    it('uses the running-agent close confirmation for the overview close shortcut', async () => {
+      setUpTwoAgents();
+      useAppStore.setState({
+        terminals: new Map([
+          [
+            'session-1:tab-1',
+            {
+              id: 'session-1:tab-1',
+              status: 'running',
+              lastActivityTime: Date.now(),
+              hasReceivedOutput: true,
+            },
+          ],
+        ]),
+      });
+      render(<Layout />);
+      await openOverview();
+      fireEvent.keyDown(window, { key: '-', ctrlKey: true });
+      expect(screen.getByRole('alertdialog')).toBeInTheDocument();
+      expect(window.terminal.kill).not.toHaveBeenCalled();
+      fireEvent.keyDown(window, { key: 'ArrowRight', ctrlKey: true });
+      expect(useAppStore.getState().activeTabId).toBe('tab-1');
+      fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toBeInTheDocument();
+      fireEvent.keyDown(window, { key: '-', ctrlKey: true });
+      fireEvent.click(screen.getByRole('button', { name: 'Close' }));
+      expect(screen.queryByTestId('terminal-session-1:tab-1')).not.toBeInTheDocument();
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+    });
+
+    it('reopens the repository overview after navigating to a worktree at the app root', async () => {
+      setUpTwoAgents();
+      render(<App />);
+      const terminal = screen.getByTestId('terminal-session-1:tab-1');
+      const input = document.createElement('textarea');
+      input.className = 'xterm';
+      terminal.appendChild(input);
+      for (let cycle = 0; cycle < 3; cycle++) {
+        fireEvent.keyDown(input, { key: 'i', ctrlKey: true });
+        expect(screen.getByText('Agent overview')).toBeInTheDocument();
+        fireEvent.keyDown(input, { key: 'Enter', ctrlKey: true, shiftKey: true });
+        expect(screen.queryByText('Agent overview')).not.toBeInTheDocument();
+        expect(screen.getByTestId('terminal-session-1:tab-1')).toBe(terminal);
+      }
+      fireEvent.keyDown(input, { key: 'i', ctrlKey: true });
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      expect(window.terminal.kill).not.toHaveBeenCalled();
+    });
+
+    it('opens the active repository grid from terminal input with Ctrl+I', async () => {
+      setUpTwoAgents();
+      const [repo] = useAppStore.getState().repositories;
+      useAppStore.setState({
+        repositories: [
+          { ...repo, worktreeSessions: [repo.worktreeSessions[0]] },
+          {
+            ...repo,
+            id: 'repo-2',
+            name: 'Other repo',
+            worktreeSessions: [repo.worktreeSessions[1]],
+          },
+        ],
+        activeTerminalId: 'session-2',
+        activeTabId: 'tab-2',
+      });
+      render(<Layout />);
+      const terminal = screen.getByTestId('terminal-session-2:tab-2');
+      const input = document.createElement('textarea');
+      input.className = 'xterm';
+      terminal.appendChild(input);
+      fireEvent.keyDown(input, { key: 'i', ctrlKey: true });
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
+      expect(screen.getByRole('combobox', { name: 'Overview repository' })).toHaveTextContent(
+        'Other repo'
+      );
+      expect(screen.getByTestId('terminal-session-1:tab-1')).toHaveAttribute(
+        'data-visible',
+        'false'
+      );
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toBe(terminal);
+      expect(terminal).toHaveAttribute('data-visible', 'true');
+      fireEvent.keyDown(input, { key: 'i', ctrlKey: true });
+      expect(screen.getByText('Agent overview')).toBeInTheDocument();
       expect(window.terminal.kill).not.toHaveBeenCalled();
     });
 

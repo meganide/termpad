@@ -285,8 +285,8 @@ export const TerminalView = memo(
         if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 't') {
           return false; // Don't let xterm handle it, let it bubble to window
         }
-        // Let Ctrl+O pass through for toggling the agent overview
-        if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey && e.key.toLowerCase() === 'o') {
+        // Let the overview shortcuts reach the app instead of the terminal.
+        if (isTabSwitchModifier && ['o', 'i'].includes(e.key.toLowerCase())) {
           return false; // Don't let xterm handle it, let it bubble to window
         }
         // Let Ctrl+U pass through for switching to user terminal

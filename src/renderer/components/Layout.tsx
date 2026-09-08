@@ -19,6 +19,8 @@ import { CloseWarningDialog } from './CloseWarningDialog';
 import { DeleteRepositoryDialog } from './DeleteRepositoryDialog';
 import { HomeScreen } from './HomeScreen';
 import { AgentTile, OverviewHeader } from './Overview';
+import { useOverviewShortcuts } from './Overview/useOverviewShortcuts';
+import type { AgentTileActionsHandle } from './Overview/AgentTileActions';
 import { RemoveWorktreeDialog } from './RemoveWorktreeDialog';
 import { RepositorySettingsOverlay } from './RepositorySettingsOverlay';
 import type { SettingsTab } from './SettingsScreen';
@@ -244,14 +246,6 @@ export function Layout() {
   const handleKeyboardAddRepository = useCallback(() => {
     setActiveScreen({ type: 'addRepository' });
   }, []);
-
-  // Enable keyboard shortcuts (Ctrl+B toggle, Ctrl+Shift+1-9 session shortcuts)
-  useKeyboardShortcuts({
-    onSessionSelect: handleKeyboardSessionSelect,
-    onOpenSettings: handleKeyboardOpenSettings,
-    onAddRepository: handleKeyboardAddRepository,
-    onToggleOverview: toggleOverview,
-  });
 
   // Handle Escape key for going back on overlay screens
   useEffect(() => {
@@ -703,6 +697,7 @@ export function Layout() {
   // Refs for user terminal views (keyed by terminalId)
   const userTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const mainTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const agentActionRefs = useRef<Map<string, AgentTileActionsHandle>>(new Map());
 
   // Copy output from the active user terminal
   const handleCopyUserTerminalOutput = useCallback(async () => {
@@ -1052,6 +1047,46 @@ export function Layout() {
     });
   };
 
+  const onOverviewKeyDown = useOverviewShortcuts({
+    enabled: isOverviewMode && activeScreen.type === 'main',
+    terminalIds: overviewAgents
+      .filter((agent) => !hiddenOverviewAgents.has(agent.terminalId))
+      .map((agent) => agent.terminalId),
+    activeTerminalId:
+      activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null,
+    columns: gridColumns,
+    onFocus: (terminalId) => {
+      const agent = allTerminalConfigs.find((config) => config.terminalId === terminalId);
+      if (!agent) return;
+      setActiveTerminal(agent.sessionId);
+      setActiveTab(agent.tabId);
+      setFocusArea('mainTerminal');
+      const pane = Array.from(
+        terminalGridRef.current?.querySelectorAll<HTMLDivElement>('[data-overview-terminal-id]') ??
+          []
+      ).find((element) => element.dataset.overviewTerminalId === terminalId);
+      (pane?.querySelector('textarea') ?? pane)?.focus({ preventScroll: true });
+    },
+    onOpen: (terminalId) => {
+      const agent = allTerminalConfigs.find((config) => config.terminalId === terminalId);
+      if (agent) handleAgentSelect(agent.sessionId, agent.tabId);
+    },
+    onClose: (terminalId) => agentActionRefs.current.get(terminalId)?.requestClose(),
+  });
+
+  useKeyboardShortcuts({
+    onSessionSelect: handleKeyboardSessionSelect,
+    onOpenSettings: handleKeyboardOpenSettings,
+    onAddRepository: handleKeyboardAddRepository,
+    onToggleOverview: toggleOverview,
+    onOpenRepositoryOverview: () => {
+      const repositoryId =
+        (isOverviewMode && overviewRepositoryId) || activeSessionInfo?.repository.id;
+      if (repositoryId) openRepositoryOverview(repositoryId);
+    },
+    onOverviewKeyDown,
+  });
+
   // Show loading state while initializing
   if (!isInitialized) {
     return (
@@ -1196,6 +1231,10 @@ export function Layout() {
                     return (
                       <AgentTile
                         key={config.terminalId}
+                        actionsRef={(handle) => {
+                          if (handle) agentActionRefs.current.set(config.terminalId, handle);
+                          else agentActionRefs.current.delete(config.terminalId);
+                        }}
                         terminalId={config.terminalId}
                         isOverview={isOverviewMode || isWorktreeGrid}
                         isVisible={isVisible}
