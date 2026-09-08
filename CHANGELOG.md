@@ -1,5 +1,17 @@
 # termpad
 
+## 0.7.0
+
+### Minor Changes
+
+- [#27](https://github.com/meganide/termpad/pull/27) [`7ac333a`](https://github.com/meganide/termpad/commit/7ac333aab7242ac909f79b724be1ef88e648c901) Thanks [@meganide](https://github.com/meganide)! - Add sidebar search for repository names, worktree names, labels, and branches. Matching worktrees are revealed automatically, and clearing the search restores the original expansion state. Keyboard navigation and drag reordering respect filtered results.
+
+  Keep the file tree scrollable within its panel while the search and filter controls remain visible.
+
+### Patch Changes
+
+- [#29](https://github.com/meganide/termpad/pull/29) [`e380714`](https://github.com/meganide/termpad/commit/e380714869b0df25cf05ca981f591013263b4b56) Thanks [@meganide](https://github.com/meganide)! - Reduce background review and Git work, defer offscreen diff rendering, and reuse unchanged file data. Bound terminal replay memory and apply output flow control to keep busy terminal sessions responsive.
+
 ## 0.6.0
 
 ### Minor Changes
