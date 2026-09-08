@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef, useEffect } from 'react';
+import { useState, useCallback, useRef, useEffect, type ReactNode } from 'react';
 import { RefreshCw, FileText, Eye } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
@@ -18,6 +18,7 @@ import type { FileStatus } from '../../../../shared/types';
 
 interface SourceControlPaneProps {
   repoPath: string | null;
+  titleSlot: ReactNode;
   onViewDiff?: (file: FileStatus) => void;
   onOpenInEditor?: (file: FileStatus) => void;
   onStartReview?: () => void;
@@ -25,6 +26,7 @@ interface SourceControlPaneProps {
 
 export function SourceControlPane({
   repoPath,
+  titleSlot,
   onViewDiff,
   onOpenInEditor,
   onStartReview,
@@ -289,12 +291,12 @@ export function SourceControlPane({
   // Show loading state
   if (isLoading && staged.length === 0 && unstaged.length === 0 && untracked.length === 0) {
     return (
-      <div
-        className="h-full flex items-center justify-center text-muted-foreground"
-        data-testid="source-control-pane"
-      >
-        <RefreshCw className="size-4 animate-spin mr-2" />
-        Loading...
+      <div className="h-full flex flex-col" data-testid="source-control-pane">
+        <div className="flex items-center px-3 h-[49px]">{titleSlot}</div>
+        <div className="flex-1 flex items-center justify-center text-muted-foreground">
+          <RefreshCw className="size-4 animate-spin mr-2" />
+          Loading...
+        </div>
       </div>
     );
   }
@@ -307,10 +309,7 @@ export function SourceControlPane({
       <div className="h-full flex flex-col" data-testid="source-control-pane">
         {/* Header with refresh button */}
         <div className="flex items-center justify-between px-3 h-[49px]">
-          <h2 className="text-sm font-semibold flex items-center gap-1.5">
-            <FileText className="size-4" />
-            Source Control
-          </h2>
+          {titleSlot}
           <div className="flex items-center gap-1">
             {onStartReview && (
               <Tooltip>

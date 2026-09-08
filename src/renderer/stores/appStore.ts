@@ -19,6 +19,7 @@ import type {
   UserTerminalTabState,
   PRStatusMap,
   TerminalPreset,
+  TodoItem,
 } from '../../shared/types';
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
@@ -151,6 +152,11 @@ interface AppStore extends AppState {
   reorderWorktreeSessions: (projectId: string, fromIndex: number, toIndex: number) => void;
   updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
+  // Todo actions (scoped to a repository or a worktree session)
+  addTodo: (scope: TodoScope, text: string) => void;
+  updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
+  removeTodo: (scope: TodoScope, todoId: string) => void;
+
   // Terminal actions
   setActiveTerminal: (worktreeSessionId: string | null) => void;
   updateTerminalStatus: (worktreeSessionId: string, status: TerminalStatus) => void;
@@ -236,6 +242,32 @@ interface AppStore extends AppState {
 }
 
 const defaultState = getDefaultAppState();
+
+// Todos live on either a repository or one of its worktree sessions
+export type TodoScope =
+  | { type: 'repository'; repositoryId: string }
+  | { type: 'worktree'; worktreeSessionId: string };
+
+export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed'>>;
+
+const applyToScopedTodos = (
+  repositories: Repository[],
+  scope: TodoScope,
+  updater: (todos: TodoItem[]) => TodoItem[]
+): Repository[] =>
+  repositories.map((repository) => {
+    if (scope.type === 'repository') {
+      return repository.id === scope.repositoryId
+        ? { ...repository, todos: updater(repository.todos ?? []) }
+        : repository;
+    }
+    return {
+      ...repository,
+      worktreeSessions: repository.worktreeSessions.map((ws) =>
+        ws.id === scope.worktreeSessionId ? { ...ws, todos: updater(ws.todos ?? []) } : ws
+      ),
+    };
+  });
 
 // Helper to generate unique tab ID
 const generateTabId = (): string => {
@@ -802,6 +834,48 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ws.id === worktreeSessionId ? { ...ws, notes } : ws
         ),
       })),
+    }));
+    persistState(get());
+  },
+
+  // Todo actions
+  addTodo: (scope, text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const todo: TodoItem = {
+      id: crypto.randomUUID(),
+      text: trimmed,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    };
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) => [...todos, todo]),
+    }));
+    persistState(get());
+  },
+
+  updateTodo: (scope, todoId, updates) => {
+    const trimmedText = updates.text?.trim();
+    if (updates.text !== undefined && !trimmedText) return;
+
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) =>
+        todos.map((todo) =>
+          todo.id === todoId
+            ? { ...todo, ...updates, ...(trimmedText ? { text: trimmedText } : {}) }
+            : todo
+        )
+      ),
+    }));
+    persistState(get());
+  },
+
+  removeTodo: (scope, todoId) => {
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) =>
+        todos.filter((todo) => todo.id !== todoId)
+      ),
     }));
     persistState(get());
   },

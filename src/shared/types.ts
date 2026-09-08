@@ -130,6 +130,14 @@ export interface CustomShortcut {
   metaKey: boolean;
 }
 
+// A single todo entry. Scoped to either a repository or a worktree session.
+export interface TodoItem {
+  id: string;
+  text: string;
+  completed: boolean;
+  createdAt: string;
+}
+
 export interface WorktreeSession {
   id: string;
   label: string; // Worktree task name
@@ -142,6 +150,7 @@ export interface WorktreeSession {
   portOffset?: number; // Offset within repo's port range (0-99), assigned on creation
   isMainWorktree?: boolean; // True if this is the main worktree session (always first, cannot be deleted)
   notes?: string; // User notes for this worktree
+  todos?: TodoItem[]; // User todos for this worktree
 }
 
 // Individual terminal tab within a worktree
@@ -174,6 +183,7 @@ export interface Repository {
   scriptsConfig?: RepositoryScriptsConfig; // Optional scripts configuration
   portRangeStart?: number; // Base port for this repo (e.g., 10000), assigned on creation
   notes?: string; // User notes for this repository
+  todos?: TodoItem[]; // User todos for this repository
 }
 
 export interface WindowState {

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   Undo2,
   Redo2,
@@ -21,6 +21,7 @@ interface NotesPanelProps {
   worktreeSessionId: string;
   repositoryName: string;
   worktreeLabel: string;
+  titleSlot: ReactNode;
 }
 
 function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
@@ -344,6 +345,7 @@ export function NotesPanel({
   worktreeSessionId,
   repositoryName,
   worktreeLabel,
+  titleSlot,
 }: NotesPanelProps) {
   const { repositories, updateRepositoryNotes, updateWorktreeNotes } = useAppStore();
 
@@ -364,22 +366,22 @@ export function NotesPanel({
   );
 
   return (
-    <div
-      className="absolute inset-0 z-10 flex gap-3 p-3 bg-muted rounded-xl"
-      onClick={(e) => e.stopPropagation()}
-    >
-      <NoteEditor
-        label={`Repository: ${repositoryName}`}
-        value={repoNotes}
-        identity={repositoryId}
-        onChange={handleRepoNotesChange}
-      />
-      <NoteEditor
-        label={`Worktree: ${worktreeLabel}`}
-        value={worktreeNotes}
-        identity={worktreeSessionId}
-        onChange={handleWorktreeNotesChange}
-      />
+    <div className="h-full flex flex-col" data-testid="notes-panel">
+      <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>
+      <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
+        <NoteEditor
+          label={`Repository: ${repositoryName}`}
+          value={repoNotes}
+          identity={repositoryId}
+          onChange={handleRepoNotesChange}
+        />
+        <NoteEditor
+          label={`Worktree: ${worktreeLabel}`}
+          value={worktreeNotes}
+          identity={worktreeSessionId}
+          onChange={handleWorktreeNotesChange}
+        />
+      </div>
     </div>
   );
 }

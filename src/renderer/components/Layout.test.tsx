@@ -906,27 +906,27 @@ describe('Layout', () => {
       expect(pane.style.width).toBe('300px');
     });
 
-    it('respects maximum width of 600px', () => {
+    it('respects maximum width of 1000px', () => {
       setupGitRepo();
       render(<Layout />);
 
       const resizeHandle = document.querySelector('.cursor-ew-resize');
       const pane = screen.getByTestId('right-panel');
 
-      Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true });
+      Object.defineProperty(window, 'innerWidth', { value: 1600, writable: true });
 
       act(() => {
         fireEvent.mouseDown(resizeHandle!);
       });
 
-      // Try to resize to 700px (1200 - 500 = 700), should be clamped to 600
+      // Try to resize to 1100px (1600 - 500 = 1100), should be clamped to 1000
       // (drag updates are rAF-coalesced; mouseup applies the final width)
       act(() => {
         fireEvent.mouseMove(document, { clientX: 500 });
         fireEvent.mouseUp(document);
       });
 
-      expect(pane.style.width).toBe('600px');
+      expect(pane.style.width).toBe('1000px');
     });
 
     it('stops resizing on mouseup', () => {

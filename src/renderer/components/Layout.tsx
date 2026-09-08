@@ -29,6 +29,8 @@ import { TitleBar } from './TitleBar';
 import { UpdateNotification } from './UpdateNotification';
 import { WorktreeBar } from './WorktreeBar/WorktreeBar';
 import { NotesPanel } from '../features/notes/NotesPanel';
+import { TodosPanel } from '../features/todos/TodosPanel';
+import { RightPanelTabs, type RightPanelTab } from './RightPanel/RightPanelTabs';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
 
@@ -187,7 +189,11 @@ export function Layout() {
 
   // Start with home screen on app launch
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'home' });
-  const [notesOpen, setNotesOpen] = useState(false);
+  const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
+  const rightPanelTabs = useMemo(
+    () => <RightPanelTabs active={rightPanelTab} onChange={setRightPanelTab} />,
+    [rightPanelTab]
+  );
 
   // Callback to close overlay screens when session is selected via keyboard
   const handleKeyboardSessionSelect = useCallback(() => {
@@ -292,7 +298,7 @@ export function Layout() {
 
   // File changes pane resize state
   const FILE_CHANGES_MIN_WIDTH = 300;
-  const FILE_CHANGES_MAX_WIDTH = 600;
+  const FILE_CHANGES_MAX_WIDTH = 1000;
   const [fileChangesPaneWidth, setFileChangesPaneWidth] = useState(
     windowState.fileChangesPaneWidth
   );
@@ -968,8 +974,6 @@ export function Layout() {
                   sessionId={activeTerminalId}
                   sessionPath={activeSession?.path}
                   branchName={activeSession?.branchName}
-                  notesOpen={notesOpen}
-                  onToggleNotes={() => setNotesOpen((prev) => !prev)}
                   onError={(message) => toast.error(message)}
                 />
 
@@ -994,16 +998,6 @@ export function Layout() {
 
                 {/* Terminal area */}
                 <div className="flex-1 relative min-h-0 p-2 bg-muted rounded-xl mx-3 mb-3 mt-2">
-                  {/* Notes panel - overlay on top of terminal */}
-                  {notesOpen && activeSessionInfo && (
-                    <NotesPanel
-                      repositoryId={activeSessionInfo.repository.id}
-                      worktreeSessionId={activeSessionInfo.session.id}
-                      repositoryName={activeSessionInfo.repository.name}
-                      worktreeLabel={activeSessionInfo.session.label}
-                    />
-                  )}
-
                   {/* Render terminals for each tab across all worktrees */}
                   {allTerminalConfigs.map((config) => {
                     const isActiveWorktree = config.sessionId === activeTerminalId;
@@ -1067,18 +1061,41 @@ export function Layout() {
                   <div className="w-full h-px bg-border group-hover:bg-primary/30 transition-colors" />
                 </div>
 
-                {/* Top Panel: Source Control */}
-                {activeSession && (
+                {/* Top Panel: Source Control / Notes tabs.
+                    Both stay mounted so git watchers and an in-progress commit
+                    message survive tab switches. */}
+                {activeSession && activeSessionInfo && (
                   <div
                     className="absolute top-0 left-0 right-0 overflow-hidden"
                     style={{ height: `${(1 - userTerminalPanelRatio) * 100}%` }}
                   >
-                    <SourceControlPane
-                      repoPath={activeSession.path}
-                      onViewDiff={handleViewDiff}
-                      onOpenInEditor={handleOpenInEditor}
-                      onStartReview={handleStartReview}
-                    />
+                    <div className={rightPanelTab === 'changes' ? 'h-full' : 'hidden'}>
+                      <SourceControlPane
+                        titleSlot={rightPanelTabs}
+                        repoPath={activeSession.path}
+                        onViewDiff={handleViewDiff}
+                        onOpenInEditor={handleOpenInEditor}
+                        onStartReview={handleStartReview}
+                      />
+                    </div>
+                    <div className={rightPanelTab === 'notes' ? 'h-full' : 'hidden'}>
+                      <NotesPanel
+                        titleSlot={rightPanelTabs}
+                        repositoryId={activeSessionInfo.repository.id}
+                        worktreeSessionId={activeSessionInfo.session.id}
+                        repositoryName={activeSessionInfo.repository.name}
+                        worktreeLabel={activeSessionInfo.session.label}
+                      />
+                    </div>
+                    <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
+                      <TodosPanel
+                        titleSlot={rightPanelTabs}
+                        repositoryId={activeSessionInfo.repository.id}
+                        worktreeSessionId={activeSessionInfo.session.id}
+                        repositoryName={activeSessionInfo.repository.name}
+                        worktreeLabel={activeSessionInfo.session.label}
+                      />
+                    </div>
                   </div>
                 )}
 
