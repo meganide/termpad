@@ -10,6 +10,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { cn } from '@/lib/utils';
+import { ReviewIconButton } from './ReviewIconButton';
 import type { CommentCategory } from '../../../../shared/reviewTypes';
 
 interface CommentInputProps {
@@ -80,7 +81,8 @@ export function CommentInput({
           <span className="text-sm font-medium">Add comment</span>
           <span className="text-xs text-muted-foreground">{lineRange}</span>
         </div>
-        <Button
+        <ReviewIconButton
+          label="Cancel comment"
           variant="ghost"
           size="sm"
           className="h-6 w-6 p-0"
@@ -88,7 +90,7 @@ export function CommentInput({
           data-testid="cancel-button"
         >
           <X className="h-4 w-4" />
-        </Button>
+        </ReviewIconButton>
       </div>
 
       {/* Category selector */}

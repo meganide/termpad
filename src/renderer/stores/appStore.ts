@@ -19,10 +19,12 @@ import type {
   UserTerminalTabState,
   PRStatusMap,
   TerminalPreset,
+  TodoItem,
 } from '../../shared/types';
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
+import { migrateGlobalContent } from '../utils/workspaceScope';
 
 // Track pending idle notifications with their timeouts
 // Key: terminalId, Value: timeout handle
@@ -151,6 +153,17 @@ interface AppStore extends AppState {
   reorderWorktreeSessions: (projectId: string, fromIndex: number, toIndex: number) => void;
   updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
+  // Todo actions (scoped to a repository or a worktree session)
+  addTodo: (scope: TodoScope, text: string) => void;
+  updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
+  removeTodo: (scope: TodoScope, todoId: string) => void;
+  reorderTodos: (scope: TodoScope, orderedTodoIds: string[]) => void;
+  moveGlobalTodoToWorktree: (
+    repositoryId: string,
+    todoId: string,
+    worktreeSessionId: string
+  ) => boolean;
+
   // Terminal actions
   setActiveTerminal: (worktreeSessionId: string | null) => void;
   updateTerminalStatus: (worktreeSessionId: string, status: TerminalStatus) => void;
@@ -236,6 +249,32 @@ interface AppStore extends AppState {
 }
 
 const defaultState = getDefaultAppState();
+
+// Todos live on either a repository or one of its worktree sessions
+export type TodoScope =
+  | { type: 'repository'; repositoryId: string }
+  | { type: 'worktree'; worktreeSessionId: string };
+
+export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority'>>;
+
+const applyToScopedTodos = (
+  repositories: Repository[],
+  scope: TodoScope,
+  updater: (todos: TodoItem[]) => TodoItem[]
+): Repository[] =>
+  repositories.map((repository) => {
+    if (scope.type === 'repository') {
+      return repository.id === scope.repositoryId
+        ? { ...repository, todos: updater(repository.todos ?? []) }
+        : repository;
+    }
+    return {
+      ...repository,
+      worktreeSessions: repository.worktreeSessions.map((ws) =>
+        ws.id === scope.worktreeSessionId ? { ...ws, todos: updater(ws.todos ?? []) } : ws
+      ),
+    };
+  });
 
 // Helper to generate unique tab ID
 const generateTabId = (): string => {
@@ -349,6 +388,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
             console.error('[Store] Failed to migrate localStorage:', e);
           }
         }
+      }
+
+      const globalRepositories = state.repositories.map(migrateGlobalContent);
+      if (
+        globalRepositories.some((repository, index) => repository !== state.repositories[index])
+      ) {
+        state = { ...state, repositories: globalRepositories };
+        await window.storage.saveState(state);
       }
 
       // Migrate old string shortcuts to CustomShortcut objects
@@ -802,6 +849,97 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ws.id === worktreeSessionId ? { ...ws, notes } : ws
         ),
       })),
+    }));
+    persistState(get());
+  },
+
+  // Todo actions
+  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) => {
+    const state = get();
+    const repository = state.repositories.find((item) => item.id === repositoryId);
+    const target = repository?.worktreeSessions.find((session) => session.id === worktreeSessionId);
+    const todo = repository?.todos?.find((item) => item.id === todoId);
+    if (
+      !repository ||
+      !target ||
+      target.isMainWorktree ||
+      !todo ||
+      state.deletingPaths.has(target.path) ||
+      target.todos?.some((item) => item.id === todoId)
+    )
+      return false;
+    // Update both scopes together, preserving the todo's ID, date, completion, and priority.
+    set({
+      repositories: state.repositories.map((item) =>
+        item.id === repositoryId
+          ? {
+              ...item,
+              todos: item.todos?.filter((item) => item.id !== todoId),
+              worktreeSessions: item.worktreeSessions.map((session) =>
+                session.id === worktreeSessionId
+                  ? { ...session, todos: [todo, ...(session.todos ?? [])] }
+                  : session
+              ),
+            }
+          : item
+      ),
+    });
+    persistState(get());
+    return true;
+  },
+  addTodo: (scope, text) => {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+
+    const todo: TodoItem = {
+      id: crypto.randomUUID(),
+      text: trimmed,
+      completed: false,
+      createdAt: new Date().toISOString(),
+    };
+    // Newest first; manual drag ordering takes over from there
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) => [todo, ...todos]),
+    }));
+    persistState(get());
+  },
+
+  updateTodo: (scope, todoId, updates) => {
+    const trimmedText = updates.text?.trim();
+    if (updates.text !== undefined && !trimmedText) return;
+
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) =>
+        todos.map((todo) =>
+          todo.id === todoId
+            ? { ...todo, ...updates, ...(trimmedText ? { text: trimmedText } : {}) }
+            : todo
+        )
+      ),
+    }));
+    persistState(get());
+  },
+
+  removeTodo: (scope, todoId) => {
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) =>
+        todos.filter((todo) => todo.id !== todoId)
+      ),
+    }));
+    persistState(get());
+  },
+
+  reorderTodos: (scope, orderedTodoIds) => {
+    set((state) => ({
+      repositories: applyToScopedTodos(state.repositories, scope, (todos) => {
+        const byId = new Map(todos.map((todo) => [todo.id, todo]));
+        const reordered = orderedTodoIds
+          .map((id) => byId.get(id))
+          .filter((todo): todo is TodoItem => todo !== undefined);
+        // Anything the caller left out keeps its place at the end
+        const missing = todos.filter((todo) => !orderedTodoIds.includes(todo.id));
+        return [...reordered, ...missing];
+      }),
     }));
     persistState(get());
   },

@@ -378,7 +378,11 @@ export function Sidebar({
       {/* Resize handle */}
       <div
         className="absolute right-0 top-0 h-full w-1 cursor-ew-resize hover:bg-primary/20 z-10"
-        onMouseDown={onResizeStart}
+        onMouseDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          onResizeStart();
+        }}
       />
     </aside>
   );

@@ -78,6 +78,8 @@ export function FileTreeFile({
         isSelected && 'bg-muted'
       )}
       role="button"
+      aria-label={file.path}
+      aria-current={isSelected ? 'true' : undefined}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
@@ -89,21 +91,29 @@ export function FileTreeFile({
       <TreeGuide depth={depth} isLast={isLast} />
 
       {/* Viewed indicator - clickable */}
-      <button
-        className="flex-shrink-0 p-0.5 rounded hover:bg-muted-foreground/20 transition-colors"
-        onClick={handleToggleViewed}
-        aria-label={isViewed ? 'Mark as not viewed' : 'Mark as viewed'}
-        data-testid="toggle-viewed-button"
-      >
-        {isViewed ? (
-          <CheckCircle className="h-4 w-4 text-green-500" data-testid="viewed-icon" />
-        ) : (
-          <Circle className="h-4 w-4 text-muted-foreground" data-testid="unviewed-icon" />
-        )}
-      </button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <button
+            className="flex-shrink-0 p-0.5 rounded hover:bg-muted-foreground/20 transition-colors"
+            onClick={handleToggleViewed}
+            aria-label={isViewed ? 'Mark as not viewed' : 'Mark as viewed'}
+            data-testid="toggle-viewed-button"
+          >
+            {isViewed ? (
+              <CheckCircle className="h-4 w-4 text-green-500" data-testid="viewed-icon" />
+            ) : (
+              <Circle className="h-4 w-4 text-muted-foreground" data-testid="unviewed-icon" />
+            )}
+          </button>
+        </TooltipTrigger>
+        <TooltipContent>{isViewed ? 'Mark as not viewed' : 'Mark as viewed'}</TooltipContent>
+      </Tooltip>
 
       {/* File icon */}
-      <FileIcon path={file.path} className="h-4 w-4 flex-shrink-0 text-muted-foreground" />
+      <FileIcon
+        path={file.path}
+        className="h-4 w-4 flex-shrink-0 text-muted-foreground @max-[240px]/review-tree:hidden"
+      />
 
       {/* Status indicator */}
       <span className={cn('text-xs font-mono flex-shrink-0', getStatusColor(file.status))}>
@@ -131,7 +141,7 @@ export function FileTreeFile({
       </Tooltip>
 
       {/* Stats */}
-      <div className="flex items-baseline gap-1 flex-shrink-0 text-xs font-mono">
+      <div className="flex items-baseline gap-1 flex-shrink-0 text-xs font-mono @max-[240px]/review-tree:hidden">
         {file.additions > 0 && <span className="text-green-500">+{file.additions}</span>}
         {file.deletions > 0 && <span className="text-red-500">-{file.deletions}</span>}
         {file.isBinary && <span className="text-muted-foreground">binary</span>}

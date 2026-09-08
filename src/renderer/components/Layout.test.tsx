@@ -249,10 +249,12 @@ vi.mock('../hooks/useWorkingTreeDiff', () => ({
 vi.mock('../features/source-control', () => ({
   SourceControlPane: ({
     repoPath,
+    titleSlot,
     onViewDiff,
     onOpenInEditor,
   }: {
     repoPath: string | null;
+    titleSlot?: React.ReactNode;
     onViewDiff?: (file: {
       path: string;
       type: string;
@@ -267,6 +269,7 @@ vi.mock('../features/source-control', () => ({
     }) => void;
   }) => (
     <div data-testid="source-control-pane">
+      {titleSlot}
       SourceControlPane
       <span data-testid="repo-path">{repoPath}</span>
       <button
@@ -324,6 +327,20 @@ vi.mock('../stores/reviewStore', () => ({
     openWorkingTreeReview: vi.fn(),
     setSelectedFile: vi.fn(),
   })),
+}));
+
+vi.mock('../features/review/ReviewPanel', () => ({
+  ReviewPanel: ({
+    expanded,
+    onToggleExpanded,
+  }: {
+    expanded: boolean;
+    onToggleExpanded: () => void;
+  }) => (
+    <div data-testid="review-panel">
+      <button onClick={onToggleExpanded}>{expanded ? 'Collapse review' : 'Expand review'}</button>
+    </div>
+  ),
 }));
 
 describe('Layout', () => {
@@ -916,27 +933,27 @@ describe('Layout', () => {
       expect(pane.style.width).toBe('300px');
     });
 
-    it('respects maximum width of 600px', () => {
+    it('respects maximum width of 2000px', () => {
       setupGitRepo();
       render(<Layout />);
 
       const resizeHandle = document.querySelector('.cursor-ew-resize');
       const pane = screen.getByTestId('right-panel');
 
-      Object.defineProperty(window, 'innerWidth', { value: 1200, writable: true });
+      Object.defineProperty(window, 'innerWidth', { value: 2600, writable: true });
 
       act(() => {
         fireEvent.mouseDown(resizeHandle!);
       });
 
-      // Try to resize to 700px (1200 - 500 = 700), should be clamped to 600
+      // Try to resize to 2100px (2600 - 500 = 2100), should be clamped to 2000
       // (drag updates are rAF-coalesced; mouseup applies the final width)
       act(() => {
         fireEvent.mouseMove(document, { clientX: 500 });
         fireEvent.mouseUp(document);
       });
 
-      expect(pane.style.width).toBe('600px');
+      expect(pane.style.width).toBe('2000px');
     });
 
     it('stops resizing on mouseup', () => {
@@ -969,6 +986,71 @@ describe('Layout', () => {
 
       // Width should remain at 400px since mouseup stopped resizing
       expect(pane.style.width).toBe('400px');
+    });
+
+    it('gives Changes the full panel without a terminal split', () => {
+      setupGitRepo();
+      render(<Layout />);
+
+      expect(screen.getByTestId('user-terminal-panel')).not.toBeVisible();
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
+    });
+
+    it.each(['notes', 'todos'])('gives the %s tab the full right panel height', (tab) => {
+      setupGitRepo();
+      render(<Layout />);
+
+      act(() => {
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+      });
+
+      expect(screen.getByTestId(`${tab}-panel`)).toBeVisible();
+      expect(screen.getByTestId('right-panel-top')).toHaveStyle({ height: '100%' });
+      expect(screen.getByTestId('user-terminal-panel')).not.toBeVisible();
+      // Nothing left to drag once the split is gone
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
+    });
+
+    it('shows user terminals in their own tab', () => {
+      setupGitRepo();
+      render(<Layout />);
+
+      act(() => {
+        fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
+      });
+      act(() => {
+        fireEvent.click(screen.getByTestId('right-panel-tab-terminals'));
+      });
+
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(document.querySelector('.cursor-ns-resize')).not.toBeInTheDocument();
+    });
+
+    it('opens the Terminals tab with Ctrl+U', () => {
+      setupGitRepo();
+      render(<Layout />);
+      fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
+      fireEvent.keyDown(window, { key: 'u', ctrlKey: true });
+      expect(screen.getByTestId('right-panel-tab-terminals')).toHaveAttribute(
+        'aria-selected',
+        'true'
+      );
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(useAppStore.getState().focusArea).toBe('userTerminal');
+    });
+
+    it('expands review inline and restores the previous panel width', () => {
+      setupGitRepo();
+      render(<Layout />);
+      const panel = screen.getByTestId('right-panel');
+      const width = panel.style.width;
+      fireEvent.click(screen.getByTestId('right-panel-tab-review'));
+      expect(screen.getByTestId('review-panel')).toBeVisible();
+      fireEvent.click(screen.getByText('Expand review'));
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByText('Collapse review'));
+      expect(panel.style.width).toBe(width);
+      expect(screen.queryByTestId('diff-review-modal')).not.toBeInTheDocument();
     });
   });
 
@@ -1415,7 +1497,12 @@ describe('Layout', () => {
       useAppStore.setState({
         repositories: [
           { ...repo, worktreeSessions: [repo.worktreeSessions[0]] },
-          { ...repo, id: 'repo-2', name: 'other-repo', worktreeSessions: [repo.worktreeSessions[1]] },
+          {
+            ...repo,
+            id: 'repo-2',
+            name: 'other-repo',
+            worktreeSessions: [repo.worktreeSessions[1]],
+          },
         ],
       });
       const user = userEvent.setup();
@@ -1440,9 +1527,17 @@ describe('Layout', () => {
       async (status) => {
         setUpTwoAgents();
         useAppStore.setState({
-          terminals: new Map([['session-2:tab-2', {
-            id: 'session-2:tab-2', status, lastActivityTime: Date.now(), hasReceivedOutput: true,
-          }]]),
+          terminals: new Map([
+            [
+              'session-2:tab-2',
+              {
+                id: 'session-2:tab-2',
+                status,
+                lastActivityTime: Date.now(),
+                hasReceivedOutput: true,
+              },
+            ],
+          ]),
         });
         const user = userEvent.setup();
         render(<Layout />);

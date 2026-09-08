@@ -20,6 +20,8 @@ export function FileTreeFolder({ node, depth, isLast, isExpanded, onToggle }: Fi
         'hover:bg-muted/50 rounded-md'
       )}
       role="button"
+      aria-expanded={isExpanded}
+      title={`${isExpanded ? 'Collapse' : 'Expand'} ${node.path}`}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {

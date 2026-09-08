@@ -7,6 +7,8 @@ import { HunkSeparator } from './HunkSeparator';
 import { CommentInput } from './CommentInput';
 import { CommentThread } from './CommentThread';
 import { useReviewStore } from '@/stores/reviewStore';
+import { useAppStore } from '@/stores/appStore';
+import { toast } from 'sonner';
 import type {
   DiffFile,
   DiffViewMode,
@@ -169,6 +171,23 @@ export const FileDiff = forwardRef<HTMLDivElement, FileDiffProps>(
     const contentRef = useRef<HTMLDivElement>(null);
     const [isExpandingAll, setIsExpandingAll] = useState(false);
     const [showLargeDiff, setShowLargeDiff] = useState(false);
+    const preferredEditor = useAppStore((state) => state.settings.preferredEditor);
+    const handleOpenInEditor = useCallback(async () => {
+      if (!projectPath || file.status === 'deleted') return;
+      const fullPath = /[/\\]$/.test(projectPath)
+        ? projectPath + file.path
+        : `${projectPath}/${file.path}`;
+      const editor = preferredEditor === 'folder' ? 'cursor' : preferredEditor;
+      try {
+        const result = await window.electronAPI.openInEditor(fullPath, editor, projectPath);
+        if (!result.success)
+          toast.error(`Failed to open in editor: ${result.error ?? 'Unknown error'}`);
+      } catch (error) {
+        toast.error(
+          `Failed to open in editor: ${error instanceof Error ? error.message : 'Unknown error'}`
+        );
+      }
+    }, [file.path, file.status, preferredEditor, projectPath]);
 
     // Calculate total line count to determine if diff is "large"
     const totalLineCount = useMemo(() => {
@@ -648,6 +667,7 @@ export const FileDiff = forwardRef<HTMLDivElement, FileDiffProps>(
           onToggleExpand={onToggleExpand}
           onMarkViewed={onMarkViewed}
           onExpandAll={handleExpandAll}
+          onOpenInEditor={projectPath ? handleOpenInEditor : undefined}
         />
 
         {isExpanded && (

@@ -7,12 +7,14 @@ import {
   File,
   ChevronsUpDown,
   Loader2,
+  ExternalLink,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 import type { DiffFile, DiffFileStatus } from '../../../../shared/reviewTypes';
+import { ReviewIconButton } from './ReviewIconButton';
 
 interface FileDiffHeaderProps {
   file: DiffFile;
@@ -24,6 +26,7 @@ interface FileDiffHeaderProps {
   onMarkViewed: () => void;
   /** Callback to expand all hidden context lines in the file */
   onExpandAll?: () => void;
+  onOpenInEditor?: () => void;
 }
 
 function FileIcon({ path, className }: { path: string; className?: string }) {
@@ -61,6 +64,7 @@ export function FileDiffHeader({
   onToggleExpand,
   onMarkViewed,
   onExpandAll,
+  onOpenInEditor,
 }: FileDiffHeaderProps) {
   const statusBadge = getStatusBadge(file.status);
 
@@ -73,15 +77,26 @@ export function FileDiffHeader({
       data-testid="file-diff-header"
     >
       {/* Expand/collapse button */}
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-6 w-6 p-0"
-        onClick={onToggleExpand}
-        data-testid="expand-toggle"
-      >
-        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-6 w-6 p-0"
+            onClick={onToggleExpand}
+            data-testid="expand-toggle"
+            aria-label={isExpanded ? 'Collapse file diff' : 'Expand file diff'}
+            aria-expanded={isExpanded}
+          >
+            {isExpanded ? (
+              <ChevronDown className="h-4 w-4" />
+            ) : (
+              <ChevronRight className="h-4 w-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>{isExpanded ? 'Collapse file diff' : 'Expand file diff'}</TooltipContent>
+      </Tooltip>
 
       {/* Expand All button - expands all hidden context lines */}
       {onExpandAll && (
@@ -90,7 +105,7 @@ export function FileDiffHeader({
             <Button
               variant="ghost"
               size="sm"
-              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground"
+              className="h-6 px-1.5 text-xs text-muted-foreground hover:text-foreground @max-[480px]/review:hidden"
               onClick={(e) => {
                 e.stopPropagation();
                 onExpandAll();
@@ -119,7 +134,12 @@ export function FileDiffHeader({
         {file.oldPath && file.status === 'renamed' && (
           <span className="text-xs text-muted-foreground truncate">(from {file.oldPath})</span>
         )}
-        <span className={cn('text-xs px-1.5 py-0.5 rounded', statusBadge.className)}>
+        <span
+          className={cn(
+            'text-xs px-1.5 py-0.5 rounded @max-[480px]/review:hidden',
+            statusBadge.className
+          )}
+        >
           {statusBadge.text}
         </span>
       </div>
@@ -137,6 +157,21 @@ export function FileDiffHeader({
           </span>
         )}
       </div>
+
+      {onOpenInEditor && (
+        <ReviewIconButton
+          label={
+            file.status === 'deleted'
+              ? 'Deleted file is not available in the editor'
+              : `Open ${file.path} in editor`
+          }
+          className="size-6 shrink-0 text-muted-foreground hover:text-foreground"
+          disabled={file.status === 'deleted'}
+          onClick={onOpenInEditor}
+        >
+          <ExternalLink className="size-4" />
+        </ReviewIconButton>
+      )}
 
       {/* Mark as viewed checkbox */}
       <label
