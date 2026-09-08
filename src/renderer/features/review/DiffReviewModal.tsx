@@ -66,27 +66,24 @@ export function DiffReviewModal({
 
   const fileRefs = useRef<Map<string, HTMLDivElement>>(new Map());
 
-  // Compute initial expanded files based on review branches
+  // Files start open; remember only explicit collapses within this comparison.
+  // Hidden context lines are controlled separately by FileDiff's Expand All action.
   const reviewKey = currentReview
     ? `${projectPath}:${currentReview.baseBranch}:${currentReview.compareBranch}`
     : '';
-  const initialExpanded = useMemo(() => {
-    if (!currentReview?.files) return new Set<string>();
-    return new Set(currentReview.files.slice(0, 3).map((f) => f.path));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+  const [collapsedFiles, setCollapsedFiles] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setCollapsedFiles(new Set());
   }, [reviewKey]);
 
-  const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set());
-
-  // Sync expanded files when initial state changes (new review opened)
-  // Also ensure selected file is expanded if pre-selected
   useEffect(() => {
-    const expanded = new Set(initialExpanded);
-    setExpandedFiles(expanded);
-  }, [initialExpanded]);
-
-  useEffect(() => {
-    if (selectedFile) setExpandedFiles((prev) => new Set([...prev, selectedFile]));
+    if (selectedFile)
+      setCollapsedFiles((prev) => {
+        const next = new Set(prev);
+        next.delete(selectedFile);
+        return next;
+      });
   }, [selectedFile]);
 
   // Track if initial scroll has been done for this modal open
@@ -144,7 +141,7 @@ export function DiffReviewModal({
         cancelAnimationFrame(rafId);
       }
     };
-  }, [isOpen, isLoading, expandedFiles, embedded]);
+  }, [isOpen, isLoading, collapsedFiles, embedded]);
 
   // Compute unviewed files for the diff viewer content area
   // Depends on reviewData?.files to recompute when viewed status changes
@@ -210,7 +207,7 @@ export function DiffReviewModal({
   );
 
   const handleToggleExpand = useCallback((filePath: string) => {
-    setExpandedFiles((prev) => {
+    setCollapsedFiles((prev) => {
       const next = new Set(prev);
       if (next.has(filePath)) {
         next.delete(filePath);
@@ -226,17 +223,17 @@ export function DiffReviewModal({
       if (isFileViewed(filePath)) {
         await markFileUnviewed(filePath);
         // Expand the file when unmarking as viewed
-        setExpandedFiles((prev) => {
+        setCollapsedFiles((prev) => {
           const next = new Set(prev);
-          next.add(filePath);
+          next.delete(filePath);
           return next;
         });
       } else {
         await markFileViewed(filePath);
         // Collapse the file when marking as viewed
-        setExpandedFiles((prev) => {
+        setCollapsedFiles((prev) => {
           const next = new Set(prev);
-          next.delete(filePath);
+          next.add(filePath);
           return next;
         });
       }
@@ -426,7 +423,7 @@ export function DiffReviewModal({
                   }}
                   file={file}
                   viewMode={currentReview.viewMode}
-                  isExpanded={expandedFiles.has(file.path)}
+                  isExpanded={!collapsedFiles.has(file.path)}
                   isViewed={isFileViewed(file.path)}
                   selectedLines={selectedFile === file.path ? selectedLines : EMPTY_LINE_SET}
                   linesWithComments={getLinesWithComments(file.path)}

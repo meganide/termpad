@@ -40,6 +40,34 @@ beforeEach(() => {
 });
 
 describe('ReviewPanel', () => {
+  it('starts every file open without expanding hidden context and preserves manual collapses', async () => {
+    const files = ['a.txt', 'b.txt', 'c.txt', 'd.txt', 'e.txt'].map((path) => file(path));
+    vi.mocked(window.terminal.getWorkingTreeDiff).mockResolvedValue({
+      files,
+      headCommit: 'abc',
+      isDirty: true,
+    });
+    const { rerender } = render(<ReviewPanel {...props} />);
+    await waitFor(() => expect(screen.getAllByTestId('file-diff-content')).toHaveLength(5));
+    expect(window.terminal.getFileLines).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('expanded-lines')).not.toBeInTheDocument();
+    const firstFile = screen.getAllByTestId('file-diff')[0];
+    fireEvent.click(within(firstFile).getByRole('button', { name: 'Collapse file diff' }));
+    rerender(<ReviewPanel {...props} active={false} />);
+    rerender(<ReviewPanel {...props} active />);
+    expect(within(firstFile).queryByTestId('file-diff-content')).not.toBeInTheDocument();
+    vi.mocked(window.terminal.getWorkingTreeDiff).mockResolvedValue({
+      files: [...files, file('new.txt')],
+      headCommit: 'abc',
+      isDirty: true,
+    });
+    await waitFor(() => expect(screen.getByLabelText('Refresh review')).toBeEnabled());
+    fireEvent.click(screen.getByLabelText('Refresh review'));
+    await screen.findByText('new.txt', { selector: 'span' });
+    expect(screen.getAllByTestId('file-diff-content')).toHaveLength(5);
+    expect(within(firstFile).queryByTestId('file-diff-content')).not.toBeInTheDocument();
+  });
+
   it('switches bases and keeps drafts when switching tabs and bases', async () => {
     const { rerender } = render(<ReviewPanel {...props} />);
     await screen.findByText('local.txt', { selector: 'span' });

@@ -1,7 +1,9 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { FileDiff } from './FileDiff';
 import { useReviewStore } from '@/stores/reviewStore';
+import { useAppStore } from '@/stores/appStore';
+import { toast } from 'sonner';
 import type { DiffFile } from '../../../../shared/reviewTypes';
 
 describe('FileDiff', () => {
@@ -41,6 +43,73 @@ describe('FileDiff', () => {
     onCommentClick: vi.fn(),
     onLineClick: vi.fn(),
   };
+
+  describe('opening files in the configured editor', () => {
+    const originalEditor = useAppStore.getState().settings.preferredEditor;
+    beforeEach(() => {
+      vi.mocked(window.electronAPI.openInEditor).mockReset().mockResolvedValue({ success: true });
+    });
+    afterEach(() => {
+      useAppStore.setState((state) => ({
+        settings: { ...state.settings, preferredEditor: originalEditor },
+      }));
+    });
+
+    it.each(['vscode', 'cursor', 'folder'] as const)(
+      'opens the current path in %s with its worktree root',
+      async (preferredEditor) => {
+        useAppStore.setState((state) => ({ settings: { ...state.settings, preferredEditor } }));
+        render(
+          <FileDiff
+            {...defaultProps}
+            projectPath="/worktrees/my task/"
+            isExpanded={false}
+            file={{
+              ...mockFile,
+              path: 'src/new name.ts',
+              oldPath: 'src/old.ts',
+              status: 'renamed',
+            }}
+          />
+        );
+        fireEvent.click(screen.getByRole('button', { name: 'Open src/new name.ts in editor' }));
+        await waitFor(() =>
+          expect(window.electronAPI.openInEditor).toHaveBeenCalledWith(
+            '/worktrees/my task/src/new name.ts',
+            preferredEditor === 'folder' ? 'cursor' : preferredEditor,
+            '/worktrees/my task/'
+          )
+        );
+        expect(screen.queryByTestId('file-diff-content')).not.toBeInTheDocument();
+      }
+    );
+
+    it('disables opening deleted files', () => {
+      render(
+        <FileDiff {...defaultProps} projectPath="/repo" file={{ ...mockFile, status: 'deleted' }} />
+      );
+      const button = screen.getByRole('button', {
+        name: 'Deleted file is not available in the editor',
+      });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+      expect(window.electronAPI.openInEditor).not.toHaveBeenCalled();
+    });
+
+    it('reports editor launch failures', async () => {
+      const errorToast = vi.spyOn(toast, 'error');
+      vi.mocked(window.electronAPI.openInEditor).mockResolvedValueOnce({
+        success: false,
+        error: 'Editor unavailable',
+      });
+      render(<FileDiff {...defaultProps} projectPath="/repo" />);
+      fireEvent.click(screen.getByRole('button', { name: 'Open src/example.ts in editor' }));
+      await waitFor(() =>
+        expect(errorToast).toHaveBeenCalledWith('Failed to open in editor: Editor unavailable')
+      );
+      errorToast.mockRestore();
+    });
+  });
 
   describe('Basic rendering', () => {
     it('should render the file diff container', () => {
