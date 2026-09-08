@@ -166,29 +166,29 @@ describe('TabBar', () => {
     vi.clearAllMocks();
   });
 
-  it('offers both split directions, specific tab context actions, and a single view control', () => {
-    const onSplitTab = vi.fn();
-    const onClearSplit = vi.fn();
-    render(
-      <TabBar
-        {...defaultProps}
-        onSplitTab={onSplitTab}
-        onClearSplit={onClearSplit}
-        splitView={{ direction: 'horizontal', tabIds: ['tab-1', 'tab-2'], sizes: [50, 50] }}
-      />
-    );
-    fireEvent.click(screen.getByRole('button', { name: 'Split right (side by side)' }));
-    expect(onSplitTab).toHaveBeenLastCalledWith('tab-1', 'horizontal');
-    fireEvent.click(screen.getByRole('button', { name: 'Split down (stacked)' }));
-    expect(onSplitTab).toHaveBeenLastCalledWith('tab-1', 'vertical');
-    fireEvent.click(screen.getByRole('button', { name: 'Single terminal view' }));
-    expect(onClearSplit).toHaveBeenCalled();
+  it('toggles all worktree terminals with a single grid control', () => {
+    const onToggleGridView = vi.fn();
+    const { rerender } = render(<TabBar {...defaultProps} onToggleGridView={onToggleGridView} />);
+    const button = screen.getByRole('button', { name: 'Worktree grid view' });
+    expect(button).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(button);
+    expect(onToggleGridView).toHaveBeenCalledOnce();
+    rerender(<TabBar {...defaultProps} isGridView onToggleGridView={onToggleGridView} />);
+    expect(button).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.queryByRole('button', { name: /Split right|Split down/ })
+    ).not.toBeInTheDocument();
   });
 
-  it('disables splits until another tab is open', () => {
-    render(<TabBar {...defaultProps} tabs={[mockTabs[0]]} onSplitTab={vi.fn()} />);
-    expect(screen.getByRole('button', { name: 'Split right (side by side)' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Split down (stacked)' })).toBeDisabled();
+  it('requires two tabs to enter grid view but lets users exit after closing tabs', () => {
+    const { rerender } = render(
+      <TabBar {...defaultProps} tabs={[mockTabs[0]]} onToggleGridView={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: 'Worktree grid view' })).toBeDisabled();
+    rerender(
+      <TabBar {...defaultProps} tabs={[mockTabs[0]]} isGridView onToggleGridView={vi.fn()} />
+    );
+    expect(screen.getByRole('button', { name: 'Worktree grid view' })).toBeEnabled();
   });
 
   it('renders tabs correctly', () => {

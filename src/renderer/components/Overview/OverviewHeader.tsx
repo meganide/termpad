@@ -1,8 +1,15 @@
-import { LayoutGrid, X } from 'lucide-react';
+import { Eye, EyeOff, LayoutGrid, X } from 'lucide-react';
 import type { Repository } from '../../../shared/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Button } from '../ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../ui/tooltip';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '../ui/dropdown-menu';
 
 interface OverviewHeaderProps {
   agentCount: number;
@@ -10,6 +17,14 @@ interface OverviewHeaderProps {
   repositories?: Repository[];
   repositoryId?: string | null;
   onRepositoryChange?: (repositoryId: string | null) => void;
+  hiddenAgents?: {
+    terminalId: string;
+    tabName: string;
+    repositoryName: string;
+    worktreeLabel: string;
+  }[];
+  onUnhideAgent?: (terminalId: string) => void;
+  onUnhideAll?: () => void;
 }
 
 export function OverviewHeader({
@@ -18,6 +33,9 @@ export function OverviewHeader({
   repositories = [],
   repositoryId,
   onRepositoryChange,
+  hiddenAgents = [],
+  onUnhideAgent,
+  onUnhideAll,
 }: OverviewHeaderProps) {
   return (
     <div
@@ -26,12 +44,45 @@ export function OverviewHeader({
     >
       <div className="flex items-center gap-2.5">
         <LayoutGrid className="h-4 w-4 text-primary" />
-        <span className="text-sm font-medium">
-          {repositoryId ? 'Repository split view' : 'Agent overview'}
-        </span>
+        <span className="text-sm font-medium">Agent overview</span>
         <span className="text-xs text-muted-foreground/60">({agentCount})</span>
       </div>
       <div className="flex items-center gap-2">
+        {hiddenAgents.length > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="sm">
+                <EyeOff className="h-4 w-4" />
+                Hidden ({hiddenAgents.length})
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="max-h-80 max-w-80 overflow-y-auto"
+              onEscapeKeyDown={(event) => event.stopPropagation()}
+            >
+              <DropdownMenuItem onSelect={onUnhideAll}>
+                <Eye className="h-4 w-4" />
+                Show all hidden agents
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {hiddenAgents.map((agent) => (
+                <DropdownMenuItem
+                  key={agent.terminalId}
+                  onSelect={() => onUnhideAgent?.(agent.terminalId)}
+                >
+                  <Eye className="h-4 w-4 shrink-0" />
+                  <span className="min-w-0">
+                    <span className="block truncate">{agent.tabName}</span>
+                    <span className="block truncate text-xs text-muted-foreground">
+                      {agent.repositoryName} / {agent.worktreeLabel}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {onRepositoryChange && (
           <Select
             value={repositoryId ?? 'all'}
@@ -51,7 +102,7 @@ export function OverviewHeader({
           </Select>
         )}
         <span className="hidden text-xs text-muted-foreground sm:inline">
-          {repositoryId ? 'Click a terminal to interact' : '↑ ↓ ← → navigate · Enter open'}
+          Click a terminal to interact · Right-click for actions
         </span>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -65,9 +116,7 @@ export function OverviewHeader({
               <X className="h-4 w-4" />
             </Button>
           </TooltipTrigger>
-          <TooltipContent>
-            {repositoryId ? 'Close repository split view (Ctrl+O)' : 'Close overview (Esc)'}
-          </TooltipContent>
+          <TooltipContent>Close overview (Ctrl+O)</TooltipContent>
         </Tooltip>
       </div>
     </div>

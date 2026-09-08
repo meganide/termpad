@@ -62,6 +62,7 @@ interface RepositoryTreeProps {
   onRepositoryDelete: (repository: Repository) => void;
   onOpenRepositorySettings: (repository: Repository) => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
+  activeOverviewRepositoryId?: string | null;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onReorderSessions: (repositoryId: string, fromIndex: number, toIndex: number) => void;
   onReorderRepositories: (fromIndex: number, toIndex: number) => void;
@@ -96,6 +97,7 @@ export function RepositoryTree({
   onRepositoryDelete,
   onOpenRepositorySettings,
   onOpenRepositoryOverview,
+  activeOverviewRepositoryId,
   onWorktreeRemove,
   onReorderSessions,
   onReorderRepositories,
@@ -144,6 +146,7 @@ export function RepositoryTree({
               onDelete={onRepositoryDelete}
               onOpenSettings={onOpenRepositorySettings}
               onOpenRepositoryOverview={onOpenRepositoryOverview}
+              isOverviewActive={activeOverviewRepositoryId === repository.id}
               onWorktreeRemove={onWorktreeRemove}
               onAssignShortcut={setShortcutDialogSession}
               sessionDragState={sessionDragState}
@@ -214,6 +217,7 @@ interface RepositoryItemProps {
   onDelete: (repository: Repository) => void;
   onOpenSettings: (repository: Repository) => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
+  isOverviewActive?: boolean;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onAssignShortcut: (session: WorktreeSession) => void;
   // Session drag props
@@ -252,6 +256,7 @@ function RepositoryItem({
   onDelete,
   onOpenSettings,
   onOpenRepositoryOverview,
+  isOverviewActive = false,
   onWorktreeRemove,
   onAssignShortcut,
   sessionDragState,
@@ -390,17 +395,21 @@ function RepositoryItem({
               <Tooltip>
                 <TooltipTrigger asChild>
                   <button
-                    aria-label={`Split agents in ${repository.name}`}
+                    aria-label={`Agent overview for ${repository.name}`}
+                    aria-pressed={isOverviewActive}
                     onClick={(event) => {
                       event.stopPropagation();
                       onOpenRepositoryOverview(repository.id);
                     }}
-                    className="rounded p-1 text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    className={cn(
+                      'rounded p-1 text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+                      isOverviewActive && 'bg-sidebar-accent text-primary'
+                    )}
                   >
                     <LayoutGrid className="h-3.5 w-3.5" />
                   </button>
                 </TooltipTrigger>
-                <TooltipContent side="right">Split all agents in this repository</TooltipContent>
+                <TooltipContent side="right">Show repository in agent overview</TooltipContent>
               </Tooltip>
             )}
             <Tooltip>

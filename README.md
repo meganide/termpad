@@ -15,8 +15,8 @@ An AI orchestration tool for managing multiple AI coding agent sessions. Run Cla
 - **Multiple terminal sessions** - Run Claude Code, Gemini CLI, Codex, or any other AI coding agent installed on your machine in parallel
 - **Git worktree integration** - Create and manage worktrees directly from the sidebar for isolated feature branches
 - **Terminal tabs** - Open multiple terminal tabs per worktree (Claude, Gemini, plain shell, custom presets)
-- **Worktree splits** - View open tabs side by side or stacked, with resizable panes
-- **Repository split view** - Interact with all open agents across a repository's worktrees in one live grid
+- **Worktree grid view** - Show all open tabs together with a single grid toggle
+- **Agent overview** - Interact with all open agents in one live grid, with an optional repository filter
 - **Built-in diff viewer** - Review code changes across branches without leaving the app
 - **Source control** - Stage, commit, push, and manage git operations from the UI
 - **Desktop notifications** - Get notified when long-running terminal tasks complete
@@ -25,11 +25,11 @@ An AI orchestration tool for managing multiple AI coding agent sessions. Run Cla
 
 ### Terminal split views
 
-Within a worktree, open at least two terminal tabs and use **Split right** or **Split down** in the tab bar. Right-click a tab to choose that terminal for the split. Click a pane to focus it; selecting a hidden tab replaces the focused pane. Drag a divider to resize, or focus it and use the arrow keys. Double-click a divider to balance its panes.
+Within a worktree, open at least two terminal tabs and click the **Worktree grid view** icon in the tab bar. All open tabs appear in an automatic grid, and new tabs join it immediately. Click any terminal to interact with it. Click the grid icon again to return to the selected tab, or use a pane's expand button to show only that terminal.
 
-Use the grid button beside a repository's name, or its **Split repository agents** context menu action, to show all its open terminals across worktrees. Each terminal accepts input independently. The overview header lets you switch repositories or return to the global agent overview.
+Use the grid button beside a repository's name, or its **Open agent overview** context menu action, to open the agent overview filtered to that repository. The overview fills the terminal area with a live grid. Its repository filter lets you switch repositories or show **All repositories**. Click a terminal to work in it, or right-click and choose **Open in worktree** to navigate to its worktree. Copy, paste, and close are available in the same menu. Choose **Hide from overview** to remove an agent from the grid while keeping its terminal running. Use **Hidden** in the header to restore individual agents or all hidden agents in the current repository filter. Hidden selections are remembered while the app is open and do not affect worktree views.
 
-Removing a pane from a worktree split keeps its terminal running. **Single terminal view** returns to the focused tab. Worktree layouts and pane sizes are retained when switching worktrees during the current app session.
+Switching views keeps terminals running and preserves scrollback. Each worktree remembers its grid setting during the current app session.
 
 ## Platform Support
 

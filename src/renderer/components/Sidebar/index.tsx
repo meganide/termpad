@@ -25,6 +25,7 @@ interface SidebarProps {
   onToggleOverview: () => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
   isOverviewMode: boolean;
+  activeOverviewRepositoryId?: string | null;
   hasAgents: boolean;
 }
 
@@ -42,6 +43,7 @@ export function Sidebar({
   onToggleOverview,
   onOpenRepositoryOverview,
   isOverviewMode,
+  activeOverviewRepositoryId,
   hasAgents,
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -320,6 +322,7 @@ export function Sidebar({
               onRepositoryDelete={onRepositoryDelete}
               onOpenRepositorySettings={onOpenRepositorySettings}
               onOpenRepositoryOverview={onOpenRepositoryOverview}
+              activeOverviewRepositoryId={activeOverviewRepositoryId}
               onWorktreeRemove={onWorktreeRemove}
               onReorderSessions={reorderWorktreeSessions}
               onReorderRepositories={handleReorderRepositories}

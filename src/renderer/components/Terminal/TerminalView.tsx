@@ -34,6 +34,7 @@ interface TerminalViewProps {
   terminalId?: string; // Optional separate terminal ID (for tabs: worktreeSessionId:tabId)
   cwd: string;
   isVisible: boolean;
+  useParentContextMenu?: boolean;
   isFocused?: boolean; // Visible split panes resize, but only the active pane receives focus
   initialCommand?: string; // Command to auto-run on terminal start (e.g., 'claude', 'gemini')
   matchSystemBackground?: boolean; // Use bg-background matching colors instead of default terminal colors
@@ -43,6 +44,8 @@ interface TerminalViewProps {
 
 export interface TerminalViewHandle {
   copyAllOutput: () => Promise<void>;
+  copySelection: () => Promise<void>;
+  paste: () => Promise<void>;
 }
 
 // System background color to override theme background when matchSystemBackground is true
@@ -64,6 +67,7 @@ export const TerminalView = memo(
       cwd,
       isVisible,
       isFocused = true,
+      useParentContextMenu = false,
       initialCommand,
       matchSystemBackground = false,
       terminalType = 'main',
@@ -102,6 +106,8 @@ export const TerminalView = memo(
 
     // Expose copyAllOutput method via ref
     useImperativeHandle(ref, () => ({
+      copySelection: handleCopy,
+      paste: handlePaste,
       copyAllOutput: async () => {
         const terminal = terminalRef.current;
         if (!terminal) return;
@@ -548,14 +554,18 @@ export const TerminalView = memo(
       }
     }, [setFocusArea, terminalType]);
 
-    const handleContextMenu = useCallback((e: React.MouseEvent) => {
-      e.preventDefault();
-      setContextMenu({
-        isOpen: true,
-        x: e.clientX,
-        y: e.clientY,
-      });
-    }, []);
+    const handleContextMenu = useCallback(
+      (e: React.MouseEvent) => {
+        if (useParentContextMenu) return;
+        e.preventDefault();
+        setContextMenu({
+          isOpen: true,
+          x: e.clientX,
+          y: e.clientY,
+        });
+      },
+      [useParentContextMenu]
+    );
 
     const handleCopy = useCallback(async () => {
       const terminal = terminalRef.current;

@@ -3,21 +3,6 @@
 
 @custom-variant dark (&:is(.dark *));
 
-/* Keep previews readable, with at most four columns even on wide displays. */
-.overview-agent-grid {
-  display: grid;
-  grid-template-columns: repeat(
-    auto-fill,
-    minmax(min(100%, max(360px, calc((100% - 48px) / 4))), 1fr)
-  );
-  gap: 16px;
-  align-content: start;
-}
-
-.overview-agent-grid .overview-agent-tile {
-  height: clamp(384px, 48vh, 512px);
-}
-
 /* Custom breakpoint for extra large screens (1920px+) */
 @custom-variant 3xl (@media (width >= 1920px));
 

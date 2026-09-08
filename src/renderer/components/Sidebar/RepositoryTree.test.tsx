@@ -27,6 +27,30 @@ describe('RepositoryTree', () => {
     vi.clearAllMocks();
   });
 
+  it('highlights only the repository selected in the overview filter', () => {
+    const repositories = [
+      createMockRepository({ id: 'one', name: 'One' }),
+      createMockRepository({ id: 'two', name: 'Two' }),
+    ];
+    const onOpenRepositoryOverview = vi.fn();
+    render(
+      <RepositoryTree
+        {...defaultProps}
+        repositories={repositories}
+        activeOverviewRepositoryId="one"
+        onOpenRepositoryOverview={onOpenRepositoryOverview}
+      />
+    );
+    expect(screen.getByRole('button', { name: 'Agent overview for One' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    const second = screen.getByRole('button', { name: 'Agent overview for Two' });
+    expect(second).toHaveAttribute('aria-pressed', 'false');
+    fireEvent.click(second);
+    expect(onOpenRepositoryOverview).toHaveBeenCalledWith('two');
+  });
+
   describe('rendering', () => {
     it('renders empty when no projects', () => {
       const { container } = render(<RepositoryTree {...defaultProps} />);

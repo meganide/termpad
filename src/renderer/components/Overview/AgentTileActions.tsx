@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { useRef, useState, type ReactElement } from 'react';
+import { X, Maximize2, Copy, ClipboardPaste, EyeOff } from 'lucide-react';
 import type { TerminalStatus } from '../../../shared/types';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
+  ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../ui/context-menu';
 import {
@@ -19,27 +20,39 @@ import {
 } from '../ui/alert-dialog';
 
 interface AgentTileActionsProps {
-  terminalId: string;
-  label: string;
+  enabled: boolean;
+  children: ReactElement;
   tabName: string;
   status: TerminalStatus;
   onSelect: () => void;
   onClose: () => void;
+  onRestoreFocus: () => void;
+  onMenuOpen?: () => void;
+  onCopy?: () => void;
+  onPaste?: () => void;
+  onHide?: () => void;
+  selectLabel: string;
 }
 
+// Keep this wrapper mounted in every layout so its terminal child never remounts.
 export function AgentTileActions({
-  terminalId,
-  label,
+  enabled,
+  children,
   tabName,
   status,
   onSelect,
   onClose,
+  onRestoreFocus,
+  onMenuOpen,
+  onCopy,
+  onPaste,
+  onHide,
+  selectLabel,
 }: AgentTileActionsProps) {
-  const buttonRef = useRef<HTMLButtonElement>(null);
   const [confirmClose, setConfirmClose] = useState(false);
+  const navigating = useRef(false);
 
   const attemptClose = () => {
-    // Match the tab bar's confirmation for processes that are still active.
     if (status === 'running' || status === 'waiting' || status === 'starting') {
       setConfirmClose(true);
     } else {
@@ -49,29 +62,59 @@ export function AgentTileActions({
 
   return (
     <>
-      <ContextMenu>
-        <ContextMenuTrigger asChild>
-          <button
-            ref={buttonRef}
-            type="button"
-            data-overview-terminal-id={terminalId}
-            onClick={(event) => {
-              event.stopPropagation();
-              onSelect();
-            }}
-            onContextMenu={(event) => event.currentTarget.focus({ preventScroll: true })}
-            aria-label={label}
-            className="absolute inset-0 z-10 cursor-pointer rounded-xl focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary"
-          />
+      <ContextMenu
+        onOpenChange={(open) => {
+          if (open) {
+            navigating.current = false;
+            onMenuOpen?.();
+          }
+        }}
+      >
+        <ContextMenuTrigger asChild disabled={!enabled}>
+          {children}
         </ContextMenuTrigger>
         <ContextMenuContent
           onClick={(event) => event.stopPropagation()}
           onEscapeKeyDown={(event) => event.stopPropagation()}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            if (!confirmClose) buttonRef.current?.focus({ preventScroll: true });
+            if (!confirmClose && !navigating.current) onRestoreFocus();
           }}
         >
+          <ContextMenuItem
+            onSelect={() => {
+              navigating.current = true;
+              onSelect();
+            }}
+          >
+            <Maximize2 className="h-4 w-4" />
+            {selectLabel}
+          </ContextMenuItem>
+          {(onCopy || onPaste) && <ContextMenuSeparator />}
+          {onCopy && (
+            <ContextMenuItem onSelect={onCopy}>
+              <Copy className="h-4 w-4" />
+              Copy
+            </ContextMenuItem>
+          )}
+          {onPaste && (
+            <ContextMenuItem onSelect={onPaste}>
+              <ClipboardPaste className="h-4 w-4" />
+              Paste
+            </ContextMenuItem>
+          )}
+          <ContextMenuSeparator />
+          {onHide && (
+            <ContextMenuItem
+              onSelect={() => {
+                navigating.current = true;
+                onHide();
+              }}
+            >
+              <EyeOff className="h-4 w-4" />
+              Hide from overview
+            </ContextMenuItem>
+          )}
           <ContextMenuItem variant="destructive" onSelect={attemptClose}>
             <X className="h-4 w-4" />
             Close
@@ -84,7 +127,7 @@ export function AgentTileActions({
           onEscapeKeyDown={(event) => event.stopPropagation()}
           onCloseAutoFocus={(event) => {
             event.preventDefault();
-            buttonRef.current?.focus({ preventScroll: true });
+            onRestoreFocus();
           }}
         >
           <AlertDialogHeader>

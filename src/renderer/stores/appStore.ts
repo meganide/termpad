@@ -15,7 +15,6 @@ import type {
   FocusArea,
   SidebarStatusFocus,
   TerminalTab,
-  TerminalSplitView,
   WorktreeTabState,
   UserTerminalTabState,
   PRStatusMap,
@@ -24,7 +23,6 @@ import type {
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
-import { selectSplitTab, removeSplitTab } from '../utils/terminalSplitView';
 
 // Track pending idle notifications with their timeouts
 // Key: terminalId, Value: timeout handle
@@ -201,10 +199,7 @@ interface AppStore extends AppState {
   getTerminalIdForTab: (worktreeSessionId: string, tabId: string) => string;
   getWorktreeSessionIdFromTabId: (tabId: string) => string | null;
 
-  splitTab: (tabId: string, direction: TerminalSplitView['direction']) => void;
-  removeTabFromSplit: (tabId: string) => void;
-  clearTerminalSplit: (worktreeSessionId: string) => void;
-  resizeTerminalSplit: (worktreeSessionId: string, sizes: number[]) => void;
+  setWorktreeGridView: (worktreeSessionId: string, enabled: boolean) => void;
 
   // User terminal tab actions
   createUserTab: (worktreeSessionId: string, name?: string, scriptId?: string) => TerminalTab;
@@ -1254,14 +1249,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       let newWorktreeTabs: WorktreeTabState[];
       if (existingIndex >= 0) {
         newWorktreeTabs = worktreeTabs.map((wt, i) =>
-          i === existingIndex
-            ? {
-                ...wt,
-                tabs: [...wt.tabs, newTab],
-                activeTabId: tabId,
-                splitView: selectSplitTab(wt.splitView, wt.activeTabId, tabId),
-              }
-            : wt
+          i === existingIndex ? { ...wt, tabs: [...wt.tabs, newTab], activeTabId: tabId } : wt
         );
       } else {
         newWorktreeTabs = [
@@ -1322,17 +1310,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       newActiveTabId = currentTabState?.activeTabId || null;
     }
 
-    const remainingSplit = removeSplitTab(currentTabState?.splitView, tabId);
-    if (
-      currentTabState?.splitView?.tabIds.includes(tabId) &&
-      currentTabState.activeTabId === tabId
-    ) {
-      newActiveTabId =
-        remainingSplit?.tabIds[0] ??
-        currentTabState.splitView.tabIds.find((id) => id !== tabId) ??
-        newActiveTabId;
-    }
-
     set((state) => {
       const worktreeTabs = (state.worktreeTabs || []).map((wt) => {
         if (wt.worktreeSessionId !== worktreeSessionId) return wt;
@@ -1340,7 +1317,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...wt,
           tabs: wt.tabs.filter((t) => t.id !== tabId),
           activeTabId: newActiveTabId,
-          splitView: remainingSplit,
         };
       });
 
@@ -1401,80 +1377,17 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       activeTabId: tabId,
       worktreeTabs: (state.worktreeTabs || []).map((wt) =>
-        wt.worktreeSessionId === worktreeSessionId
-          ? {
-              ...wt,
-              activeTabId: tabId,
-              splitView: selectSplitTab(wt.splitView, wt.activeTabId, tabId),
-            }
-          : wt
+        wt.worktreeSessionId === worktreeSessionId ? { ...wt, activeTabId: tabId } : wt
       ),
     }));
 
     persistState(get());
   },
 
-  splitTab: (tabId, direction) => {
-    set((state) => ({
-      worktreeTabs: state.worktreeTabs.map((wt) => {
-        if (!wt.tabs.some((tab) => tab.id === tabId) || !wt.activeTabId) return wt;
-        const tabIds = wt.splitView?.tabIds ?? [wt.activeTabId];
-        const target = tabIds.includes(tabId)
-          ? wt.splitView && wt.splitView.direction !== direction
-            ? undefined
-            : [...wt.tabs].sort((a, b) => a.order - b.order).find((tab) => !tabIds.includes(tab.id))
-                ?.id
-          : tabId;
-        const nextIds = target ? [...tabIds, target] : tabIds;
-        if (nextIds.length < 2) return wt;
-        return {
-          ...wt,
-          splitView: {
-            direction,
-            tabIds: nextIds,
-            sizes: target
-              ? nextIds.map(() => 100 / nextIds.length)
-              : (wt.splitView?.sizes ?? nextIds.map(() => 100 / nextIds.length)),
-          },
-        };
-      }),
-      focusArea: 'mainTerminal',
-    }));
-  },
-
-  removeTabFromSplit: (tabId) => {
-    set((state) => {
-      let activeTabId = state.activeTabId;
-      const worktreeTabs = state.worktreeTabs.map((wt) => {
-        if (!wt.splitView?.tabIds.includes(tabId)) return wt;
-        const nextActive =
-          wt.activeTabId === tabId
-            ? (wt.splitView.tabIds.find((id) => id !== tabId) ?? wt.activeTabId)
-            : wt.activeTabId;
-        if (activeTabId === tabId) activeTabId = nextActive;
-        return { ...wt, activeTabId: nextActive, splitView: removeSplitTab(wt.splitView, tabId) };
-      });
-      return { worktreeTabs, activeTabId };
-    });
-  },
-
-  clearTerminalSplit: (worktreeSessionId) => {
+  setWorktreeGridView: (worktreeSessionId, enabled) => {
     set((state) => ({
       worktreeTabs: state.worktreeTabs.map((wt) =>
-        wt.worktreeSessionId === worktreeSessionId ? { ...wt, splitView: undefined } : wt
-      ),
-    }));
-  },
-
-  resizeTerminalSplit: (worktreeSessionId, sizes) => {
-    set((state) => ({
-      worktreeTabs: state.worktreeTabs.map((wt) =>
-        wt.worktreeSessionId === worktreeSessionId &&
-        wt.splitView &&
-        sizes.length === wt.splitView.tabIds.length &&
-        sizes.every((size) => Number.isFinite(size) && size > 0)
-          ? { ...wt, splitView: { ...wt.splitView, sizes } }
-          : wt
+        wt.worktreeSessionId === worktreeSessionId ? { ...wt, isGridView: enabled } : wt
       ),
     }));
   },

@@ -2,4 +2,4 @@
 'termpad': minor
 ---
 
-Add resizable horizontal and vertical splits for terminal tabs within a worktree, plus a repository split view for interacting with agents across all of its worktrees. Switching layouts preserves running terminals and scrollback.
+Add a grid toggle to show all terminal tabs in a worktree. The agent overview uses a full-area interactive grid with a repository filter, and repository grid buttons open that same overview with the matching filter applied. Right-click a terminal to navigate to its worktree or hide it from the overview. Restore hidden agents individually or together from the overview header. Switching layouts preserves running terminals and scrollback.

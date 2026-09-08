@@ -59,15 +59,37 @@ describe('AgentTile', () => {
     expect(screen.getByText('claude')).toBeInTheDocument();
   });
 
-  it('calls onSelect when the tile is clicked in overview mode', () => {
+  it('keeps the terminal interactive on left-click and navigates through its context menu', () => {
     const onSelect = vi.fn();
     render(
       <AgentTile {...defaultProps} isOverview onSelect={onSelect}>
-        <div />
+        <textarea aria-label="Agent input" />
       </AgentTile>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Open claude in termpad \/ feat-login/ }));
-    expect(onSelect).toHaveBeenCalledTimes(1);
+    const input = screen.getByRole('textbox', { name: 'Agent input' });
+    fireEvent.click(input);
+    expect(onSelect).not.toHaveBeenCalled();
+    expect(input.closest('[inert]')).toBeNull();
+    fireEvent.contextMenu(input);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open in worktree' }));
+    expect(onSelect).toHaveBeenCalledOnce();
+  });
+
+  it('exposes copy and paste in the same context menu', () => {
+    const onCopy = vi.fn();
+    const onPaste = vi.fn();
+    render(
+      <AgentTile {...defaultProps} isOverview onCopy={onCopy} onPaste={onPaste}>
+        <textarea aria-label="Agent input" />
+      </AgentTile>
+    );
+    const input = screen.getByRole('textbox', { name: 'Agent input' });
+    fireEvent.contextMenu(input);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Copy' }));
+    expect(onCopy).toHaveBeenCalledOnce();
+    fireEvent.contextMenu(input);
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Paste' }));
+    expect(onPaste).toHaveBeenCalledOnce();
   });
 
   it('does not let the click reach the surrounding content area', () => {
@@ -79,7 +101,7 @@ describe('AgentTile', () => {
         </AgentTile>
       </div>
     );
-    fireEvent.click(screen.getByRole('button', { name: /Open claude in termpad/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Open claude in feat-login/ }));
     expect(onParentClick).not.toHaveBeenCalled();
   });
 
@@ -89,7 +111,7 @@ describe('AgentTile', () => {
         <div />
       </AgentTile>
     );
-    expect(screen.getByRole('button', { name: /Waiting/ })).toBeInTheDocument();
+    expect(screen.getByRole('group', { name: /Waiting/ })).toBeInTheDocument();
   });
 
   it('highlights the active agent', () => {

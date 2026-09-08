@@ -34,7 +34,7 @@ export function RepositoryContextMenu({
         {onOpenOverview && (
           <ContextMenuItem onClick={() => onOpenOverview(repository.id)}>
             <LayoutGrid className="mr-2 h-4 w-4" />
-            Split repository agents
+            Open agent overview
           </ContextMenuItem>
         )}
         {onOpenSettings && (

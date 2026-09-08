@@ -392,6 +392,22 @@ describe('TerminalView', () => {
   });
 
   describe('context menu', () => {
+    it('lets the grid handle right-click without opening a second terminal menu', () => {
+      const onContextMenu = vi.fn((event: React.MouseEvent) =>
+        expect(event.defaultPrevented).toBe(false)
+      );
+      const { container } = render(
+        <div onContextMenu={onContextMenu}>
+          <TerminalView {...defaultProps} useParentContextMenu />
+        </div>
+      );
+      const terminalContainer = container.querySelector('[tabindex="-1"]');
+      expect(terminalContainer).not.toBeNull();
+      fireEvent.contextMenu(terminalContainer as Element);
+      expect(onContextMenu).toHaveBeenCalledOnce();
+      expect(screen.queryByText('Copy')).not.toBeInTheDocument();
+    });
+
     it('opens context menu on right click', () => {
       const { container } = render(<TerminalView {...defaultProps} />);
       const terminalContainer = container.querySelector('.h-full.w-full')!;
