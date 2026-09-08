@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
+import { PanelSection } from '../../components/RightPanel/PanelSection';
+import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
 
 interface NotesPanelProps {
@@ -236,10 +238,7 @@ function NoteEditor({
   const iconSize = 'h-3.5 w-3.5';
 
   return (
-    <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-      <label className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground px-1">
-        {label}
-      </label>
+    <div className="flex flex-1 min-h-0 flex-col gap-1.5">
       <div className="flex items-center gap-0.5 px-1 flex-wrap">
         <ToolbarButton
           icon={<Undo2 className={iconSize} />}
@@ -313,6 +312,8 @@ function NoteEditor({
         ref={editorRef}
         contentEditable
         suppressContentEditableWarning
+        role="textbox"
+        aria-label={label}
         className={[
           'flex-1 min-h-0 overflow-y-auto rounded-lg bg-obsidian-800/60 px-3 py-2 text-sm text-foreground',
           'focus:outline-none focus:ring-1 focus:ring-primary/30',
@@ -348,6 +349,7 @@ export function NotesPanel({
   titleSlot,
 }: NotesPanelProps) {
   const { repositories, updateRepositoryNotes, updateWorktreeNotes } = useAppStore();
+  const { collapsed, toggle } = useCollapsibleScopes();
 
   const repository = repositories.find((r) => r.id === repositoryId);
   const worktree = repository?.worktreeSessions.find((ws) => ws.id === worktreeSessionId);
@@ -369,18 +371,30 @@ export function NotesPanel({
     <div className="h-full flex flex-col" data-testid="notes-panel">
       <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
-        <NoteEditor
+        <PanelSection
           label={`Repository: ${repositoryName}`}
-          value={repoNotes}
-          identity={repositoryId}
-          onChange={handleRepoNotesChange}
-        />
-        <NoteEditor
+          collapsed={collapsed.repository}
+          onToggle={() => toggle('repository')}
+        >
+          <NoteEditor
+            label={`Repository: ${repositoryName}`}
+            value={repoNotes}
+            identity={repositoryId}
+            onChange={handleRepoNotesChange}
+          />
+        </PanelSection>
+        <PanelSection
           label={`Worktree: ${worktreeLabel}`}
-          value={worktreeNotes}
-          identity={worktreeSessionId}
-          onChange={handleWorktreeNotesChange}
-        />
+          collapsed={collapsed.worktree}
+          onToggle={() => toggle('worktree')}
+        >
+          <NoteEditor
+            label={`Worktree: ${worktreeLabel}`}
+            value={worktreeNotes}
+            identity={worktreeSessionId}
+            onChange={handleWorktreeNotesChange}
+          />
+        </PanelSection>
       </div>
     </div>
   );

@@ -98,18 +98,7 @@ export function TodoList({ label, scope, todos }: TodoListProps) {
   );
 
   return (
-    <div className="flex flex-col gap-1.5 flex-1 min-h-0">
-      <div className="flex items-center justify-between gap-2 px-1">
-        <label className="text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground truncate">
-          {label}
-        </label>
-        {todos.length > 0 && (
-          <span className="text-xs font-mono text-muted-foreground shrink-0">
-            {completed.length}/{todos.length}
-          </span>
-        )}
-      </div>
-
+    <div className="flex flex-1 min-h-0 flex-col gap-1.5">
       <form
         onSubmit={(event) => {
           event.preventDefault();

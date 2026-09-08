@@ -333,6 +333,38 @@ describe('TodosPanel', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
+  it('collapses one scope so the other can be worked on exclusively', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+
+    const repositoryHeader = screen.getByRole('button', { name: /Repository: Termpad/ });
+    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(repositoryList()).toBeInTheDocument();
+
+    await user.click(repositoryHeader);
+
+    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByLabelText('Add a todo to Repository: Termpad')).not.toBeInTheDocument();
+    // The sibling scope is untouched
+    expect(worktreeList()).toBeInTheDocument();
+
+    await user.click(repositoryHeader);
+    expect(repositoryList()).toBeInTheDocument();
+  });
+
+  it('keeps the todo count visible while a scope is collapsed', async () => {
+    const user = userEvent.setup();
+    seedRepository({
+      repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Second', completed: true })],
+    });
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /Repository: Termpad/ }));
+
+    expect(screen.getByText('1/2')).toBeInTheDocument();
+  });
+
   it('deletes a todo', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()], worktree: [makeTodo({ id: 'todo-2' })] });
