@@ -1008,12 +1008,16 @@ export function Layout() {
           onToggleOverview={toggleOverview}
           onOpenRepositoryOverview={openRepositoryOverview}
           isOverviewMode={isOverviewMode}
+          isHome={
+            !isOverviewMode &&
+            (activeScreen.type === 'home' || (activeScreen.type === 'main' && !activeTerminalId))
+          }
           activeOverviewRepositoryId={isOverviewMode ? overviewRepositoryId : null}
           hasAgents={allTerminalConfigs.length > 0}
         />
 
         <main
-          className="flex-1 overflow-hidden relative bg-background flex"
+          className="workspace-main min-w-0 flex-1 overflow-hidden relative bg-background flex"
           onClick={() => {
             // When clicking on main content area (but not on terminal), set focus to 'app'
             // This allows form inputs to work without terminal/sidebar shortcuts interfering
@@ -1098,8 +1102,8 @@ export function Layout() {
                   className={cn(
                     'relative flex-1 min-h-0 rounded-xl mx-3 mb-3 mt-2',
                     isInteractiveGrid
-                      ? 'grid gap-2 overflow-hidden p-2 bg-obsidian-950/50'
-                      : 'p-2 bg-muted'
+                      ? 'grid gap-3 overflow-hidden p-1 bg-background'
+                      : 'border border-border/60 p-2 bg-muted'
                   )}
                 >
                   {/* Render terminals for each tab across all worktrees.

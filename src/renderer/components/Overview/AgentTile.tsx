@@ -97,8 +97,8 @@ export function AgentTile({
         className={cn(
           'group flex h-full w-full min-h-0 min-w-0 flex-col',
           isOverview &&
-            'overview-agent-tile relative overflow-hidden rounded-xl bg-obsidian-800/60 shadow-md transition-[box-shadow,background-color] duration-150 motion-reduce:transition-none hover:ring-2 hover:ring-primary/60 hover:shadow-lg focus-within:ring-2 focus-within:ring-primary',
-          isOverview && (isActive ? 'ring-1 ring-lime-500/40' : 'hover:bg-obsidian-800/80')
+            'overview-agent-tile relative overflow-hidden rounded-lg border border-border bg-background shadow-sm transition-[box-shadow,border-color] duration-150 motion-reduce:transition-none hover:border-primary/50 focus-within:ring-1 focus-within:ring-primary',
+          isOverview && (isActive ? 'ring-1 ring-primary/40' : 'hover:border-primary/30')
         )}
         style={{
           display: isVisible ? 'flex' : 'none',
@@ -107,7 +107,7 @@ export function AgentTile({
         onFocusCapture={onFocusPane}
       >
         {isOverview && (
-          <div className="flex shrink-0 items-center gap-2 bg-obsidian-900/60 px-4 py-3 transition-colors group-hover:bg-obsidian-800 group-focus-within:bg-obsidian-800">
+          <div className="flex shrink-0 items-center gap-2 border-b border-border/70 bg-card px-3 py-3 transition-colors group-hover:bg-secondary group-focus-within:bg-secondary">
             <span
               className={cn(
                 'h-2 w-2 shrink-0 rounded-full',

@@ -663,7 +663,9 @@ function SessionItem({
         }}
         className={cn(
           'group relative flex items-start gap-2.5 py-3 pr-2 pl-3 rounded-xl text-sm w-full text-left cursor-pointer transition-all duration-150',
-          isActive ? 'bg-sidebar-accent' : 'hover:bg-sidebar-accent/50',
+          isActive
+            ? 'bg-sidebar-accent shadow-[inset_2px_0_0_var(--primary)]'
+            : 'hover:bg-sidebar-accent/50',
           isMenuOpen && 'bg-sidebar-accent',
           isFocused && 'ring-1 ring-primary/40',
           isDragging && 'opacity-40 scale-[0.98]'

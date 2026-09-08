@@ -67,7 +67,7 @@ export function WorktreeBar({ sessionId, sessionPath, branchName, onError }: Wor
   };
 
   return (
-    <div className="flex items-center justify-between px-4 py-2.5 bg-muted/80 backdrop-blur-sm shrink-0">
+    <div className="flex items-center justify-between gap-3 border-b border-border/60 px-5 py-3 bg-background shrink-0">
       {/* Left side: Branch info */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <GitBranch className="h-4 w-4" />

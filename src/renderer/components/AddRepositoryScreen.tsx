@@ -50,7 +50,7 @@ function WslTip({
         <Lightbulb className="h-4 w-4 text-blue-500 shrink-0 mt-0.5" />
         <div className="space-y-1">
           <p className="font-medium text-blue-500">WSL Tip</p>
-          <p className="text-muted-foreground">
+          <p className="text-sm text-muted-foreground">
             {context === 'local' ? (
               <>
                 To access repositories inside WSL, navigate to{' '}
@@ -439,13 +439,14 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
   return (
     <div className="flex-1 flex bg-background h-full" data-testid="add-repository-screen">
       {/* Left navigation panel */}
-      <div className="w-48 flex flex-col bg-sidebar-panel">
-        <nav className="flex-1 p-2 space-y-1">
+      <div className="w-44 shrink-0 flex flex-col border-r border-border/60 bg-sidebar-panel">
+        <div className="px-5 pt-6 pb-4 eyebrow">Add a project</div>
+        <nav className="flex-1 p-3 space-y-1">
           <button
             onClick={() => setActiveTab('local')}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
               activeTab === 'local'
-                ? 'bg-accent text-foreground'
+                ? 'bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
           >
@@ -456,7 +457,7 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
             onClick={() => setActiveTab('clone')}
             className={`w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
               activeTab === 'clone'
-                ? 'bg-accent text-foreground'
+                ? 'bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]'
                 : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground'
             }`}
           >
@@ -478,13 +479,13 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
       </div>
 
       {/* Right content panel */}
-      <div className="flex-1 flex flex-col min-h-0 bg-background">
+      <div className="min-w-0 flex-1 flex flex-col min-h-0 bg-background">
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-xl">
-            <div className="mb-6">
-              <h1 className="text-2xl font-semibold mb-2">Add Repository</h1>
-              <p className="text-muted-foreground">
+        <div className="flex-1 overflow-y-auto p-6 lg:p-10">
+          <div className="max-w-2xl mx-auto">
+            <div className="mb-8 border-b border-border/60 pb-6">
+              <h1 className="text-2xl font-semibold tracking-tight mb-2">Add Repository</h1>
+              <p className="text-sm text-muted-foreground">
                 {activeTab === 'local'
                   ? 'Add an existing folder from your local machine'
                   : 'Clone a repository from a URL'}
@@ -503,7 +504,7 @@ export function AddRepositoryScreen({ onBack }: AddRepositoryScreenProps) {
                     <>
                       <Button
                         variant="outline"
-                        className="w-full max-w-md h-24 flex flex-col gap-2"
+                        className="w-full max-w-md h-32 flex flex-col gap-3 border-dashed border-primary/30 bg-primary/5 text-primary hover:bg-primary/10"
                         onClick={handleSelectFolder}
                         disabled={isLoading}
                       >

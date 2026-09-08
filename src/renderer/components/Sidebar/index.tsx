@@ -37,6 +37,7 @@ interface SidebarProps {
   onToggleOverview: () => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
   isOverviewMode: boolean;
+  isHome?: boolean;
   activeOverviewRepositoryId?: string | null;
   hasAgents: boolean;
 }
@@ -55,6 +56,7 @@ export function Sidebar({
   onToggleOverview,
   onOpenRepositoryOverview,
   isOverviewMode,
+  isHome = false,
   activeOverviewRepositoryId,
   hasAgents,
 }: SidebarProps) {
@@ -258,16 +260,53 @@ export function Sidebar({
 
   return (
     <aside
-      className="relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar"
+      className="workspace-sidebar relative z-10 flex min-h-0 shrink-0 flex-col overflow-hidden bg-sidebar"
       style={{ width }}
       onClick={handleSidebarClick}
     >
-      {/* Header */}
-      <div className="relative flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 bg-muted/50">
-        <div className="flex items-baseline gap-1.5">
-          <span className="text-sm font-semibold">Repositories</span>
+      <div className="sidebar-brand">
+        <span className="brand-mark">
+          <Terminal className="size-5" strokeWidth={2} />
+        </span>
+        <span className="text-lg font-semibold tracking-tight">
+          termpad<span className="text-primary">.</span>
+        </span>
+        <span className="ml-auto rounded border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
+          LOCAL
+        </span>
+      </div>
+      <nav className="sidebar-navigation" aria-label="Workspace navigation">
+        <button
+          className={cn('sidebar-nav-item', isHome && 'is-selected')}
+          onClick={onOpenHome}
+          aria-label="Home"
+          aria-current={isHome ? 'page' : undefined}
+        >
+          <Home className="size-4" />
+          <span>Home</span>
+        </button>
+        <button
+          className={cn('sidebar-nav-item', isOverviewMode && 'is-selected')}
+          onClick={onToggleOverview}
+          disabled={!hasAgents}
+          aria-pressed={isOverviewMode}
+          aria-label="Agent overview"
+          aria-keyshortcuts={isMac ? 'Meta+O' : 'Control+O'}
+        >
+          <LayoutGrid className="size-4" />
+          <span>Agent overview</span>
+          <kbd className="sidebar-shortcut" aria-hidden="true">
+            {isMac ? 'Cmd + O' : 'Ctrl + O'}
+          </kbd>
+        </button>
+      </nav>
+      <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-1">
+        <div className="flex items-center gap-2">
+          <span className="eyebrow">Repositories</span>
           {repositories.length > 0 && (
-            <span className="text-xs text-muted-foreground/60">({visibleRepositories.length})</span>
+            <span className="text-xs tabular-nums text-muted-foreground">
+              {visibleRepositories.length}
+            </span>
           )}
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -297,46 +336,11 @@ export function Sidebar({
                 : 'Only show repositories with open terminals'}
             </TooltipContent>
           </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className={cn(
-                  'h-8 w-8 hover:bg-sidebar-accent',
-                  isOverviewMode && 'bg-sidebar-accent text-primary'
-                )}
-                onClick={onToggleOverview}
-                disabled={!hasAgents}
-                aria-pressed={isOverviewMode}
-                aria-label="Agent overview"
-              >
-                <LayoutGrid className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>
-              {hasAgents ? `Agent overview (${isMac ? 'Cmd' : 'Ctrl'}+O)` : 'No agents yet'}
-            </TooltipContent>
-          </Tooltip>
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-8 w-8 hover:bg-sidebar-accent"
-                onClick={onOpenHome}
-                aria-label="Home"
-              >
-                <Home className="h-4 w-4" />
-              </Button>
-            </TooltipTrigger>
-            <TooltipContent>Home</TooltipContent>
-          </Tooltip>
         </div>
       </div>
 
       <div className="shrink-0 px-3 py-2" onClick={(event) => event.stopPropagation()}>
-        <label htmlFor="repository-search" className="mb-1 block text-xs text-muted-foreground">
+        <label htmlFor="repository-search" className="sr-only">
           Search repositories and worktrees
         </label>
         <div className="relative">
@@ -345,7 +349,7 @@ export function Sidebar({
             ref={searchRef}
             id="repository-search"
             type="text"
-            placeholder="Filter by name…"
+            placeholder="Search repositories…"
             value={searchQuery}
             onChange={(event) => updateSearchQuery(event.target.value)}
             onFocus={() => setFocusArea('app')}
@@ -363,7 +367,7 @@ export function Sidebar({
                 event.currentTarget.blur();
               }
             }}
-            className="h-8 pl-8 pr-8 text-xs"
+            className="h-9 border-sidebar-border bg-background/60 pl-8 pr-8 text-xs"
           />
           {searchQuery && (
             <Button
@@ -389,7 +393,7 @@ export function Sidebar({
           <div className="absolute top-0 left-0 right-0 h-8 bg-gradient-to-b from-sidebar to-transparent pointer-events-none z-10" />
         )}
 
-        <div ref={scrollRef} className="h-full overflow-y-auto">
+        <div ref={scrollRef} className="h-full overflow-y-auto px-1">
           {repositories.length === 0 ? (
             <div className="flex flex-col items-center justify-center p-8 text-center">
               <div className="rounded-full bg-muted/50 p-4 mb-4">
@@ -473,7 +477,7 @@ export function Sidebar({
       </div>
 
       {/* Footer */}
-      <div className="relative flex shrink-0 items-center justify-between gap-2 px-3 py-2.5 bg-sidebar">
+      <div className="relative flex shrink-0 flex-wrap items-center justify-between gap-1 border-t border-sidebar-border px-3 py-3 bg-sidebar">
         <Button
           variant="ghost"
           size="sm"
@@ -491,7 +495,8 @@ export function Sidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 hover:bg-sidebar-accent"
+              className="h-9 w-9 text-muted-foreground hover:bg-sidebar-accent"
+              aria-label="Report Issue"
               onClick={() =>
                 window.electronAPI.openExternal('https://github.com/meganide/termpad/issues/new')
               }
@@ -506,7 +511,8 @@ export function Sidebar({
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 hover:bg-sidebar-accent"
+              className="h-9 w-9 text-muted-foreground hover:bg-sidebar-accent"
+              aria-label="Settings"
               onClick={onOpenSettings}
             >
               <Settings className="h-4 w-4" />

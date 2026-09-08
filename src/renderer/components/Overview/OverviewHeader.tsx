@@ -40,13 +40,15 @@ export function OverviewHeader({
 }: OverviewHeaderProps) {
   return (
     <div
-      className="flex shrink-0 flex-wrap items-center justify-between gap-2 bg-muted/80 px-4 py-2.5 backdrop-blur-sm"
+      className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border/60 bg-background px-5 py-4"
       onClick={(event) => event.stopPropagation()}
     >
       <div className="flex items-center gap-2.5">
         <LayoutGrid className="h-4 w-4 text-primary" />
         <span className="text-sm font-medium">Agent overview</span>
-        <span className="text-xs text-muted-foreground/60">({agentCount})</span>
+        <span className="rounded-md bg-secondary px-2 py-0.5 text-xs tabular-nums text-muted-foreground">
+          ({agentCount})
+        </span>
       </div>
       <div className="flex items-center gap-2">
         {hiddenAgents.length > 0 && (
@@ -102,7 +104,7 @@ export function OverviewHeader({
             </SelectContent>
           </Select>
         )}
-        <span className="hidden text-xs text-muted-foreground sm:inline">
+        <span className="hidden text-xs text-muted-foreground xl:inline">
           Click a terminal to interact · Right-click for actions
         </span>
         <Tooltip>

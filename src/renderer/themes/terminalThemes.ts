@@ -35,19 +35,19 @@ export interface TerminalTheme {
 }
 
 export const TERMINAL_THEMES: TerminalTheme[] = [
-  // Termpad themes (default) - matches app obsidian & neon lime color palette
+  // Termpad default matches the app’s neutral graphite and silver surfaces.
   {
     name: 'termpad',
     displayName: 'Termpad',
     type: 'dark',
     colors: {
-      background: '#181818',
-      foreground: '#e4e4e4',
-      cursor: '#ccff00',
-      cursorAccent: '#181818',
-      selectionBackground: '#ccff0020',
+      background: '#1a1a1a',
+      foreground: '#ededed',
+      cursor: '#e0e0e0',
+      cursorAccent: '#1a1a1a',
+      selectionBackground: '#e0e0e020',
       selectionForeground: '#f5f5f5',
-      selectionInactiveBackground: '#ccff0012',
+      selectionInactiveBackground: '#e0e0e012',
       black: '#242424',
       red: '#f87171',
       green: '#4ade80',
@@ -56,7 +56,7 @@ export const TERMINAL_THEMES: TerminalTheme[] = [
       magenta: '#c084fc',
       cyan: '#22d3ee',
       white: '#d4d4d4',
-      brightBlack: '#5c5c5c',
+      brightBlack: '#8a8a8a',
       brightRed: '#fca5a5',
       brightGreen: '#86efac',
       brightYellow: '#fcd34d',
