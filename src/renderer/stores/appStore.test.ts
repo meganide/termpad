@@ -31,6 +31,7 @@ describe('appStore - repository management', () => {
       expect(state.settings).toEqual({
         worktreeBasePath: null,
         gitPollIntervalMs: 5000,
+        showOnlyActiveRepositories: false,
         notifications: {
           enabled: true,
           backgroundOnly: true,
