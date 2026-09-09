@@ -21,6 +21,8 @@ const createMockTerminalInstance = () => ({
   loadAddon: vi.fn(),
   attachCustomKeyEventHandler: vi.fn(),
   onData: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+  onWriteParsed: vi.fn().mockReturnValue({ dispose: vi.fn() }),
+  parser: { registerCsiHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }) },
   onSelectionChange: vi.fn().mockReturnValue({ dispose: vi.fn() }),
   hasSelection: vi.fn().mockReturnValue(false),
   getSelection: vi.fn().mockReturnValue(''),
@@ -64,6 +66,8 @@ vi.mock('@xterm/xterm', () => {
       loadAddon = vi.fn();
       attachCustomKeyEventHandler = vi.fn();
       onData = vi.fn().mockReturnValue({ dispose: vi.fn() });
+      onWriteParsed = vi.fn().mockReturnValue({ dispose: vi.fn() });
+      parser = { registerCsiHandler: vi.fn().mockReturnValue({ dispose: vi.fn() }) };
       onSelectionChange = vi.fn().mockReturnValue({ dispose: vi.fn() });
       hasSelection = vi.fn().mockReturnValue(false);
       getSelection = vi.fn().mockReturnValue('');
@@ -89,6 +93,8 @@ vi.mock('@xterm/xterm', () => {
           this.loadAddon = mock.loadAddon;
           this.attachCustomKeyEventHandler = mock.attachCustomKeyEventHandler;
           this.onData = mock.onData;
+          this.onWriteParsed = mock.onWriteParsed;
+          this.parser = mock.parser;
           this.onSelectionChange = mock.onSelectionChange;
           this.hasSelection = mock.hasSelection;
           this.getSelection = mock.getSelection;
