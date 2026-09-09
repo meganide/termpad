@@ -12,6 +12,60 @@ function navigate(address: string) {
 }
 
 describe('BrowserPanel', () => {
+  it('resizes DevTools by dragging, clamps both panes, and ends dragging on blur', () => {
+    const { container, unmount } = render(
+      <BrowserPanel expanded={false} onToggleExpanded={vi.fn()} />
+    );
+    navigate('localhost:3000');
+    Object.assign(container.querySelector('webview')!, { getWebContentsId: () => 42 });
+    fireEvent(container.querySelector('webview')!, new Event('did-start-loading'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser DevTools' }));
+    const content = screen.getByTestId('browser-content');
+    vi.spyOn(content, 'getBoundingClientRect').mockReturnValue({ width: 1006 } as DOMRect);
+    const divider = screen.getByRole('separator', { name: 'Resize DevTools' });
+    const inspector = screen.getByRole('region', { name: 'Browser DevTools' });
+    fireEvent.mouseDown(divider, { button: 0, clientX: 600 });
+    expect(screen.getByTestId('browser-resize-overlay')).toBeInTheDocument();
+    fireEvent.mouseMove(document, { clientX: 400 });
+    expect(divider).toHaveAttribute('aria-valuenow', '70');
+    expect(inspector.style.width).toContain('0.7');
+    fireEvent.mouseMove(document, { clientX: -1000 });
+    expect(divider).toHaveAttribute('aria-valuenow', '80');
+    fireEvent.mouseMove(document, { clientX: 3000 });
+    expect(divider).toHaveAttribute('aria-valuenow', '20');
+    fireEvent.blur(window);
+    expect(screen.queryByTestId('browser-resize-overlay')).not.toBeInTheDocument();
+    fireEvent.mouseMove(document, { clientX: 600 });
+    expect(divider).toHaveAttribute('aria-valuenow', '20');
+    fireEvent.mouseDown(divider, { button: 0, clientX: 600 });
+    fireEvent.mouseUp(window);
+    expect(screen.queryByTestId('browser-resize-overlay')).not.toBeInTheDocument();
+    fireEvent.mouseDown(divider, { button: 0, clientX: 600 });
+    unmount();
+    expect(screen.queryByTestId('browser-resize-overlay')).not.toBeInTheDocument();
+    expect(document.querySelector('[data-resize-selection-lock]')).toBeNull();
+  });
+
+  it('resizes DevTools with the keyboard, remembers its width on reopen, and resets on double-click', () => {
+    const { container } = render(<BrowserPanel expanded={false} onToggleExpanded={vi.fn()} />);
+    navigate('localhost:3000');
+    Object.assign(container.querySelector('webview')!, { getWebContentsId: () => 42 });
+    fireEvent(container.querySelector('webview')!, new Event('did-start-loading'));
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser DevTools' }));
+    const divider = screen.getByRole('separator', { name: 'Resize DevTools' });
+    fireEvent.keyDown(divider, { key: 'ArrowLeft' });
+    expect(divider).toHaveAttribute('aria-valuenow', '55');
+    fireEvent.keyDown(divider, { key: 'ArrowRight' });
+    fireEvent.keyDown(divider, { key: 'ArrowRight' });
+    expect(divider).toHaveAttribute('aria-valuenow', '45');
+    fireEvent.click(screen.getByRole('button', { name: 'Close DevTools pane' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open browser DevTools' }));
+    const reopenedDivider = screen.getByRole('separator', { name: 'Resize DevTools' });
+    expect(reopenedDivider).toHaveAttribute('aria-valuenow', '45');
+    fireEvent.doubleClick(reopenedDivider);
+    expect(reopenedDivider).toHaveAttribute('aria-valuenow', '50');
+  });
+
   it('positions the native inspector and hides it when other UI covers its surface', async () => {
     const originalRect = HTMLElement.prototype.getBoundingClientRect;
     const originalHitTest = Object.getOwnPropertyDescriptor(document, 'elementFromPoint');

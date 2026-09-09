@@ -13,6 +13,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
+import { BrowserInspectorDivider } from './BrowserInspectorDivider';
 import { BROWSER_PARTITION, isBrowserUrl, normalizeBrowserAddress } from '../../../shared/browser';
 
 interface BrowserTab {
@@ -189,6 +190,7 @@ function BrowserPage({
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [inspectorSource, setInspectorSource] = useState<number | null>(null);
+  const [inspectorWidth, setInspectorWidth] = useState(50);
   const [navigation, setNavigation] = useState({ ready: false, back: false, forward: false });
   const hasPage = !!requestedUrl;
 
@@ -369,7 +371,14 @@ function BrowserPage({
             className="flex min-h-0 min-w-0 flex-1 bg-white"
           />
           {inspectorSource !== null && (
-            <BrowserInspector sourceId={inspectorSource} onClose={() => setInspectorSource(null)} />
+            <>
+              <BrowserInspectorDivider width={inspectorWidth} onResize={setInspectorWidth} />
+              <BrowserInspector
+                sourceId={inspectorSource}
+                width={inspectorWidth}
+                onClose={() => setInspectorSource(null)}
+              />
+            </>
           )}
         </div>
       ) : (
@@ -387,7 +396,15 @@ function BrowserPage({
   );
 }
 
-function BrowserInspector({ sourceId, onClose }: { sourceId: number; onClose: () => void }) {
+function BrowserInspector({
+  sourceId,
+  width,
+  onClose,
+}: {
+  sourceId: number;
+  width: number;
+  onClose: () => void;
+}) {
   const inspector = useRef<HTMLDivElement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -460,7 +477,8 @@ function BrowserInspector({ sourceId, onClose }: { sourceId: number; onClose: ()
   return (
     <section
       aria-label="Browser DevTools"
-      className="flex min-h-0 min-w-0 w-1/2 shrink-0 flex-col border-l border-border"
+      className="flex min-h-0 min-w-0 shrink-0 flex-col"
+      style={{ width: `calc((100% - 6px) * ${width / 100})` }}
     >
       <div className="flex h-8 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
         <span className="text-xs font-medium">DevTools</span>
