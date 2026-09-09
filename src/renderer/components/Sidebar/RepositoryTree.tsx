@@ -62,6 +62,7 @@ interface RepositoryTreeProps {
   onRepositoryDelete: (repository: Repository) => void;
   onOpenRepositorySettings: (repository: Repository) => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
+  onOpenRepositoryPlanning?: (repositoryId: string) => void;
   activeOverviewRepositoryId?: string | null;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onReorderSessions: (repositoryId: string, fromIndex: number, toIndex: number) => void;
@@ -97,6 +98,7 @@ export function RepositoryTree({
   onRepositoryDelete,
   onOpenRepositorySettings,
   onOpenRepositoryOverview,
+  onOpenRepositoryPlanning,
   activeOverviewRepositoryId,
   onWorktreeRemove,
   onReorderSessions,
@@ -146,6 +148,7 @@ export function RepositoryTree({
               onDelete={onRepositoryDelete}
               onOpenSettings={onOpenRepositorySettings}
               onOpenRepositoryOverview={onOpenRepositoryOverview}
+              onOpenRepositoryPlanning={onOpenRepositoryPlanning}
               isOverviewActive={activeOverviewRepositoryId === repository.id}
               onWorktreeRemove={onWorktreeRemove}
               onAssignShortcut={setShortcutDialogSession}
@@ -217,6 +220,7 @@ interface RepositoryItemProps {
   onDelete: (repository: Repository) => void;
   onOpenSettings: (repository: Repository) => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
+  onOpenRepositoryPlanning?: (repositoryId: string) => void;
   isOverviewActive?: boolean;
   onWorktreeRemove: (session: WorktreeSession, repository: Repository) => void;
   onAssignShortcut: (session: WorktreeSession) => void;
@@ -256,6 +260,7 @@ function RepositoryItem({
   onDelete,
   onOpenSettings,
   onOpenRepositoryOverview,
+  onOpenRepositoryPlanning,
   isOverviewActive = false,
   onWorktreeRemove,
   onAssignShortcut,
@@ -349,6 +354,7 @@ function RepositoryItem({
           onDelete={onDelete}
           onOpenSettings={onOpenSettings}
           onOpenOverview={onOpenRepositoryOverview}
+          onOpenPlanning={onOpenRepositoryPlanning}
           onOpenChange={setIsMenuOpen}
         >
           <div

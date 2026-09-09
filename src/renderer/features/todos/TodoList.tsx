@@ -12,6 +12,9 @@ import { TodoItemRow } from './TodoItemRow';
 import { TodoSections } from './TodoSections';
 
 interface TodoListProps {
+  assignments?: WorktreeSession[];
+  onDispatch?: (todo: TodoItem, targetId: string) => void;
+  onOpenWorktree?: (worktreeSessionId: string) => void;
   view?: 'list' | 'kanban';
   label: string;
   scope: TodoScope;
@@ -22,6 +25,9 @@ interface TodoListProps {
 }
 
 export function TodoList({
+  assignments,
+  onDispatch,
+  onOpenWorktree,
   view = 'list',
   label,
   scope,
@@ -51,33 +57,47 @@ export function TodoList({
     setDraft('');
   }, [addTodo, draft, scope]);
 
-  const renderRow = (todo: TodoItem, sortable: boolean) => (
-    <TodoItemRow
-      key={todo.id}
-      todo={todo}
-      sortable={sortable}
-      card={view === 'kanban'}
-      columns={columns}
-      onStatusChange={(status) => updateTodo(scope, todo.id, { status })}
-      onToggle={(isCompleted) => updateTodo(scope, todo.id, { completed: isCompleted })}
-      onRename={(text) => updateTodo(scope, todo.id, { text })}
-      onPriorityChange={(priority: TodoPriority | undefined) =>
-        updateTodo(scope, todo.id, { priority })
-      }
-      onRemove={() => removeTodo(scope, todo.id)}
-      onSendToTerminal={onSendToTerminal ? () => onSendToTerminal(todo) : undefined}
-      onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
-      moveTargets={moveTargets}
-      onMove={(targetId) => {
-        if (scope.type !== 'repository') return;
-        if (moveGlobalTodoToWorktree(scope.repositoryId, todo.id, targetId))
-          toast.success(
-            `Moved to ${moveTargets?.find((target) => target.id === targetId)?.label ?? 'worktree'}`
-          );
-        else toast.error('Could not move todo. The worktree or todo may no longer be available.');
-      }}
-    />
-  );
+  const renderRow = (todo: TodoItem, sortable: boolean) => {
+    const assignment = assignments?.find((session) =>
+      session.todos?.some((item) => item.id === todo.id)
+    );
+    return (
+      <TodoItemRow
+        key={todo.id}
+        todo={todo}
+        assignment={assignment?.label}
+        onOpenWorktree={
+          assignment && onOpenWorktree ? () => onOpenWorktree(assignment.id) : undefined
+        }
+        dispatch={Boolean(onDispatch)}
+        sortable={sortable}
+        card={view === 'kanban'}
+        columns={columns}
+        onStatusChange={(status) => updateTodo(scope, todo.id, { status })}
+        onToggle={(isCompleted) => updateTodo(scope, todo.id, { completed: isCompleted })}
+        onRename={(text) => updateTodo(scope, todo.id, { text })}
+        onPriorityChange={(priority: TodoPriority | undefined) =>
+          updateTodo(scope, todo.id, { priority })
+        }
+        onRemove={() => removeTodo(scope, todo.id)}
+        onSendToTerminal={onSendToTerminal ? () => onSendToTerminal(todo) : undefined}
+        onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
+        moveTargets={moveTargets}
+        onMove={(targetId) => {
+          if (onDispatch) {
+            onDispatch(todo, targetId);
+            return;
+          }
+          if (scope.type !== 'repository') return;
+          if (moveGlobalTodoToWorktree(scope.repositoryId, todo.id, targetId))
+            toast.success(
+              `Moved to ${moveTargets?.find((target) => target.id === targetId)?.label ?? 'worktree'}`
+            );
+          else toast.error('Could not move todo. The worktree or todo may no longer be available.');
+        }}
+      />
+    );
+  };
 
   return (
     <div className="flex flex-1 min-h-0 flex-col gap-1.5">
@@ -114,7 +134,11 @@ export function TodoList({
         </Button>
       </form>
 
-      <div className="flex-1 min-h-0 overflow-auto space-y-2">
+      <div
+        className="flex-1 min-h-0 overflow-auto space-y-2"
+        style={{ overflowAnchor: 'none' }}
+        data-testid="todo-scroll-container"
+      >
         {view === 'kanban' ? (
           <TodoKanban
             todos={todos}

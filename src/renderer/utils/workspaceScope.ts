@@ -6,10 +6,11 @@ export function isGlobalWorkspace(worktree?: Pick<WorktreeSession, 'isMainWorktr
 
 // Preserve content created before the primary checkout became the global scope.
 export function migrateGlobalContent(repository: Repository): Repository {
+  if (repository.planningMigrationVersion === 1) return repository;
   const mainSessions = repository.worktreeSessions.filter(
     (session) => session.isMainWorktree && (session.todos?.length || session.notes)
   );
-  if (!mainSessions.length) return repository;
+  if (!mainSessions.length) return { ...repository, planningMigrationVersion: 1 };
   const todos = [...(repository.todos ?? [])];
   let notes = repository.notes ?? '';
   for (const session of mainSessions) {
@@ -25,6 +26,7 @@ export function migrateGlobalContent(repository: Repository): Repository {
   }
   return {
     ...repository,
+    planningMigrationVersion: 1,
     todos,
     notes,
     worktreeSessions: repository.worktreeSessions.map((session) =>

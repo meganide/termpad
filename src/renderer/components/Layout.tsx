@@ -46,7 +46,8 @@ import { BrowserPanel } from '../features/browser/BrowserPanel';
 import { getScopeIndicators } from './RightPanel/scopeIndicators';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
-import { waitForTerminalStartup } from '../services/terminalStartup';
+import { deliverTodoToTerminal, dispatchTodoToWorktree } from '../services/todoDispatch';
+import { PlanningWorkspace, type PlanningLocation } from '../features/planning/PlanningWorkspace';
 
 export function Layout() {
   const {
@@ -196,13 +197,59 @@ export function Layout() {
   type ActiveScreen =
     | { type: 'main' }
     | { type: 'settings'; tab: SettingsTab }
-    | { type: 'addWorktree'; repositoryId: string | null; todo?: TodoItem; todoScope?: TodoScope }
+    | {
+        type: 'addWorktree';
+        repositoryId: string | null;
+        todo?: TodoItem;
+        todoScope?: TodoScope;
+        returnToPlanning?: string;
+      }
+    | { type: 'planning'; repositoryId: string | null }
     | { type: 'home' }
     | { type: 'addRepository' }
     | { type: 'repositorySettings'; repositoryId: string };
 
   // Start with home screen on app launch
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'home' });
+  const [visitedWorktreeTools, setVisitedWorktreeTools] = useState<string[]>([]);
+  useEffect(() => {
+    if (activeTerminalId)
+      setVisitedWorktreeTools((previous) =>
+        previous.includes(activeTerminalId) ? previous : [...previous, activeTerminalId]
+      );
+  }, [activeTerminalId]);
+  const [visitedPlanning, setVisitedPlanning] = useState<string[]>([]);
+  const [lastPlanningRepositoryId, setLastPlanningRepositoryId] = useState<string | null>(null);
+  const [planningLocations, setPlanningLocations] = useState<Record<string, PlanningLocation>>({});
+  const openPlanning = (requestedRepositoryId?: string, location?: PlanningLocation) => {
+    const repositoryId =
+      [
+        requestedRepositoryId,
+        lastPlanningRepositoryId,
+        repositories.find((repository) =>
+          repository.worktreeSessions.some((session) => session.id === activeTerminalId)
+        )?.id,
+        repositories[0]?.id,
+      ].find((id) => repositories.some((repository) => repository.id === id)) ?? null;
+    if (repositoryId)
+      setVisitedPlanning((previous) =>
+        previous.includes(repositoryId) ? previous : [...previous, repositoryId]
+      );
+    setLastPlanningRepositoryId(repositoryId);
+    if (repositoryId && location) {
+      // A fresh request also handles reopening the same link after manually changing filters.
+      setPlanningLocations((previous) => ({ ...previous, [repositoryId]: { ...location } }));
+    }
+    setIsOverviewMode(false);
+    setActiveScreen({ type: 'planning', repositoryId });
+    setFocusArea('app');
+  };
+  const planningRepositoryId =
+    activeScreen.type === 'planning'
+      ? (repositories.find((repository) => repository.id === activeScreen.repositoryId)?.id ??
+        repositories[0]?.id ??
+        null)
+      : null;
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
   const [reviewExpanded, setReviewExpanded] = useState(false);
   const [browserExpanded, setBrowserExpanded] = useState(false);
@@ -310,7 +357,7 @@ export function Layout() {
         const isInputFocused =
           e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement;
 
-        if (isOverviewMode) {
+        if (isOverviewMode && activeScreen.type === 'main') {
           // Escape belongs to the running agent while interacting with any overview pane.
           if (e.target instanceof Element && e.target.closest('.xterm')) return;
           e.preventDefault();
@@ -323,7 +370,11 @@ export function Layout() {
           setActiveScreen({ type: 'main' });
         } else if (activeScreen.type === 'addWorktree' && !isInputFocused) {
           e.preventDefault();
-          setActiveScreen({ type: 'main' });
+          setActiveScreen(
+            activeScreen.returnToPlanning
+              ? { type: 'planning', repositoryId: activeScreen.returnToPlanning }
+              : { type: 'main' }
+          );
         } else if (activeScreen.type === 'repositorySettings') {
           e.preventDefault();
           setActiveScreen({ type: 'main' });
@@ -335,7 +386,7 @@ export function Layout() {
     return () => {
       window.removeEventListener('keydown', handleEscapeKey);
     };
-  }, [activeScreen.type, isOverviewMode, exitOverview]);
+  }, [activeScreen, isOverviewMode, exitOverview]);
 
   // Sync sidebar focus when active terminal changes
   useEffect(() => {
@@ -723,12 +774,9 @@ export function Layout() {
       if (!terminal) throw new Error('Open a terminal in the main area first.');
       const sourceSession = allSessions.find(({ session }) => session.id === activeTerminalId);
       const scope: TodoScope | undefined = sourceSession
-        ? sourceSession.session.isMainWorktree
-          ? { type: 'repository', repositoryId: sourceSession.repository.id }
-          : { type: 'worktree', worktreeSessionId: sourceSession.session.id }
+        ? { type: 'worktree', worktreeSessionId: sourceSession.session.id }
         : undefined;
-      setTodosExpanded(false);
-      await terminal.sendText(todo.text);
+      await terminal.sendText(todo.text, true, { focus: false });
       if (scope) useAppStore.getState().updateTodo(scope, todo.id, { status: 'in_progress' });
     } catch (error) {
       toast.error('Could not send todo', {
@@ -737,19 +785,52 @@ export function Layout() {
     }
   };
 
+  const sendTodoText = async (terminalId: string, text: string) => {
+    const terminal = mainTerminalRefs.current.get(terminalId);
+    if (!terminal) throw new Error('The terminal is no longer open.');
+    await terminal.sendText(text, true, { focus: false });
+  };
+
   const handleTodoTerminalCreated = async (
     terminalId: string,
     todo: TodoItem,
     hasCommand: boolean
   ) => {
     try {
-      setTodosExpanded(false);
-      await waitForTerminalStartup(terminalId, hasCommand);
-      const terminal = mainTerminalRefs.current.get(terminalId);
-      if (!terminal) throw new Error('The new terminal is no longer open.');
-      await terminal.sendText(todo.text, true);
+      await deliverTodoToTerminal(terminalId, todo, hasCommand, sendTodoText);
+      toast.success('Todo started in the new worktree', {
+        action: {
+          label: 'Open worktree',
+          onClick: () => {
+            handleOpenPortTerminal(terminalId);
+          },
+        },
+      });
     } catch (error) {
-      toast.error('Worktree created, but the todo could not be sent', {
+      toast.error('Worktree created, but the todo could not be started', {
+        description: error instanceof Error ? error.message : String(error),
+        duration: 10000,
+      });
+    }
+  };
+
+  const handleDispatchTodo = async (repositoryId: string, todo: TodoItem, targetId: string) => {
+    try {
+      const result = await dispatchTodoToWorktree(repositoryId, todo.id, targetId, sendTodoText);
+      toast.success(`Started in ${result.worktreeLabel}`, {
+        action: {
+          label: 'Open worktree',
+          onClick: () => {
+            setActiveTerminal(targetId);
+            setActiveTab(result.tabId);
+            setActiveScreen({ type: 'main' });
+            exitOverview();
+            setFocusArea('mainTerminal');
+          },
+        },
+      });
+    } catch (error) {
+      toast.error('Could not start todo', {
         description: error instanceof Error ? error.message : String(error),
         duration: 10000,
       });
@@ -972,6 +1053,24 @@ export function Layout() {
     exitOverview();
   }, [exitOverview]);
 
+  const handleOpenTodoWorktree = (sessionId: string) => {
+    const state = useAppStore.getState();
+    const session = state.repositories
+      .flatMap((repository) => repository.worktreeSessions)
+      .find((item) => item.id === sessionId);
+    if (!session || state.isPathDeleting(session.path)) {
+      toast.error('This worktree is no longer available.');
+      return;
+    }
+    setActiveTerminal(sessionId);
+    setReviewExpanded(false);
+    setBrowserExpanded(false);
+    setTodosExpanded(false);
+    setExpandedToolTabs({});
+    handleSessionSelect();
+    setFocusArea('mainTerminal');
+  };
+
   const handleOpenPortTerminal = useCallback(
     (terminalId: string): boolean => {
       const state = useAppStore.getState();
@@ -1168,6 +1267,11 @@ export function Layout() {
           onOpenPortTerminal={handleOpenPortTerminal}
           onClosePortTerminal={handleClosePortTerminal}
           onToggleOverview={toggleOverview}
+          onOpenPlanning={() => openPlanning()}
+          onOpenRepositoryPlanning={(repositoryId) =>
+            openPlanning(repositoryId, { scopeId: 'global', tab: 'todos' })
+          }
+          isPlanning={activeScreen.type === 'planning'}
           onOpenRepositoryOverview={openRepositoryOverview}
           isOverviewMode={isOverviewMode}
           isHome={
@@ -1270,11 +1374,14 @@ export function Layout() {
                   {allTerminalConfigs.map((config) => {
                     const isActiveTab =
                       config.sessionId === activeTerminalId && config.tabId === activeTabId;
-                    const isVisible = isOverviewMode
-                      ? (!overviewRepositoryId || config.repositoryId === overviewRepositoryId) &&
-                        !hiddenOverviewAgents.has(config.terminalId)
-                      : !rightPanelExpanded &&
-                        (isWorktreeGrid ? config.sessionId === activeTerminalId : isActiveTab);
+                    const isVisible =
+                      activeScreen.type !== 'planning' &&
+                      !(activeScreen.type === 'addWorktree' && activeScreen.todo) &&
+                      (isOverviewMode
+                        ? (!overviewRepositoryId || config.repositoryId === overviewRepositoryId) &&
+                          !hiddenOverviewAgents.has(config.terminalId)
+                        : !rightPanelExpanded &&
+                          (isWorktreeGrid ? config.sessionId === activeTerminalId : isActiveTab));
 
                     return (
                       <AgentTile
@@ -1471,44 +1578,82 @@ export function Layout() {
                         onFileCountChange={handleChangeCount}
                       />
                     </div>
-                    <div className={rightPanelTab === 'notes' ? 'h-full' : 'hidden'}>
-                      <NotesPanel
-                        titleSlot={null}
-                        repositoryId={activeSessionInfo.repository.id}
-                        worktreeSessionId={activeSessionInfo.session.id}
-                        repositoryName={activeSessionInfo.repository.name}
-                        worktreeLabel={activeSessionInfo.session.label}
-                      />
-                    </div>
-                    <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
-                      <TodosPanel
-                        expanded={todosExpanded}
-                        onToggleExpanded={() => setTodosExpanded((value) => !value)}
-                        titleSlot={null}
-                        repositoryId={activeSessionInfo.repository.id}
-                        worktreeSessionId={activeSessionInfo.session.id}
-                        repositoryName={activeSessionInfo.repository.name}
-                        worktreeLabel={activeSessionInfo.session.label}
-                        onSendToTerminal={canSendTodo ? handleSendTodo : undefined}
-                        onCreateWorktree={(todo) => {
-                          setActiveScreen({
-                            type: 'addWorktree',
-                            repositoryId: activeSessionInfo.repository.id,
-                            todo,
-                            todoScope: activeSessionInfo.session.isMainWorktree
-                              ? {
-                                  type: 'repository',
-                                  repositoryId: activeSessionInfo.repository.id,
-                                }
-                              : {
-                                  type: 'worktree',
-                                  worktreeSessionId: activeSessionInfo.session.id,
-                                },
-                          });
-                          setFocusArea('app');
-                        }}
-                      />
-                    </div>
+                    {allSessions
+                      .filter(({ session }) => visitedWorktreeTools.includes(session.id))
+                      .map(({ repository, session }) => (
+                        <div
+                          key={session.id}
+                          hidden={
+                            session.id !== activeTerminalId ||
+                            !['notes', 'todos'].includes(rightPanelTab)
+                          }
+                          className={
+                            session.id === activeTerminalId &&
+                            ['notes', 'todos'].includes(rightPanelTab)
+                              ? 'h-full'
+                              : 'hidden'
+                          }
+                        >
+                          <div
+                            hidden={rightPanelTab !== 'notes'}
+                            className={rightPanelTab === 'notes' ? 'h-full' : 'hidden'}
+                          >
+                            <NotesPanel
+                              scopeMode="worktree"
+                              onOpenPlanning={() =>
+                                openPlanning(repository.id, {
+                                  scopeId: session.id,
+                                  tab: 'notes',
+                                })
+                              }
+                              titleSlot={null}
+                              repositoryId={repository.id}
+                              worktreeSessionId={session.id}
+                              repositoryName={repository.name}
+                              worktreeLabel={session.label}
+                            />
+                          </div>
+                          <div
+                            hidden={rightPanelTab !== 'todos'}
+                            className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}
+                          >
+                            <TodosPanel
+                              onOpenWorktree={handleOpenTodoWorktree}
+                              scopeMode="worktree"
+                              onOpenPlanning={() =>
+                                openPlanning(repository.id, {
+                                  scopeId: session.id,
+                                  tab: 'todos',
+                                })
+                              }
+                              onDispatch={(todo, targetId) => {
+                                void handleDispatchTodo(repository.id, todo, targetId);
+                              }}
+                              expanded={todosExpanded}
+                              onToggleExpanded={() => setTodosExpanded((value) => !value)}
+                              titleSlot={null}
+                              repositoryId={repository.id}
+                              worktreeSessionId={session.id}
+                              repositoryName={repository.name}
+                              worktreeLabel={session.label}
+                              onSendToTerminal={
+                                canSendTodo && session.id === activeTerminalId
+                                  ? handleSendTodo
+                                  : undefined
+                              }
+                              onCreateWorktree={(todo) => {
+                                setActiveScreen({
+                                  type: 'addWorktree',
+                                  repositoryId: repository.id,
+                                  todo,
+                                  todoScope: { type: 'worktree', worktreeSessionId: session.id },
+                                });
+                                setFocusArea('app');
+                              }}
+                            />
+                          </div>
+                        </div>
+                      ))}
                   </div>
                 )}
 
@@ -1606,6 +1751,8 @@ export function Layout() {
                         terminalId={config.terminalId}
                         cwd={config.cwd}
                         isVisible={
+                          activeScreen.type !== 'planning' &&
+                          !(activeScreen.type === 'addWorktree' && activeScreen.todo) &&
                           !isOverviewMode &&
                           !isUserTerminalPanelCollapsed &&
                           config.sessionId === activeTerminalId &&
@@ -1636,6 +1783,58 @@ export function Layout() {
             </>
           )}
 
+          {repositories
+            .filter(
+              (repository) =>
+                visitedPlanning.includes(repository.id) || planningRepositoryId === repository.id
+            )
+            .map((repository) => (
+              <div
+                key={repository.id}
+                hidden={planningRepositoryId !== repository.id}
+                className={
+                  planningRepositoryId === repository.id
+                    ? 'absolute inset-0 z-30 bg-background'
+                    : 'hidden'
+                }
+              >
+                <PlanningWorkspace
+                  onOpenWorktree={handleOpenTodoWorktree}
+                  locationRequest={planningLocations[repository.id]}
+                  repository={repository}
+                  repositories={repositories}
+                  onRepositoryChange={openPlanning}
+                  onBack={() => setActiveScreen({ type: 'main' })}
+                  onDispatch={(todo, targetId) => {
+                    void handleDispatchTodo(repository.id, todo, targetId);
+                  }}
+                  onCreateWorktree={(todo, todoScope) => {
+                    setActiveScreen({
+                      type: 'addWorktree',
+                      repositoryId: repository.id,
+                      todo,
+                      todoScope,
+                      returnToPlanning: repository.id,
+                    });
+                    setFocusArea('app');
+                  }}
+                />
+              </div>
+            ))}
+
+          {activeScreen.type === 'planning' && !planningRepositoryId && (
+            <section
+              className="absolute inset-0 z-30 flex flex-col items-center justify-center gap-3 bg-background p-6"
+              aria-label="Planning"
+            >
+              <h1 className="text-lg font-semibold">Planning</h1>
+              <p className="text-sm text-muted-foreground">
+                Add a repository to start planning todos and notes.
+              </p>
+              <Button onClick={handleAddRepository}>Add repository</Button>
+            </section>
+          )}
+
           {/* Overlay screens - rendered on top of main content */}
           {activeScreen.type === 'settings' && (
             <div className="absolute inset-0 z-40 bg-background">
@@ -1648,7 +1847,13 @@ export function Layout() {
           {activeScreen.type === 'addWorktree' && (
             <div className="absolute inset-0 z-40 bg-background">
               <AddWorktreeScreen
-                onBack={() => setActiveScreen({ type: 'main' })}
+                onBack={() =>
+                  setActiveScreen(
+                    activeScreen.returnToPlanning
+                      ? { type: 'planning', repositoryId: activeScreen.returnToPlanning }
+                      : { type: 'main' }
+                  )
+                }
                 repositoryId={activeScreen.repositoryId}
                 todo={activeScreen.todo}
                 todoScope={activeScreen.todoScope}

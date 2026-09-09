@@ -225,7 +225,7 @@ export function AddWorktreeScreen({
       };
 
       addWorktreeSession(repository.id, worktreeSession);
-      setActiveTerminal(sessionId);
+      if (!todo) setActiveTerminal(sessionId);
 
       // Opening the tab runs its preset command when the terminal starts.
       const defaultPreset = settings.defaultPresetId
@@ -235,14 +235,15 @@ export function AddWorktreeScreen({
         sessionId,
         defaultPreset?.name || 'Terminal',
         defaultPreset?.command || undefined,
-        defaultPreset?.icon
+        defaultPreset?.icon,
+        { activate: !todo }
       );
 
       // Execute setup script if configured
       const setupScript = repository.scriptsConfig?.setupScript;
       if (setupScript) {
         // Create a user terminal tab with a descriptive name
-        const newTab = createUserTab(sessionId, 'Setup');
+        const newTab = createUserTab(sessionId, 'Setup', undefined, { activate: !todo });
         const terminalId = getUserTerminalIdForTab(sessionId, newTab.id);
 
         // Wait for the terminal to be ready before sending the command
@@ -262,7 +263,7 @@ export function AddWorktreeScreen({
           type: 'repository' as const,
           repositoryId: repository.id,
         };
-        if (!state.moveTodoToWorktree(sourceScope, todo.id, sessionId, 'in_progress')) {
+        if (!state.moveTodoToWorktree(sourceScope, todo.id, sessionId)) {
           toast.error(
             'Worktree created, but the todo could not be moved. The original todo has been kept.'
           );
@@ -280,7 +281,6 @@ export function AddWorktreeScreen({
         } catch {
           toast.error('Could not copy todo to clipboard. It will still be sent to the terminal.');
         }
-        setActiveTerminal(sessionId);
         onTodoTerminalCreated?.(
           getTerminalIdForTab(sessionId, defaultTab.id),
           movedTodo,

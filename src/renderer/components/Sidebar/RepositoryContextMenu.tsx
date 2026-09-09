@@ -5,7 +5,7 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from '../ui/context-menu';
-import { Trash2, GitCompare, Settings, LayoutGrid } from 'lucide-react';
+import { Trash2, GitCompare, Settings, LayoutGrid, Columns3 } from 'lucide-react';
 import type { Repository } from '../../../shared/types';
 
 interface RepositoryContextMenuProps {
@@ -16,6 +16,7 @@ interface RepositoryContextMenuProps {
   onOpenSettings?: (repository: Repository) => void;
   onOpenChange?: (open: boolean) => void;
   onOpenOverview?: (repositoryId: string) => void;
+  onOpenPlanning?: (repositoryId: string) => void;
 }
 
 export function RepositoryContextMenu({
@@ -26,6 +27,7 @@ export function RepositoryContextMenu({
   onOpenSettings,
   onOpenChange,
   onOpenOverview,
+  onOpenPlanning,
 }: RepositoryContextMenuProps) {
   return (
     <ContextMenu onOpenChange={onOpenChange}>
@@ -35,6 +37,12 @@ export function RepositoryContextMenu({
           <ContextMenuItem onClick={() => onOpenOverview(repository.id)}>
             <LayoutGrid className="mr-2 h-4 w-4" />
             Open agent overview
+          </ContextMenuItem>
+        )}
+        {onOpenPlanning && (
+          <ContextMenuItem onClick={() => onOpenPlanning(repository.id)}>
+            <Columns3 className="mr-2 h-4 w-4" />
+            Open Planning
           </ContextMenuItem>
         )}
         {onOpenSettings && (

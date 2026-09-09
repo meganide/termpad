@@ -8,6 +8,7 @@ import {
   ListFilter,
   Terminal,
   LayoutGrid,
+  Columns3,
   Search,
   X,
 } from 'lucide-react';
@@ -42,6 +43,9 @@ interface SidebarProps {
   onClosePortTerminal?: (terminalId: string) => Promise<boolean>;
   onToggleOverview: () => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
+  onOpenRepositoryPlanning?: (repositoryId: string) => void;
+  onOpenPlanning?: () => void;
+  isPlanning?: boolean;
   isOverviewMode: boolean;
   isHome?: boolean;
   activeOverviewRepositoryId?: string | null;
@@ -64,6 +68,9 @@ export function Sidebar({
   onClosePortTerminal,
   onToggleOverview,
   onOpenRepositoryOverview,
+  onOpenRepositoryPlanning,
+  onOpenPlanning,
+  isPlanning = false,
   isOverviewMode,
   isHome = false,
   activeOverviewRepositoryId,
@@ -309,6 +316,17 @@ export function Sidebar({
             {isMac ? 'Cmd + O' : 'Ctrl + O'}
           </kbd>
         </button>
+        {onOpenPlanning && (
+          <button
+            className={cn('sidebar-nav-item', isPlanning && 'is-selected')}
+            onClick={onOpenPlanning}
+            aria-label="Planning"
+            aria-current={isPlanning ? 'page' : undefined}
+          >
+            <Columns3 className="size-4" />
+            <span>Planning</span>
+          </button>
+        )}
         <button
           className="sidebar-nav-item"
           aria-haspopup="dialog"
@@ -470,7 +488,7 @@ export function Sidebar({
           ) : (
             <RepositoryTree
               repositories={visibleRepositories}
-              activeSessionId={activeTerminalId}
+              activeSessionId={isPlanning ? null : activeTerminalId}
               terminals={terminals}
               focusedItemId={focusedItemId}
               statusFocus={statusFocus}
@@ -489,6 +507,7 @@ export function Sidebar({
                 if (original) onOpenRepositorySettings(original);
               }}
               onOpenRepositoryOverview={onOpenRepositoryOverview}
+              onOpenRepositoryPlanning={onOpenRepositoryPlanning}
               activeOverviewRepositoryId={activeOverviewRepositoryId}
               onWorktreeRemove={(session, repository) => {
                 const original = repositories.find((repo) => repo.id === repository.id);

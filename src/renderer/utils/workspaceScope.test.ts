@@ -25,6 +25,14 @@ beforeEach(() => {
 });
 
 describe('global content migration', () => {
+  it('keeps new primary-checkout content local after the one-time migration', () => {
+    const repository = migrateGlobalContent(fixture());
+    repository.worktreeSessions[0].todos = [todo];
+    repository.worktreeSessions[0].notes = 'Local main notes';
+    expect(migrateGlobalContent(repository)).toBe(repository);
+    expect(repository.todos).toBeUndefined();
+    expect(repository.worktreeSessions[0].todos).toEqual([todo]);
+  });
   it('preserves existing global and main-checkout content without touching linked worktrees', () => {
     const repository = fixture();
     repository.todos = [{ ...todo, id: 'global' }];
@@ -89,7 +97,7 @@ describe('moving global todos', () => {
     expect(window.storage.saveState).toHaveBeenCalledTimes(1);
   });
 
-  it.each(['missing', 'main', 'other-repo', 'duplicate', 'deleting'])(
+  it.each(['missing', 'other-repo', 'duplicate', 'deleting'])(
     'rejects a %s target without removing the source',
     (kind) => {
       const repository = fixture();
@@ -104,11 +112,9 @@ describe('moving global todos', () => {
       const id =
         kind === 'missing'
           ? 'missing'
-          : kind === 'main'
-            ? repository.worktreeSessions[0].id
-            : kind === 'other-repo'
-              ? other.worktreeSessions[0].id
-              : target.id;
+          : kind === 'other-repo'
+            ? other.worktreeSessions[0].id
+            : target.id;
       expect(useAppStore.getState().moveGlobalTodoToWorktree('repo', todo.id, id)).toBe(false);
       expect(useAppStore.getState().repositories[0].todos).toEqual([todo]);
       expect(window.storage.saveState).not.toHaveBeenCalled();

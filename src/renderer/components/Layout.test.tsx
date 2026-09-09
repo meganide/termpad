@@ -30,6 +30,8 @@ vi.mock('./Sidebar/index', () => ({
     onClosePortTerminal,
     onToggleOverview,
     onOpenRepositoryOverview,
+    onOpenPlanning,
+    onOpenRepositoryPlanning,
     activeOverviewRepositoryId,
     isOverviewMode,
     hasAgents,
@@ -44,6 +46,8 @@ vi.mock('./Sidebar/index', () => ({
     onClosePortTerminal: (id: string) => Promise<boolean>;
     onToggleOverview: () => void;
     onOpenRepositoryOverview: (repositoryId: string) => void;
+    onOpenPlanning: () => void;
+    onOpenRepositoryPlanning: (repositoryId: string) => void;
     isOverviewMode: boolean;
     activeOverviewRepositoryId?: string | null;
     hasAgents: boolean;
@@ -66,6 +70,10 @@ vi.mock('./Sidebar/index', () => ({
         onClick={() => onOpenRepositoryOverview('repo-1')}
       >
         Open agent overview
+      </button>
+      <button onClick={onOpenPlanning}>Open repository planning</button>
+      <button onClick={() => onOpenRepositoryPlanning('repo-1')}>
+        Open global planning from repository menu
       </button>
       <button data-testid="sidebar-toggle-overview" onClick={onToggleOverview}>
         Overview
@@ -115,6 +123,7 @@ vi.mock('./Terminal/TerminalView', async () => {
       ref?: React.Ref<import('./Terminal/TerminalView').TerminalViewHandle>;
     }) => {
       useImperativeHandle(ref, () => ({
+        focus: vi.fn(),
         sendText: (text, submit) => sendTodoText(terminalId ?? sessionId, text, submit),
         copyAllOutput: vi.fn(),
         copySelection: vi.fn(),
@@ -177,9 +186,16 @@ vi.mock('./Terminal/StoppedTerminalPanel', () => ({
 }));
 
 vi.mock('./AddWorktreeScreen', () => ({
-  AddWorktreeScreen: ({ repositoryId }: { repositoryId: string | null }) => (
+  AddWorktreeScreen: ({
+    repositoryId,
+    onBack,
+  }: {
+    repositoryId: string | null;
+    onBack: () => void;
+  }) => (
     <div data-testid="add-worktree-screen" data-repository-id={repositoryId}>
       AddWorktreeScreen
+      <button onClick={onBack}>Return from worktree creation</button>
     </div>
   ),
 }));
@@ -421,7 +437,7 @@ describe('Layout', () => {
       };
       useAppStore.setState({
         repositories: [
-          { ...createMockRepository({ id: 'repo-1', worktreeSessions: [session] }), todos: [todo] },
+          createMockRepository({ id: 'repo-1', worktreeSessions: [{ ...session, todos: [todo] }] }),
         ],
       });
       const store = useAppStore.getState();
@@ -443,11 +459,116 @@ describe('Layout', () => {
       await user.click(await screen.findByRole('menuitem', { name: 'Send to active terminal' }));
       expect(toast.error).not.toHaveBeenCalled();
       await waitFor(() =>
-        expect(sendTodoText).toHaveBeenCalledExactlyOnceWith(terminalId, todo.text, undefined)
+        expect(sendTodoText).toHaveBeenCalledExactlyOnceWith(terminalId, todo.text, true)
       );
-      expect(useAppStore.getState().repositories[0].todos?.[0].status).toBe('in_progress');
+      expect(useAppStore.getState().repositories[0].worktreeSessions[0].todos?.[0].status).toBe(
+        'in_progress'
+      );
     }
   );
+
+  it('opens repository planning without switching worktrees and restores it after worktree creation', async () => {
+    const user = userEvent.setup();
+    const session = createMockWorktreeSession({ id: 'session-1' });
+    const repository = createMockRepository({ id: 'repo-1', worktreeSessions: [session] });
+    repository.todos = [
+      { id: 'todo', text: 'Plan a feature', completed: false, createdAt: '2026-01-01' },
+    ];
+    const otherRepository = createMockRepository({ id: 'repo-2', name: 'Other repository' });
+    useAppStore.setState({
+      repositories: [repository, otherRepository],
+      initialize: vi.fn(),
+      activeTerminalId: session.id,
+    });
+    render(<Layout />);
+    fireEvent.click(screen.getByRole('button', { name: 'Open repository planning' }));
+    const workspace = screen.getByRole('region', { name: `Planning for ${repository.name}` });
+    const scroll = within(workspace).getByTestId('todo-scroll-container');
+    scroll.scrollTop = 360;
+    fireEvent.change(within(workspace).getByRole('textbox', { name: /Add a todo/ }), {
+      target: { value: 'Next idea' },
+    });
+    fireEvent.change(within(workspace).getByLabelText('Planning scope'), {
+      target: { value: session.id },
+    });
+    fireEvent.change(within(workspace).getByLabelText('Planning repository'), {
+      target: { value: otherRepository.id },
+    });
+    const otherWorkspace = screen.getByRole('region', { name: 'Planning for Other repository' });
+    expect(workspace).not.toBeVisible();
+    expect(within(otherWorkspace).getByLabelText('Planning scope')).toHaveValue('global');
+    fireEvent.change(within(otherWorkspace).getByLabelText('Planning repository'), {
+      target: { value: repository.id },
+    });
+    expect(within(workspace).getByLabelText('Planning scope')).toHaveValue(session.id);
+    fireEvent.change(within(workspace).getByLabelText('Planning scope'), {
+      target: { value: 'global' },
+    });
+    expect(scroll.scrollTop).toBe(360);
+    expect(within(workspace).getByRole('textbox', { name: /Add a todo/ })).toHaveValue('Next idea');
+    fireEvent.contextMenu(within(scroll).getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Start in worktree' }));
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'New…' }));
+    expect(await screen.findByTestId('add-worktree-screen')).toHaveAttribute(
+      'data-repository-id',
+      'repo-1'
+    );
+    fireEvent.click(screen.getByRole('button', { name: 'Return from worktree creation' }));
+    expect(screen.getByRole('region', { name: `Planning for ${repository.name}` })).toBe(workspace);
+    expect(scroll.scrollTop).toBe(360);
+    expect(within(workspace).getByRole('textbox', { name: /Add a todo/ })).toHaveValue('Next idea');
+    expect(useAppStore.getState().activeTerminalId).toBe(session.id);
+    fireEvent.click(within(workspace).getByRole('button', { name: 'Back to workspace' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Open repository planning' }));
+    expect(scroll).toBeVisible();
+    expect(scroll.scrollTop).toBe(360);
+    for (const tab of ['notes', 'todos', 'todos'] as const) {
+      // A side-panel link overrides both a different repository and a manually selected scope.
+      fireEvent.change(within(workspace).getByLabelText('Planning scope'), {
+        target: { value: 'global' },
+      });
+      fireEvent.change(within(workspace).getByLabelText('Planning repository'), {
+        target: { value: otherRepository.id },
+      });
+      fireEvent.click(within(otherWorkspace).getByRole('button', { name: 'Back to workspace' }));
+      fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+      fireEvent.click(
+        within(screen.getByTestId('right-panel')).getByRole('button', { name: 'Open Planning' })
+      );
+      expect(within(workspace).getByLabelText('Planning repository')).toHaveValue(repository.id);
+      expect(within(workspace).getByLabelText('Planning scope')).toHaveValue(session.id);
+      expect(
+        within(workspace).getByRole('button', { name: tab === 'notes' ? 'Notes' : 'Todos' })
+      ).toHaveAttribute('aria-pressed', 'true');
+      expect(useAppStore.getState().activeTerminalId).toBe(session.id);
+    }
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Open global planning from repository menu' })
+    );
+    expect(within(workspace).getByLabelText('Planning repository')).toHaveValue(repository.id);
+    expect(within(workspace).getByLabelText('Planning scope')).toHaveValue('global');
+    expect(scroll).toBeVisible();
+    expect(scroll.scrollTop).toBe(360);
+    const target = createMockWorktreeSession({ id: 'assigned-worktree', label: 'Feature branch' });
+    let targetTabId = '';
+    act(() => {
+      const state = useAppStore.getState();
+      state.addWorktreeSession(repository.id, target);
+      targetTabId = state.createTab(target.id, 'Existing agent', undefined, undefined, {
+        activate: false,
+      }).id;
+      state.moveGlobalTodoToWorktree(repository.id, 'todo', target.id);
+    });
+    await user.click(within(scroll).getByRole('button', { name: 'Open worktree Feature branch' }));
+    expect(useAppStore.getState().activeTerminalId).toBe(target.id);
+    expect(useAppStore.getState().activeTabId).toBe(targetTabId);
+    expect(workspace).not.toBeVisible();
+    expect(useAppStore.getState().getTabsForWorktree(target.id)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open repository planning' }));
+    expect(scroll).toBeVisible();
+    expect(scroll.scrollTop).toBe(360);
+    expect(within(workspace).getByRole('textbox', { name: /Add a todo/ })).toHaveValue('Next idea');
+  });
 
   describe('loading state', () => {
     it('shows loading state when not initialized', () => {

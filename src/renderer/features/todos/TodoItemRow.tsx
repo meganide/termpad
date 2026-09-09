@@ -41,6 +41,9 @@ import { TodoDetailDialog } from './TodoDetailDialog';
 import { TodoActionItems } from './TodoActionItems';
 
 interface TodoItemRowProps {
+  assignment?: string;
+  onOpenWorktree?: () => void;
+  dispatch?: boolean;
   todo: TodoItem;
   sortable: boolean;
   onToggle: (completed: boolean) => void;
@@ -57,6 +60,9 @@ interface TodoItemRowProps {
 }
 
 export function TodoItemRow({
+  assignment,
+  onOpenWorktree,
+  dispatch,
   todo,
   sortable,
   onToggle,
@@ -114,6 +120,7 @@ export function TodoItemRow({
   const createdAt = new Date(todo.createdAt);
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
   const actions = {
+    dispatch,
     todo,
     columns,
     onOpen: () => {
@@ -240,6 +247,28 @@ export function TodoItemRow({
                 {todo.text}
               </button>
             )}
+            {assignment &&
+              (onOpenWorktree ? (
+                <button
+                  type="button"
+                  title={`Assigned to ${assignment}`}
+                  aria-label={`Open worktree ${assignment}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenWorktree();
+                  }}
+                  className="max-w-full cursor-pointer truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  {assignment}
+                </button>
+              ) : (
+                <span
+                  title={`Assigned to ${assignment}`}
+                  className="max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                >
+                  {assignment}
+                </span>
+              ))}
             <Tooltip>
               <TooltipTrigger asChild>
                 <time

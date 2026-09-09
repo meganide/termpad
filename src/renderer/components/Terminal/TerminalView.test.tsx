@@ -766,6 +766,25 @@ describe('TerminalView', () => {
     expect(mockUseTerminalReturn.write).toHaveBeenCalledExactlyOnceWith('\r');
   });
 
+  it('submits background todos without focusing the terminal or changing the focus area', async () => {
+    const ref = createRef<TerminalViewHandle>();
+    render(<TerminalView {...defaultProps} isVisible={false} ref={ref} />);
+    act(() => {
+      useAppStore.getState().registerTerminal(defaultProps.sessionId);
+      useAppStore.getState().updateTerminalStatus(defaultProps.sessionId, 'idle');
+      useAppStore.getState().setFocusArea('app');
+    });
+    mockTerminalInstance.focus.mockClear();
+    await act(async () => {
+      const pending = ref.current!.sendText('Start in the background', true, { focus: false });
+      await vi.advanceTimersByTimeAsync(100);
+      await pending;
+    });
+    expect(mockUseTerminalReturn.write).toHaveBeenCalledExactlyOnceWith('\r');
+    expect(mockTerminalInstance.focus).not.toHaveBeenCalled();
+    expect(useAppStore.getState().focusArea).toBe('app');
+  });
+
   it('separates consecutive todos and resets after the user submits or clears input', async () => {
     const ref = createRef<TerminalViewHandle>();
     render(<TerminalView {...defaultProps} ref={ref} />);

@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { fireEvent, render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { useAppStore } from '../../stores/appStore';
 import { resetAllStores, createMockRepositoryWithWorktreeSessions } from '../../../../tests/utils';
 import { NotesPanel } from './NotesPanel';
@@ -53,34 +52,21 @@ describe('NotesPanel', () => {
     expect(screen.queryByText('Global content')).not.toBeInTheDocument();
   });
 
-  it('renders and collapses only the global notes in the primary checkout', async () => {
-    const user = userEvent.setup();
+  it('shows global notes beneath a static title', () => {
     seedRepository({ repository: 'Global content', worktree: 'Old content' }, true);
     renderPanel();
-
-    expect(screen.getAllByRole('textbox')).toHaveLength(1);
+    expect(screen.getByRole('heading', { name: 'Global: Termpad' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Global: Termpad' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Global: Termpad' })).toHaveTextContent(
       'Global content'
     );
-    const repositoryHeader = screen.getByRole('button', { name: /Global: Termpad/ });
-    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'true');
-
-    await user.click(repositoryHeader);
-
-    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  it('expands a collapsed scope again', async () => {
-    const user = userEvent.setup();
+  it('keeps worktree notes visible beneath a static title', () => {
     seedRepository();
     renderPanel();
-
-    const worktreeHeader = screen.getByRole('button', { name: /Worktree: feature-x/ });
-    await user.click(worktreeHeader);
-    await user.click(worktreeHeader);
-
-    expect(worktreeHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('heading', { name: 'Worktree: feature-x' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Worktree: feature-x' })).not.toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Worktree: feature-x' })).toBeInTheDocument();
   });
 
