@@ -1,4 +1,4 @@
-import { FileText, ListTodo, NotebookPen, GitCompareArrows, Terminal } from 'lucide-react';
+import { FileText, ListTodo, NotebookPen, GitCompareArrows, Terminal, Globe } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../ui/tooltip';
 
@@ -7,16 +7,18 @@ export interface RightPanelCounts {
   review?: number;
   reviewBase?: string;
   terminals?: number;
+  browser?: number;
   scope?: 'global' | 'worktree';
   todos?: { completed: number; total: number };
   notes?: boolean;
 }
 
-export type RightPanelTab = 'changes' | 'review' | 'terminals' | 'notes' | 'todos';
+export type RightPanelTab = 'changes' | 'review' | 'browser' | 'terminals' | 'notes' | 'todos';
 
 const TABS: { id: RightPanelTab; label: string; Icon: LucideIcon }[] = [
   { id: 'changes', label: 'Changes', Icon: FileText },
   { id: 'review', label: 'Review', Icon: GitCompareArrows },
+  { id: 'browser', label: 'Browser', Icon: Globe },
   { id: 'terminals', label: 'Terminals', Icon: Terminal },
   { id: 'notes', label: 'Notes', Icon: NotebookPen },
   { id: 'todos', label: 'Todos', Icon: ListTodo },
@@ -33,12 +35,14 @@ export function RightPanelTabs({ active, onChange, counts = {} }: RightPanelTabs
     changes: counts.changes === undefined ? '' : ` (${counts.changes})`,
     review: counts.review === undefined ? '' : ` (${counts.review})`,
     terminals: counts.terminals === undefined ? '' : ` (${counts.terminals})`,
+    browser: counts.browser === undefined ? '' : ` (${counts.browser})`,
     todos: counts.todos ? ` (${counts.todos.completed}/${counts.todos.total})` : '',
   };
   const details: Record<RightPanelTab, string> = {
     changes: 'Unique changed files, including staged, unstaged, and untracked files',
     review: `Files in review against ${counts.reviewBase ?? 'HEAD'}`,
     terminals: 'Open terminals in this worktree',
+    browser: 'Browser tabs shared across worktrees in this repository',
     todos: counts.todos
       ? `${counts.scope === 'global' ? 'Global' : 'Worktree'}: ${counts.todos.completed}/${counts.todos.total} completed`
       : `${counts.scope === 'global' ? 'Global' : 'Worktree'} todos`,

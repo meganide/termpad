@@ -8,6 +8,7 @@ describe('RightPanelTabs', () => {
 
     expect(screen.getByTestId('right-panel-tab-changes')).toBeInTheDocument();
     expect(screen.getByTestId('right-panel-tab-review')).toBeInTheDocument();
+    expect(screen.getByTestId('right-panel-tab-browser')).toBeInTheDocument();
     expect(screen.getByTestId('right-panel-tab-terminals')).toBeInTheDocument();
     expect(screen.getByTestId('right-panel-tab-notes')).toBeInTheDocument();
     expect(screen.getByTestId('right-panel-tab-todos')).toBeInTheDocument();
