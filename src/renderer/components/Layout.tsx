@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
-import { Terminal as TerminalIcon } from 'lucide-react';
+import { Maximize2, Minimize2, Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
+import { Button } from './ui/button';
 import type {
   FileStatus,
   Repository,
@@ -17,7 +18,7 @@ import { useResizeSelectionLock } from '../hooks/useResizeSelectionLock';
 import { usePRStatusPolling } from '../hooks/usePRStatusPolling';
 import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore } from '../stores/appStore';
+import { useAppStore, type TodoScope } from '../stores/appStore';
 import { ReviewPanel, type ReviewRequest } from '../features/review/ReviewPanel';
 import { AddRepositoryScreen } from './AddRepositoryScreen';
 import { AddWorktreeScreen } from './AddWorktreeScreen';
@@ -195,7 +196,7 @@ export function Layout() {
   type ActiveScreen =
     | { type: 'main' }
     | { type: 'settings'; tab: SettingsTab }
-    | { type: 'addWorktree'; repositoryId: string | null; todo?: TodoItem }
+    | { type: 'addWorktree'; repositoryId: string | null; todo?: TodoItem; todoScope?: TodoScope }
     | { type: 'home' }
     | { type: 'addRepository' }
     | { type: 'repositorySettings'; repositoryId: string };
@@ -205,10 +206,16 @@ export function Layout() {
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
   const [reviewExpanded, setReviewExpanded] = useState(false);
   const [browserExpanded, setBrowserExpanded] = useState(false);
+  const [todosExpanded, setTodosExpanded] = useState(false);
+  const [expandedToolTabs, setExpandedToolTabs] = useState<Partial<Record<RightPanelTab, boolean>>>(
+    {}
+  );
   const [browserCounts, setBrowserCounts] = useState<Record<string, number>>({});
   const rightPanelExpanded =
     (reviewExpanded && rightPanelTab === 'review') ||
-    (browserExpanded && rightPanelTab === 'browser');
+    (browserExpanded && rightPanelTab === 'browser') ||
+    (todosExpanded && rightPanelTab === 'todos') ||
+    Boolean(expandedToolTabs[rightPanelTab]);
   const [reviewRequests, setReviewRequests] = useState<Record<string, ReviewRequest>>({});
   const [visitedReviews, setVisitedReviews] = useState<Record<string, string>>({});
   const [changeCounts, setChangeCounts] = useState<Record<string, number>>({});
@@ -714,7 +721,15 @@ export function Layout() {
     try {
       const terminal = mainTerminalRefs.current.get(activeMainTerminalId);
       if (!terminal) throw new Error('Open a terminal in the main area first.');
+      const sourceSession = allSessions.find(({ session }) => session.id === activeTerminalId);
+      const scope: TodoScope | undefined = sourceSession
+        ? sourceSession.session.isMainWorktree
+          ? { type: 'repository', repositoryId: sourceSession.repository.id }
+          : { type: 'worktree', worktreeSessionId: sourceSession.session.id }
+        : undefined;
+      setTodosExpanded(false);
       await terminal.sendText(todo.text);
+      if (scope) useAppStore.getState().updateTodo(scope, todo.id, { status: 'in_progress' });
     } catch (error) {
       toast.error('Could not send todo', {
         description: error instanceof Error ? error.message : String(error),
@@ -728,6 +743,7 @@ export function Layout() {
     hasCommand: boolean
   ) => {
     try {
+      setTodosExpanded(false);
       await waitForTerminalStartup(terminalId, hasCommand);
       const terminal = mainTerminalRefs.current.get(terminalId);
       if (!terminal) throw new Error('The new terminal is no longer open.');
@@ -963,6 +979,8 @@ export function Layout() {
       setActiveTab(tabId);
       setReviewExpanded(false);
       setBrowserExpanded(false);
+      setTodosExpanded(false);
+      setExpandedToolTabs({});
       exitOverview();
       setFocusArea('mainTerminal');
     },
@@ -1306,12 +1324,33 @@ export function Layout() {
                   }}
                 />
 
-                <div className="flex min-h-[49px] shrink-0 items-center px-3 py-2">
+                <div className="flex min-h-[49px] shrink-0 items-center gap-2 px-3 py-2">
                   <RightPanelTabs
                     active={rightPanelTab}
                     onChange={selectRightPanelTab}
                     counts={rightPanelCounts}
                   />
+                  {['changes', 'notes', 'terminals'].includes(rightPanelTab) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto h-7 w-7 shrink-0"
+                      aria-label={`${rightPanelExpanded ? 'Collapse' : 'Expand'} ${rightPanelTab}`}
+                      title={`${rightPanelExpanded ? 'Collapse' : 'Expand'} ${rightPanelTab}`}
+                      onClick={() =>
+                        setExpandedToolTabs((previous) => ({
+                          ...previous,
+                          [rightPanelTab]: !previous[rightPanelTab],
+                        }))
+                      }
+                    >
+                      {rightPanelExpanded ? (
+                        <Minimize2 className="size-3.5" />
+                      ) : (
+                        <Maximize2 className="size-3.5" />
+                      )}
+                    </Button>
+                  )}
                 </div>
 
                 {/* Changes, Notes, and Todos stay mounted so git watchers and an in-progress commit
@@ -1354,6 +1393,8 @@ export function Layout() {
                     </div>
                     <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
                       <TodosPanel
+                        expanded={todosExpanded}
+                        onToggleExpanded={() => setTodosExpanded((value) => !value)}
                         titleSlot={null}
                         repositoryId={activeSessionInfo.repository.id}
                         worktreeSessionId={activeSessionInfo.session.id}
@@ -1365,6 +1406,15 @@ export function Layout() {
                             type: 'addWorktree',
                             repositoryId: activeSessionInfo.repository.id,
                             todo,
+                            todoScope: activeSessionInfo.session.isMainWorktree
+                              ? {
+                                  type: 'repository',
+                                  repositoryId: activeSessionInfo.repository.id,
+                                }
+                              : {
+                                  type: 'worktree',
+                                  worktreeSessionId: activeSessionInfo.session.id,
+                                },
                           });
                           setFocusArea('app');
                         }}
@@ -1511,6 +1561,7 @@ export function Layout() {
                 onBack={() => setActiveScreen({ type: 'main' })}
                 repositoryId={activeScreen.repositoryId}
                 todo={activeScreen.todo}
+                todoScope={activeScreen.todoScope}
                 onTodoTerminalCreated={handleTodoTerminalCreated}
               />
             </div>

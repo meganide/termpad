@@ -63,6 +63,7 @@ const getStoredTodos = () => {
 describe('TodosPanel', () => {
   beforeEach(() => {
     resetAllStores();
+    localStorage.removeItem('termpad:todos-view');
     vi.clearAllMocks();
   });
 
@@ -96,6 +97,93 @@ describe('TodosPanel', () => {
     expect(
       await screen.findByRole('menuitem', { name: 'Send to active terminal' })
     ).toHaveAttribute('data-disabled');
+  });
+
+  it('sets status manually in the list and groups in-progress todos in an expanded accordion', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'In progress' }));
+    expect(getStoredTodos().repository[0]).toMatchObject({
+      status: 'in_progress',
+      completed: false,
+    });
+    expect(screen.getByRole('button', { name: 'In progress (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.queryByText('All done')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'In progress (1)' }));
+    expect(screen.queryByText('Write tests')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'In progress (1)' }));
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Done' }));
+    expect(getStoredTodos().repository[0]).toMatchObject({ status: 'done', completed: true });
+    expect(screen.getByRole('button', { name: 'Completed (1)' })).toBeInTheDocument();
+  });
+
+  it('makes kanban cards draggable without checkboxes or drag handles and keeps editing in the menu', async () => {
+    const user = userEvent.setup();
+    seedRepository({
+      repository: [makeTodo(), makeTodo({ id: 'done', text: 'Finished', completed: true })],
+    });
+    renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    const board = screen.getByTestId('todo-kanban');
+    expect(within(board).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(board).queryByLabelText(/^Reorder/)).not.toBeInTheDocument();
+    expect(within(board).getByRole('button', { name: 'Move todo: Write tests' })).toHaveAttribute(
+      'tabindex',
+      '0'
+    );
+    expect(within(board).getByRole('button', { name: 'Move todo: Finished' })).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    const editor = screen.getByLabelText('Edit "Write tests"');
+    await user.clear(editor);
+    await user.type(editor, 'Updated card{Enter}');
+    expect(getStoredTodos().repository[0].text).toBe('Updated card');
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('checkbox', { name: 'Updated card' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Reorder "Updated card"')).toBeInTheDocument();
+  });
+
+  it('switches between list and kanban, keeps legacy todos in their columns, and remembers the view', async () => {
+    const user = userEvent.setup();
+    seedRepository({
+      repository: [
+        makeTodo(),
+        makeTodo({ id: 'active', text: 'Working', status: 'in_progress' }),
+        makeTodo({ id: 'done', text: 'Finished', completed: true }),
+      ],
+    });
+    const { unmount } = renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    expect(
+      within(screen.getByRole('region', { name: 'Backlog' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'In progress' })).getByText('Working')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Done' })).getByText('Finished')
+    ).toBeInTheDocument();
+    fireEvent.contextMenu(
+      within(screen.getByRole('region', { name: 'In progress' })).getByTestId('todo-item')
+    );
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Backlog' }));
+    expect(
+      within(screen.getByRole('region', { name: 'Backlog' })).getByText('Working')
+    ).toBeInTheDocument();
+    unmount();
+    renderPanel();
+    expect(screen.getByRole('button', { name: 'Kanban' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.queryByTestId('todo-kanban')).not.toBeInTheDocument();
   });
 
   it('shows only the global empty state in the primary checkout', () => {

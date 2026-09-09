@@ -160,15 +160,15 @@ describe('AddWorktreeScreen', () => {
         priority: 'high',
         completed: false,
       });
-      expect(worktree.todos?.[0].id).not.toBe(todo.id);
-      expect(repo.todos).toEqual([todo]);
+      expect(worktree.todos?.[0]).toEqual({ ...todo, status: 'in_progress' });
+      expect(repo.todos).toEqual([]);
       expect(tab).toMatchObject({ name: 'My default', command });
       expect(state.activeTerminalId).toBe(worktree.id);
       expect(state.activeTabId).toBe(tab.id);
       expect(copy).toHaveBeenCalledWith(todo.text);
       expect(onTodoTerminalCreated).toHaveBeenCalledWith(
         state.getTerminalIdForTab(worktree.id, tab.id),
-        todo,
+        { ...todo, status: 'in_progress' },
         Boolean(command)
       );
       expect(mockOnBack).toHaveBeenCalledOnce();

@@ -131,11 +131,14 @@ export interface CustomShortcut {
   metaKey: boolean;
 }
 
+export type TodoStatus = 'backlog' | 'in_progress' | 'done';
+
 export type TodoPriority = 'low' | 'medium' | 'high';
 
 // A single todo entry. Scoped to either a repository or a worktree session.
 // Array position is the user's manual ordering.
 export interface TodoItem {
+  status?: TodoStatus; // Older saved todos derive status from completed.
   id: string;
   text: string;
   completed: boolean;

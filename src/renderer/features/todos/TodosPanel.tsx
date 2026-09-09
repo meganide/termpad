@@ -1,4 +1,6 @@
-import { useMemo, type ReactNode } from 'react';
+import { Columns3, List, Maximize2, Minimize2 } from 'lucide-react';
+import { Button } from '../../components/ui/button';
+import { useMemo, useState, type ReactNode } from 'react';
 import { PanelSection } from '../../components/RightPanel/PanelSection';
 import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
@@ -23,6 +25,8 @@ interface TodosPanelProps {
   repositoryName: string;
   worktreeLabel: string;
   titleSlot: ReactNode;
+  expanded?: boolean;
+  onToggleExpanded?: () => void;
   onSendToTerminal?: (todo: TodoItem) => void;
   onCreateWorktree?: (todo: TodoItem) => void;
 }
@@ -33,9 +37,14 @@ export function TodosPanel({
   repositoryName,
   worktreeLabel,
   titleSlot,
+  expanded = false,
+  onToggleExpanded,
   onSendToTerminal,
   onCreateWorktree,
 }: TodosPanelProps) {
+  const [view, setView] = useState<'list' | 'kanban'>(() =>
+    localStorage.getItem('termpad:todos-view') === 'kanban' ? 'kanban' : 'list'
+  );
   const repositories = useAppStore((s) => s.repositories);
   const { collapsed, toggle } = useCollapsibleScopes();
 
@@ -65,6 +74,40 @@ export function TodosPanel({
   return (
     <div className="h-full flex flex-col" data-testid="todos-panel">
       {titleSlot && <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>}
+      <div
+        className="flex items-center justify-end gap-1 px-3 pb-2"
+        role="group"
+        aria-label="Todo view"
+      >
+        {(['list', 'kanban'] as const).map((mode) => (
+          <Button
+            key={mode}
+            variant={view === mode ? 'secondary' : 'ghost'}
+            size="sm"
+            className="h-7 gap-2 text-xs"
+            aria-pressed={view === mode}
+            onClick={() => {
+              setView(mode);
+              localStorage.setItem('termpad:todos-view', mode);
+            }}
+          >
+            {mode === 'list' ? <List className="size-3.5" /> : <Columns3 className="size-3.5" />}
+            {mode === 'list' ? 'List' : 'Kanban'}
+          </Button>
+        ))}
+        {onToggleExpanded && (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={onToggleExpanded}
+            aria-label={expanded ? 'Collapse todos' : 'Expand todos'}
+            title={expanded ? 'Collapse todos' : 'Expand todos'}
+          >
+            {expanded ? <Minimize2 className="size-3.5" /> : <Maximize2 className="size-3.5" />}
+          </Button>
+        )}
+      </div>
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
         <PanelSection
           label={label}
@@ -75,6 +118,7 @@ export function TodosPanel({
           <TodoList
             key={global ? repositoryId : worktreeSessionId}
             label={label}
+            view={view}
             scope={scope}
             todos={todos}
             moveTargets={moveTargets}

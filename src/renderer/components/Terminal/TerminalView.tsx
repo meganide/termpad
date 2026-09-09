@@ -83,6 +83,7 @@ export const TerminalView = memo(
     const fitAddonRef = useRef<FitAddon | null>(null);
     const menuRef = useRef<HTMLDivElement>(null);
     const hasSpawnedRef = useRef(false);
+    const todoPastePendingRef = useRef(false);
     const isReplayingRef = useRef(false);
     const pendingReplayWritesRef = useRef<Array<{ data: string; resolve: () => void }>>([]);
     const pendingWriteCallbacksRef = useRef(new Set<() => void>());
@@ -134,7 +135,8 @@ export const TerminalView = memo(
           throw new Error('The terminal is no longer running.');
         }
         // xterm respects the application's bracketed-paste mode, including multiline prompts.
-        terminal.paste(text);
+        terminal.paste(`${todoPastePendingRef.current ? '\n' : ''}${text}`);
+        todoPastePendingRef.current = !text.endsWith('\n');
         if (submit) {
           // Let terminal applications process the paste before delivering Enter separately.
           await new Promise((resolve) => setTimeout(resolve, 100));
@@ -148,6 +150,7 @@ export const TerminalView = memo(
             throw new Error('The terminal closed before the todo could be submitted.');
           }
           write('\r');
+          todoPastePendingRef.current = false;
         }
         setFocusArea(terminalType === 'user' ? 'userTerminal' : 'mainTerminal');
         terminal.focus();
@@ -180,6 +183,7 @@ export const TerminalView = memo(
     useEffect(() => {
       if (hasSpawnedRef.current) return;
       hasSpawnedRef.current = true;
+      todoPastePendingRef.current = false;
       spawn();
     }, [spawn, effectiveTerminalId]);
 
@@ -379,6 +383,8 @@ export const TerminalView = memo(
 
       // Handle user input
       terminal.onData((data) => {
+        if (data.includes('\r') || data.includes('\x03') || data.includes('\x15'))
+          todoPastePendingRef.current = false;
         write(data);
       });
 

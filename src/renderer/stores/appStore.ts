@@ -154,6 +154,12 @@ interface AppStore extends AppState {
   updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
   // Todo actions (scoped to a repository or a worktree session)
+  moveTodoToWorktree: (
+    scope: TodoScope,
+    todoId: string,
+    targetId: string,
+    status?: TodoItem['status']
+  ) => boolean;
   addTodo: (scope: TodoScope, text: string) => void;
   updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
   removeTodo: (scope: TodoScope, todoId: string) => void;
@@ -257,7 +263,7 @@ export type TodoScope =
   | { type: 'repository'; repositoryId: string }
   | { type: 'worktree'; worktreeSessionId: string };
 
-export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority'>>;
+export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority' | 'status'>>;
 
 const applyToScopedTodos = (
   repositories: Repository[],
@@ -856,30 +862,45 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // Todo actions
-  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) => {
+  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) =>
+    get().moveTodoToWorktree({ type: 'repository', repositoryId }, todoId, worktreeSessionId),
+
+  moveTodoToWorktree: (scope, todoId, targetId, status) => {
     const state = get();
-    const repository = state.repositories.find((item) => item.id === repositoryId);
-    const target = repository?.worktreeSessions.find((session) => session.id === worktreeSessionId);
-    const todo = repository?.todos?.find((item) => item.id === todoId);
+    const repository = state.repositories.find((item) =>
+      scope.type === 'repository'
+        ? item.id === scope.repositoryId
+        : item.worktreeSessions.some((session) => session.id === scope.worktreeSessionId)
+    );
+    const sourceTodos =
+      scope.type === 'repository'
+        ? repository?.todos
+        : repository?.worktreeSessions.find((session) => session.id === scope.worktreeSessionId)
+            ?.todos;
+    const todo = sourceTodos?.find((item) => item.id === todoId);
+    const target = repository?.worktreeSessions.find((session) => session.id === targetId);
     if (
       !repository ||
+      !todo ||
       !target ||
       target.isMainWorktree ||
-      !todo ||
-      state.deletingPaths.has(target.path) ||
+      state.isPathDeleting(target.path) ||
       target.todos?.some((item) => item.id === todoId)
     )
       return false;
-    // Update both scopes together, preserving the todo's ID, date, completion, and priority.
+    const moved = status ? { ...todo, status, completed: status === 'done' } : todo;
+    // Remove and insert in one state update so the original is never duplicated or lost.
+    const repositories = applyToScopedTodos(state.repositories, scope, (todos) =>
+      todos.filter((item) => item.id !== todoId)
+    );
     set({
-      repositories: state.repositories.map((item) =>
-        item.id === repositoryId
+      repositories: repositories.map((item) =>
+        item.id === repository.id
           ? {
               ...item,
-              todos: item.todos?.filter((item) => item.id !== todoId),
               worktreeSessions: item.worktreeSessions.map((session) =>
-                session.id === worktreeSessionId
-                  ? { ...session, todos: [todo, ...(session.todos ?? [])] }
+                session.id === targetId
+                  ? { ...session, todos: [moved, ...(session.todos ?? [])] }
                   : session
               ),
             }
@@ -907,6 +928,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateTodo: (scope, todoId, updates) => {
+    // Keep the legacy completion flag in sync for existing counters and saved data.
+    if (updates.status !== undefined)
+      updates = { ...updates, completed: updates.status === 'done' };
+    else if (updates.completed !== undefined)
+      updates = { ...updates, status: updates.completed ? 'done' : 'backlog' };
     const trimmedText = updates.text?.trim();
     if (updates.text !== undefined && !trimmedText) return;
 

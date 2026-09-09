@@ -115,3 +115,64 @@ describe('moving global todos', () => {
     }
   );
 });
+
+describe('todo status and moving between worktrees', () => {
+  it('keeps status and completion in sync and persists status changes', () => {
+    const repository = fixture();
+    repository.todos = [todo];
+    useAppStore.setState({ repositories: [repository], isInitialized: true });
+    const scope = { type: 'repository' as const, repositoryId: 'repo' };
+    const store = useAppStore.getState();
+    store.updateTodo(scope, todo.id, { status: 'in_progress' });
+    expect(useAppStore.getState().repositories[0].todos?.[0]).toMatchObject({
+      status: 'in_progress',
+      completed: false,
+    });
+    store.updateTodo(scope, todo.id, { completed: true });
+    expect(useAppStore.getState().repositories[0].todos?.[0]).toMatchObject({
+      status: 'done',
+      completed: true,
+    });
+    store.updateTodo(scope, todo.id, { completed: false });
+    expect(useAppStore.getState().repositories[0].todos?.[0]).toMatchObject({
+      status: 'backlog',
+      completed: false,
+    });
+    expect(window.storage.saveState).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        repositories: [
+          expect.objectContaining({ todos: [expect.objectContaining({ status: 'backlog' })] }),
+        ],
+      })
+    );
+  });
+
+  it('moves the original worktree todo atomically and marks it in progress', () => {
+    const repository = fixture();
+    const source = repository.worktreeSessions[1];
+    source.todos = [todo];
+    const target = { ...source, id: 'target', path: '/test/target', todos: [] };
+    repository.worktreeSessions.push(target);
+    useAppStore.setState({ repositories: [repository], isInitialized: true });
+    const states: unknown[] = [];
+    const unsubscribe = useAppStore.subscribe((state) => states.push(state.repositories));
+    expect(
+      useAppStore
+        .getState()
+        .moveTodoToWorktree(
+          { type: 'worktree', worktreeSessionId: source.id },
+          todo.id,
+          target.id,
+          'in_progress'
+        )
+    ).toBe(true);
+    unsubscribe();
+    const result = useAppStore.getState().repositories[0];
+    expect(states).toHaveLength(1);
+    expect(result.worktreeSessions[1].todos).toEqual([]);
+    expect(result.worktreeSessions[2].todos).toEqual([
+      { ...todo, completed: false, status: 'in_progress' },
+    ]);
+    expect(result.todos).toBeUndefined();
+  });
+});

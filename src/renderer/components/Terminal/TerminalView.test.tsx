@@ -672,8 +672,33 @@ describe('TerminalView', () => {
       await vi.advanceTimersByTimeAsync(100);
       await pending;
     });
-    expect(mockTerminalInstance.paste).toHaveBeenLastCalledWith('New worktree task');
+    expect(mockTerminalInstance.paste).toHaveBeenLastCalledWith('\nNew worktree task');
     expect(mockUseTerminalReturn.write).toHaveBeenCalledExactlyOnceWith('\r');
+  });
+
+  it('separates consecutive todos and resets after the user submits or clears input', async () => {
+    const ref = createRef<TerminalViewHandle>();
+    render(<TerminalView {...defaultProps} ref={ref} />);
+    act(() => {
+      useAppStore.getState().registerTerminal(defaultProps.sessionId);
+      useAppStore.getState().updateTerminalStatus(defaultProps.sessionId, 'idle');
+    });
+    await act(async () => {
+      await ref.current!.sendText('First');
+      await ref.current!.sendText('Second');
+    });
+    expect(mockTerminalInstance.paste.mock.calls.map(([text]) => text)).toEqual([
+      'First',
+      '\nSecond',
+    ]);
+    const input = mockTerminalInstance.onData.mock.calls[0][0] as (data: string) => void;
+    for (const key of ['\r', '\x03', '\x15']) {
+      input(key);
+      await act(async () => {
+        await ref.current!.sendText('Fresh');
+      });
+      expect(mockTerminalInstance.paste).toHaveBeenLastCalledWith('Fresh');
+    }
   });
 
   it('rejects todo input for a stopped terminal', async () => {

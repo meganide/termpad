@@ -429,6 +429,7 @@ describe('Layout', () => {
       await waitFor(() =>
         expect(sendTodoText).toHaveBeenCalledExactlyOnceWith(terminalId, todo.text, undefined)
       );
+      expect(useAppStore.getState().repositories[0].todos?.[0].status).toBe('in_progress');
     }
   );
 
@@ -1114,6 +1115,37 @@ describe('Layout', () => {
       );
       expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
       expect(useAppStore.getState().focusArea).toBe('userTerminal');
+    });
+
+    it.each(['changes', 'notes', 'terminals'])(
+      'expands and collapses the %s tab without losing the panel width',
+      (tab) => {
+        setupGitRepo();
+        render(<Layout />);
+        const panel = screen.getByTestId('right-panel');
+        const width = panel.style.width;
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+        fireEvent.click(screen.getByRole('button', { name: `Expand ${tab}` }));
+        expect(panel.style.width).toBe('100%');
+        fireEvent.click(screen.getByTestId('right-panel-tab-todos'));
+        expect(panel.style.width).toBe(width);
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+        expect(panel.style.width).toBe('100%');
+        fireEvent.click(screen.getByRole('button', { name: `Collapse ${tab}` }));
+        expect(panel.style.width).toBe(width);
+      }
+    );
+
+    it('expands the todo board and restores the panel width', () => {
+      setupGitRepo();
+      render(<Layout />);
+      const panel = screen.getByTestId('right-panel');
+      const width = panel.style.width;
+      fireEvent.click(screen.getByTestId('right-panel-tab-todos'));
+      fireEvent.click(screen.getByRole('button', { name: 'Expand todos' }));
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse todos' }));
+      expect(panel.style.width).toBe(width);
     });
 
     it('expands review inline and restores the previous panel width', () => {

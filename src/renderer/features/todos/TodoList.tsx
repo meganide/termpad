@@ -28,9 +28,12 @@ import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
 import { useAppStore, type TodoScope } from '../../stores/appStore';
 import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import { getTodoStatus } from './status';
+import { TodoKanban } from './TodoKanban';
 import { TodoItemRow } from './TodoItemRow';
 
 interface TodoListProps {
+  view?: 'list' | 'kanban';
   label: string;
   scope: TodoScope;
   todos: TodoItem[];
@@ -40,6 +43,7 @@ interface TodoListProps {
 }
 
 export function TodoList({
+  view = 'list',
   label,
   scope,
   todos,
@@ -69,10 +73,11 @@ export function TodoList({
     setDraft('');
   }, [addTodo, draft, scope]);
 
-  const { active, completed } = useMemo(
+  const { active, inProgress, completed } = useMemo(
     () => ({
-      active: todos.filter((todo) => !todo.completed),
-      completed: todos.filter((todo) => todo.completed),
+      active: todos.filter((todo) => getTodoStatus(todo) === 'backlog'),
+      inProgress: todos.filter((todo) => getTodoStatus(todo) === 'in_progress'),
+      completed: todos.filter((todo) => getTodoStatus(todo) === 'done'),
     }),
     [todos]
   );
@@ -82,17 +87,18 @@ export function TodoList({
       const { active: dragged, over } = event;
       if (!over || dragged.id === over.id) return;
 
-      const oldIndex = active.findIndex((todo) => todo.id === dragged.id);
-      const newIndex = active.findIndex((todo) => todo.id === over.id);
+      const group = inProgress.some((todo) => todo.id === dragged.id) ? inProgress : active;
+      const oldIndex = group.findIndex((todo) => todo.id === dragged.id);
+      const newIndex = group.findIndex((todo) => todo.id === over.id);
       if (oldIndex === -1 || newIndex === -1) return;
 
-      const reordered = arrayMove(active, oldIndex, newIndex);
+      const reordered = arrayMove(group, oldIndex, newIndex);
       reorderTodos(
         scope,
-        [...reordered, ...completed].map((todo) => todo.id)
+        [...reordered, ...todos.filter((todo) => !group.includes(todo))].map((todo) => todo.id)
       );
     },
-    [active, completed, reorderTodos, scope]
+    [active, inProgress, todos, reorderTodos, scope]
   );
 
   const renderRow = (todo: TodoItem, sortable: boolean) => (
@@ -100,6 +106,8 @@ export function TodoList({
       key={todo.id}
       todo={todo}
       sortable={sortable}
+      card={view === 'kanban'}
+      onStatusChange={(status) => updateTodo(scope, todo.id, { status })}
       onToggle={(isCompleted) => updateTodo(scope, todo.id, { completed: isCompleted })}
       onRename={(text) => updateTodo(scope, todo.id, { text })}
       onPriorityChange={(priority: TodoPriority | undefined) =>
@@ -155,42 +163,69 @@ export function TodoList({
         </Button>
       </form>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
-        {todos.length === 0 && (
-          <p className="pt-4 text-center text-sm text-muted-foreground">No todos yet</p>
-        )}
-
-        {active.length > 0 && (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            modifiers={[restrictToVerticalAxis]}
-          >
-            <SortableContext
-              items={active.map((todo) => todo.id)}
-              strategy={verticalListSortingStrategy}
+      <div className="flex-1 min-h-0 overflow-auto space-y-2">
+        {view === 'kanban' ? (
+          <TodoKanban
+            todos={todos}
+            renderTodo={(todo) => renderRow(todo, true)}
+            onStatusChange={(todo, status) => updateTodo(scope, todo.id, { status })}
+            onReorder={(ids) => reorderTodos(scope, ids)}
+          />
+        ) : (
+          <>
+            {todos.length === 0 && (
+              <p className="pt-4 text-center text-sm text-muted-foreground">No todos yet</p>
+            )}
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+              modifiers={[restrictToVerticalAxis]}
             >
-              <ul className="space-y-1">{active.map((todo) => renderRow(todo, true))}</ul>
-            </SortableContext>
-          </DndContext>
-        )}
-
-        {todos.length > 0 && active.length === 0 && (
-          <p className="pt-4 text-center text-sm text-muted-foreground">All done</p>
-        )}
-
-        {completed.length > 0 && (
-          <Accordion type="single" collapsible>
-            <AccordionItem value="completed" className="border-b-0">
-              <AccordionTrigger className="rounded-lg px-2 py-1.5 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground hover:no-underline hover:bg-obsidian-800/60">
-                Completed ({completed.length})
-              </AccordionTrigger>
-              <AccordionContent className="pb-0 pt-1">
-                <ul className="space-y-1">{completed.map((todo) => renderRow(todo, false))}</ul>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+              {active.length > 0 && (
+                <SortableContext
+                  items={active.map((todo) => todo.id)}
+                  strategy={verticalListSortingStrategy}
+                >
+                  <ul className="space-y-1">{active.map((todo) => renderRow(todo, true))}</ul>
+                </SortableContext>
+              )}
+              {inProgress.length > 0 && (
+                <Accordion type="single" collapsible defaultValue="in-progress">
+                  <AccordionItem value="in-progress" className="border-b-0">
+                    <AccordionTrigger className="rounded-lg px-2 py-1.5 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground hover:no-underline hover:bg-obsidian-800/60">
+                      In progress ({inProgress.length})
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-0 pt-1">
+                      <SortableContext
+                        items={inProgress.map((todo) => todo.id)}
+                        strategy={verticalListSortingStrategy}
+                      >
+                        <ul className="space-y-1">
+                          {inProgress.map((todo) => renderRow(todo, true))}
+                        </ul>
+                      </SortableContext>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              )}
+            </DndContext>
+            {todos.length > 0 && active.length === 0 && inProgress.length === 0 && (
+              <p className="pt-4 text-center text-sm text-muted-foreground">All done</p>
+            )}
+            {completed.length > 0 && (
+              <Accordion type="single" collapsible>
+                <AccordionItem value="completed" className="border-b-0">
+                  <AccordionTrigger className="rounded-lg px-2 py-1.5 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground hover:no-underline hover:bg-obsidian-800/60">
+                    Completed ({completed.length})
+                  </AccordionTrigger>
+                  <AccordionContent className="pb-0 pt-1">
+                    <ul className="space-y-1">{completed.map((todo) => renderRow(todo, false))}</ul>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
+            )}
+          </>
         )}
       </div>
     </div>

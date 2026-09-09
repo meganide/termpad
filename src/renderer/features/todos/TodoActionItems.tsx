@@ -1,7 +1,8 @@
-import { Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
+import { Circle, Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
 import * as Dropdown from '../../components/ui/dropdown-menu';
 import * as Context from '../../components/ui/context-menu';
-import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import type { TodoItem, TodoPriority, TodoStatus, WorktreeSession } from '../../../shared/types';
+import { getTodoStatus, TODO_STATUSES, TODO_STATUS_LABELS, TODO_STATUS_COLORS } from './status';
 import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
 
 interface TodoActionItemsProps {
@@ -14,6 +15,7 @@ interface TodoActionItemsProps {
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   moveTargets?: WorktreeSession[];
   onMove: (id: string) => void;
+  onStatusChange: (status: TodoStatus) => void;
   onSendToTerminal?: () => void;
   onCreateWorktree?: () => void;
 }
@@ -29,6 +31,7 @@ export function TodoActionItems({
   onPriorityChange,
   moveTargets,
   onMove,
+  onStatusChange,
   onSendToTerminal,
   onCreateWorktree,
 }: TodoActionItemsProps) {
@@ -55,7 +58,7 @@ export function TodoActionItems({
         Copy
       </Item>
       <Sub>
-        <SubTrigger>
+        <SubTrigger className="gap-2">
           <Flag />
           Priority
         </SubTrigger>
@@ -78,9 +81,30 @@ export function TodoActionItems({
           </SubContent>
         </Portal>
       </Sub>
+      <Sub>
+        <SubTrigger className="gap-2">
+          <Circle />
+          Status
+        </SubTrigger>
+        <Portal>
+          <SubContent>
+            <RadioGroup
+              value={getTodoStatus(todo)}
+              onValueChange={(value) => onStatusChange(value as TodoStatus)}
+            >
+              {TODO_STATUSES.map((status) => (
+                <RadioItem key={status} value={status}>
+                  <span className={`size-2 rounded-full ${TODO_STATUS_COLORS[status]}`} />
+                  {TODO_STATUS_LABELS[status]}
+                </RadioItem>
+              ))}
+            </RadioGroup>
+          </SubContent>
+        </Portal>
+      </Sub>
       {moveTargets !== undefined && (
         <Sub>
-          <SubTrigger>
+          <SubTrigger className="gap-2">
             <GitBranch />
             Move to worktree
           </SubTrigger>

@@ -24,7 +24,7 @@ import {
   CommandList,
 } from './ui/command';
 import { Badge } from './ui/badge';
-import { useAppStore } from '../stores/appStore';
+import { useAppStore, type TodoScope } from '../stores/appStore';
 import type { WorktreeSession, BranchInfo, WorktreeInfo, TodoItem } from '../../shared/types';
 import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
@@ -37,6 +37,7 @@ interface AddWorktreeScreenProps {
   onBack: () => void;
   repositoryId: string | null;
   todo?: TodoItem;
+  todoScope?: TodoScope;
   onTodoTerminalCreated?: (terminalId: string, todo: TodoItem, hasCommand: boolean) => void;
 }
 
@@ -58,6 +59,7 @@ export function AddWorktreeScreen({
   onBack,
   repositoryId,
   todo,
+  todoScope,
   onTodoTerminalCreated,
 }: AddWorktreeScreenProps) {
   const [mode, setMode] = useState<Mode>('create');
@@ -220,18 +222,6 @@ export function AddWorktreeScreen({
         worktreeName: sanitizedName,
         createdAt: new Date().toISOString(),
         isExternal: false,
-        ...(todo
-          ? {
-              todos: [
-                {
-                  ...todo,
-                  id: generateId(),
-                  completed: false,
-                  createdAt: new Date().toISOString(),
-                },
-              ],
-            }
-          : {}),
       };
 
       addWorktreeSession(repository.id, worktreeSession);
@@ -256,8 +246,26 @@ export function AddWorktreeScreen({
       }
 
       if (todo) {
+        const state = useAppStore.getState();
+        const sourceScope = todoScope ?? {
+          type: 'repository' as const,
+          repositoryId: repository.id,
+        };
+        if (!state.moveTodoToWorktree(sourceScope, todo.id, sessionId, 'in_progress')) {
+          toast.error(
+            'Worktree created, but the todo could not be moved. The original todo has been kept.'
+          );
+          onBack();
+          return;
+        }
+        const movedTodo = useAppStore
+          .getState()
+          .repositories.find((item) => item.id === repository.id)
+          ?.worktreeSessions.find((item) => item.id === sessionId)
+          ?.todos?.find((item) => item.id === todo.id);
+        if (!movedTodo) return;
         try {
-          await navigator.clipboard.writeText(todo.text);
+          await navigator.clipboard.writeText(movedTodo.text);
         } catch {
           toast.error('Could not copy todo to clipboard. It will still be sent to the terminal.');
         }
@@ -270,9 +278,10 @@ export function AddWorktreeScreen({
           preset?.command || undefined,
           preset?.icon
         );
+        setActiveTerminal(sessionId);
         onTodoTerminalCreated?.(
           getTerminalIdForTab(sessionId, tab.id),
-          todo,
+          movedTodo,
           Boolean(preset?.command)
         );
       }
@@ -463,8 +472,8 @@ export function AddWorktreeScreen({
             {todo && (
               <div className="mb-6 space-y-2 rounded-lg bg-muted/30 p-4">
                 <p className="text-sm text-muted-foreground">
-                  Copies this todo to the new worktree, opens your default terminal, and pastes the
-                  text followed by Enter.
+                  Moves this todo to In progress in the new worktree, opens your default terminal,
+                  and pastes the text followed by Enter.
                 </p>
                 <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-sm">
                   {todo.text}
