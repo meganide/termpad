@@ -940,8 +940,14 @@ export function Layout() {
           }
           setActiveScreen({ type: 'main' });
           setReviewExpanded(false);
+          setBrowserExpanded(false);
           exitOverview();
           state.setFocusArea(kind === 'main' ? 'mainTerminal' : 'userTerminal');
+          // Restore keyboard focus after the navigation dialog releases its focus trap.
+          requestAnimationFrame(() => {
+            const refs = kind === 'main' ? mainTerminalRefs : userTerminalRefs;
+            refs.current.get(terminalId)?.focus();
+          });
           return true;
         }
       }
@@ -1079,6 +1085,21 @@ export function Layout() {
           onOpenSettings={handleOpenSettings}
           onOpenHome={handleOpenHome}
           onSessionSelect={handleSessionSelect}
+          onOpenPerformanceBrowser={(repositoryId) => {
+            const repo = useAppStore
+              .getState()
+              .repositories.find((item) => item.id === repositoryId);
+            const session =
+              repo?.worktreeSessions.find((item) => item.id === activeTerminalId) ??
+              repo?.worktreeSessions[0];
+            if (!session) return false;
+            setActiveTerminal(session.id);
+            setActiveScreen({ type: 'main' });
+            exitOverview();
+            setRightPanelTab('browser');
+            setFocusArea('app');
+            return true;
+          }}
           onOpenPortTerminal={handleOpenPortTerminal}
           onClosePortTerminal={handleClosePortTerminal}
           onToggleOverview={toggleOverview}
@@ -1401,6 +1422,7 @@ export function Layout() {
                     }
                   >
                     <BrowserPanel
+                      repositoryId={repository.id}
                       expanded={browserExpanded}
                       onToggleExpanded={() => setBrowserExpanded((value) => !value)}
                       onTabCountChange={(count) => {

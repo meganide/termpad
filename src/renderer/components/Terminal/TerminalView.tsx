@@ -43,6 +43,7 @@ interface TerminalViewProps {
 }
 
 export interface TerminalViewHandle {
+  focus: () => void;
   copyAllOutput: () => Promise<void>;
   copySelection: () => Promise<void>;
   paste: () => Promise<void>;
@@ -124,6 +125,7 @@ export const TerminalView = memo(
 
     // Expose copyAllOutput method via ref
     useImperativeHandle(ref, () => ({
+      focus: () => terminalRef.current?.focus(),
       copySelection: handleCopy,
       paste: handlePaste,
       copyAllOutput: async () => {

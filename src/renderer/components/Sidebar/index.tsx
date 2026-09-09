@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import {
+  Activity,
   Settings,
-  Network,
   FolderPlus,
   Home,
   Bug,
@@ -11,7 +11,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
-import { PortsDialog } from '../PortsDialog';
+import { PerformanceDialog } from '../PerformanceDialog';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -37,6 +37,7 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
+  onOpenPerformanceBrowser?: (repositoryId: string) => boolean;
   onOpenPortTerminal?: (terminalId: string) => boolean;
   onClosePortTerminal?: (terminalId: string) => Promise<boolean>;
   onToggleOverview: () => void;
@@ -58,6 +59,7 @@ export function Sidebar({
   onOpenSettings,
   onOpenHome,
   onSessionSelect,
+  onOpenPerformanceBrowser,
   onOpenPortTerminal,
   onClosePortTerminal,
   onToggleOverview,
@@ -69,7 +71,7 @@ export function Sidebar({
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const [portsOpen, setPortsOpen] = useState(false);
+  const [performanceOpen, setPerformanceOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSearchRepositories, setCollapsedSearchRepositories] = useState<Set<string>>(
     new Set()
@@ -313,20 +315,22 @@ export function Sidebar({
           onClick={(event) => {
             event.stopPropagation();
             setFocusArea('app');
-            setPortsOpen(true);
+            setPerformanceOpen(true);
           }}
         >
-          <Network className="size-4" />
-          <span>Open ports</span>
+          <Activity className="size-4" />
+          <span>Performance</span>
         </button>
       </nav>
-      {portsOpen && (
-        <PortsDialog
-          onClose={() => setPortsOpen(false)}
+      {performanceOpen && (
+        <PerformanceDialog
+          onClose={() => setPerformanceOpen(false)}
           onOpenTerminal={onOpenPortTerminal}
           onCloseTerminal={onClosePortTerminal}
+          onOpenBrowser={onOpenPerformanceBrowser}
         />
       )}
+
       <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-1">
         <div className="flex items-center gap-2">
           <span className="eyebrow">Repositories</span>

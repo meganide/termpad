@@ -32,6 +32,11 @@ describe('Sidebar', () => {
   });
 
   describe('rendering', () => {
+    it('offers Performance as the single resource-management entry', () => {
+      render(<Sidebar {...defaultProps} />);
+      expect(screen.getByRole('button', { name: 'Performance' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Open ports' })).not.toBeInTheDocument();
+    });
     it('renders with correct width', () => {
       const { container } = render(<Sidebar {...defaultProps} width={300} />);
       const sidebar = container.querySelector('aside');

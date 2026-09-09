@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useBrowserRegistry } from './browserRegistry';
 import type { WebviewTag } from 'electron';
 import type { BrowserDevToolsBounds } from '../../../shared/types';
 import {
@@ -20,6 +21,8 @@ interface BrowserTab {
   id: string;
   title: string;
   initialUrl: string;
+  url?: string;
+  webContentsId?: number;
 }
 
 const createTab = (url = ''): BrowserTab => ({
@@ -29,12 +32,18 @@ const createTab = (url = ''): BrowserTab => ({
 });
 
 interface BrowserPanelProps {
+  repositoryId?: string;
   expanded: boolean;
   onToggleExpanded: () => void;
   onTabCountChange?: (count: number) => void;
 }
 
-export function BrowserPanel({ expanded, onToggleExpanded, onTabCountChange }: BrowserPanelProps) {
+export function BrowserPanel({
+  repositoryId,
+  expanded,
+  onToggleExpanded,
+  onTabCountChange,
+}: BrowserPanelProps) {
   const [tabs, setTabs] = useState<BrowserTab[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const activeId = selectedId ?? tabs[0]?.id;
@@ -61,13 +70,48 @@ export function BrowserPanel({ expanded, onToggleExpanded, onTabCountChange }: B
     setTabs((previous) => previous.map((tab) => (tab.id === id ? { ...tab, title } : tab)));
   }, []);
 
-  const closeTab = (id: string) => {
-    const index = tabs.findIndex((tab) => tab.id === id);
-    const remaining = tabs.filter((tab) => tab.id !== id);
-    setTabs(remaining);
-    if (id === activeId)
-      setSelectedId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
-  };
+  const closeTab = useCallback(
+    (id: string) => {
+      const index = tabs.findIndex((tab) => tab.id === id);
+      const remaining = tabs.filter((tab) => tab.id !== id);
+      setTabs(remaining);
+      if (id === activeId)
+        setSelectedId(remaining[Math.min(index, remaining.length - 1)]?.id ?? null);
+    },
+    [tabs, activeId]
+  );
+
+  const updateGuest = useCallback((id: string, webContentsId: number, url: string) => {
+    setTabs((previous) =>
+      previous.map((tab) => (tab.id === id ? { ...tab, webContentsId, url } : tab))
+    );
+  }, []);
+
+  useEffect(() => {
+    if (!repositoryId) return;
+    useBrowserRegistry.getState().replace(
+      repositoryId,
+      tabs.map((tab) => ({
+        id: tab.id,
+        repositoryId,
+        title: tab.title,
+        url: tab.url ?? tab.initialUrl,
+        webContentsId: tab.webContentsId,
+        select: () => {
+          setSelectedId(tab.id);
+          requestAnimationFrame(() => document.getElementById(`browser-tab-${tab.id}`)?.focus());
+        },
+        close: () => closeTab(tab.id),
+      }))
+    );
+  }, [repositoryId, tabs, closeTab]);
+
+  useEffect(
+    () => () => {
+      if (repositoryId) useBrowserRegistry.getState().replace(repositoryId, []);
+    },
+    [repositoryId]
+  );
 
   return (
     <div className="flex h-full min-h-0 flex-col" data-testid="browser-panel">
@@ -168,7 +212,12 @@ export function BrowserPanel({ expanded, onToggleExpanded, onTabCountChange }: B
           hidden={tab.id !== activeId}
           className={tab.id === activeId ? 'flex min-h-0 flex-1 flex-col' : 'hidden'}
         >
-          <BrowserPage tab={tab} onTitleChange={updateTitle} onNewTab={addTab} />
+          <BrowserPage
+            tab={tab}
+            onTitleChange={updateTitle}
+            onNewTab={addTab}
+            onGuestChange={updateGuest}
+          />
         </div>
       ))}
     </div>
@@ -179,10 +228,12 @@ function BrowserPage({
   tab,
   onTitleChange,
   onNewTab,
+  onGuestChange,
 }: {
   tab: BrowserTab;
   onTitleChange: (id: string, title: string) => void;
   onNewTab: (url: string) => void;
+  onGuestChange: (id: string, webContentsId: number, url: string) => void;
 }) {
   const webview = useRef<WebviewTag | null>(null);
   const [requestedUrl, setRequestedUrl] = useState(tab.initialUrl);
@@ -200,6 +251,7 @@ function BrowserPage({
     let guestId: number | null = null;
     const attached = () => {
       guestId = view.getWebContentsId();
+      onGuestChange(tab.id, guestId, requestedUrl);
     };
     // Popups belong to the page's repository, including when it is in the background.
     const unsubscribe = window.electronAPI.onBrowserNewTab((sourceId, url) => {
@@ -211,6 +263,8 @@ function BrowserPage({
     const syncNavigation = () => {
       setNavigation({ ready: true, back: view.canGoBack(), forward: view.canGoForward() });
       const url = view.getURL();
+      guestId = view.getWebContentsId();
+      onGuestChange(tab.id, guestId, url);
       setAddress(url);
       onTitleChange(
         tab.id,
@@ -261,7 +315,7 @@ function BrowserPage({
       view.removeEventListener('did-fail-load', fail);
       view.removeEventListener('render-process-gone', processGone);
     };
-  }, [hasPage, tab.id, onTitleChange, onNewTab]);
+  }, [hasPage, requestedUrl, tab.id, onTitleChange, onNewTab, onGuestChange]);
 
   return (
     <>
