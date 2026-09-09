@@ -87,7 +87,7 @@ export function findPortTerminal(
   return undefined;
 }
 
-async function markedTermpadProcesses(
+export async function markedTermpadProcesses(
   pids: number[],
   distro?: string
 ): Promise<Map<number, string>> {

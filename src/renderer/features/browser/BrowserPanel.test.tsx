@@ -1,6 +1,7 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { BrowserPanel } from './BrowserPanel';
+import { useBrowserRegistry } from './browserRegistry';
 
 function navigate(address: string) {
   if (!screen.queryByRole('textbox', { name: 'Browser address' }))
@@ -12,6 +13,34 @@ function navigate(address: string) {
 }
 
 describe('BrowserPanel', () => {
+  it('registers live browser pages for performance and removes them on close or unmount', () => {
+    const { container, unmount } = render(
+      <BrowserPanel repositoryId="test-repo" expanded={false} onToggleExpanded={vi.fn()} />
+    );
+    navigate('example.com');
+    const view = container.querySelector('webview')!;
+    Object.assign(view, { getWebContentsId: () => 42 });
+    fireEvent(view, new Event('did-attach'));
+    expect(useBrowserRegistry.getState().tabs[0]).toMatchObject({
+      repositoryId: 'test-repo',
+      webContentsId: 42,
+      url: 'https://example.com/',
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'New browser tab' }));
+    const first = useBrowserRegistry.getState().tabs.find((tab) => tab.webContentsId === 42)!;
+    act(() => first.select());
+    expect(screen.getByRole('tab', { name: 'New tab', selected: true })).toBeInTheDocument();
+    act(() =>
+      useBrowserRegistry
+        .getState()
+        .tabs.find((tab) => tab.webContentsId === 42)!
+        .close()
+    );
+    expect(container.querySelector('webview')).toBeNull();
+    expect(useBrowserRegistry.getState().tabs).toHaveLength(1);
+    unmount();
+    expect(useBrowserRegistry.getState().tabs).toHaveLength(0);
+  });
   it('resizes DevTools by dragging, clamps both panes, and ends dragging on blur', () => {
     const { container, unmount } = render(
       <BrowserPanel expanded={false} onToggleExpanded={vi.fn()} />
@@ -209,6 +238,7 @@ describe('BrowserPanel', () => {
     const goBack = vi.fn();
     const reload = vi.fn();
     Object.assign(view, {
+      getWebContentsId: () => 42,
       getURL: () => 'https://example.com/next',
       getTitle: () => 'Example page',
       canGoBack: () => true,

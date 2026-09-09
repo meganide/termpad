@@ -9,6 +9,7 @@ import { setupReviewStorageIpcHandlers } from '../reviewStorage';
 import { setupNotificationIpcHandlers } from '../notifications';
 import { setupAdvancedNotificationHandlers } from './notificationHandlers';
 import { setupDialogIpcHandlers } from '../dialogs';
+import { registerPerformanceHandlers } from '../services/performance';
 import { registerPortsHandlers } from '../services/ports';
 import { registerWatcherHandlers } from './watcherHandlers';
 import { setupDiffWindowIpcHandlers } from '../diffWindowManager';
@@ -47,6 +48,11 @@ export function registerIpcHandlers(
 
   // Setup other IPC handlers
   registerPortsHandlers(ipcMain, () => terminalManager?.getTerminalProcesses() ?? []);
+  registerPerformanceHandlers(
+    ipcMain,
+    () => terminalManager?.getTerminalProcesses() ?? [],
+    () => getMainWindow()?.webContents
+  );
   setupGitIpcHandlers(ipcMain);
   setupStorageIpcHandlers(ipcMain);
   setupReviewStorageIpcHandlers(ipcMain);

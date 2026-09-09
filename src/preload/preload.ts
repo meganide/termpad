@@ -467,3 +467,9 @@ contextBridge.exposeInMainWorld('diffWindow', diffWindowAPI);
 contextBridge.exposeInMainWorld('updater', updaterAPI);
 
 console.log('[Preload] All APIs exposed to window');
+
+const performanceAPI: import('../shared/performance').PerformanceAPI = {
+  list: () => ipcRenderer.invoke('performance:list'),
+  stop: (process, force) => ipcRenderer.invoke('performance:stop', process, force),
+};
+contextBridge.exposeInMainWorld('termpadPerformance', performanceAPI);

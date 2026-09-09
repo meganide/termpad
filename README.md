@@ -16,6 +16,7 @@ An AI orchestration tool for managing multiple AI coding agent sessions. Run Cla
 - **Git worktree integration** - Create and manage worktrees directly from the sidebar for isolated feature branches
 - **Terminal tabs** - Open multiple terminal tabs per worktree (Claude, Gemini, plain shell, custom presets)
 - **Worktree grid view** - Show all open tabs together with a single grid toggle
+- **Performance view** — Open **Performance** in the sidebar to inspect Termpad terminals, child processes, and browser tabs across repositories. Sort by CPU, memory, name, type, workspace, or PID; search, jump to an item, close a tab, or stop a process. Readings refresh every two seconds while the view is visible.
 - **Agent overview** - Interact with all open agents in one live grid, with an optional repository filter
 - **Built-in diff viewer** - Review code changes across branches without leaving the app
 - **Source control** - Stage, commit, push, and manage git operations from the UI
@@ -30,6 +31,14 @@ Within a worktree, open at least two terminal tabs and click the **Worktree grid
 Use the grid button beside a repository's name, or its **Open agent overview** context menu action, to open the agent overview filtered to that repository. The overview fills the terminal area with a live grid. Its repository filter lets you switch repositories or show **All repositories**. Click a terminal to work in it, or right-click and choose **Open in worktree** to navigate to its worktree. Copy, paste, and close are available in the same menu. Choose **Hide from overview** to remove an agent from the grid while keeping its terminal running. Use **Hidden** in the header to restore individual agents or all hidden agents in the current repository filter. Hidden selections are remembered while the app is open and do not affect worktree views. Use **Cmd+O** to toggle the overview or **Cmd+I** to open it filtered to the current repository. In the overview, use **Cmd+Arrow keys** to select a visible agent, **Cmd+Shift+Enter** to open it in its worktree, and **Cmd+-** to close it. Use **Ctrl** instead of Cmd on Windows/Linux. Closing a running agent asks for confirmation.
 
 Switching views keeps terminals running and preserves scrollback. Each worktree remembers its grid setting during the current app session.
+
+### Performance readings
+
+Terminal rows include their child processes. Browser rows show their renderer process usage; tabs that share a renderer are marked **Shared process**. Overall totals count each process once, including Termpad’s app helpers. App helpers are protected from being stopped in this view.
+
+CPU is measured between samples (100% is one core); newly discovered processes need a second reading. Memory is resident memory / working set, so shared memory can appear in more than one process. Windows and running WSL distributions are measured separately. WSL processes are associated using the terminal marker inherited from Termpad. A failed WSL scan is shown as a warning.
+
+The view tracks this Termpad instance and descendants it has observed. A process that detached before it could be observed may not appear. Closing a terminal uses Termpad’s existing terminal cleanup; a process that deliberately detaches or ignores shell shutdown may need to be stopped separately.
 
 ## Platform Support
 
