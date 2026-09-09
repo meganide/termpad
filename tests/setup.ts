@@ -203,6 +203,10 @@ Object.defineProperty(window, 'getComputedStyle', {
 // Mock Electron APIs
 Object.defineProperty(window, 'electronAPI', {
   value: {
+    onBrowserNewTab: vi.fn().mockReturnValue(vi.fn()),
+    onBrowserInspectElement: vi.fn().mockReturnValue(vi.fn()),
+    openBrowserDevTools: vi.fn().mockResolvedValue(undefined),
+    closeBrowserDevTools: vi.fn().mockResolvedValue(undefined),
     platform: 'linux' as const,
     ping: vi.fn().mockResolvedValue('Pong'),
     windowMinimize: vi.fn(),

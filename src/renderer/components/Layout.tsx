@@ -35,6 +35,7 @@ import { WorktreeBar } from './WorktreeBar/WorktreeBar';
 import { NotesPanel } from '../features/notes/NotesPanel';
 import { TodosPanel } from '../features/todos/TodosPanel';
 import { RightPanelTabs, type RightPanelTab } from './RightPanel/RightPanelTabs';
+import { BrowserPanel } from '../features/browser/BrowserPanel';
 import { getScopeIndicators } from './RightPanel/scopeIndicators';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
@@ -196,6 +197,11 @@ export function Layout() {
   const [activeScreen, setActiveScreen] = useState<ActiveScreen>({ type: 'home' });
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
   const [reviewExpanded, setReviewExpanded] = useState(false);
+  const [browserExpanded, setBrowserExpanded] = useState(false);
+  const [browserCounts, setBrowserCounts] = useState<Record<string, number>>({});
+  const rightPanelExpanded =
+    (reviewExpanded && rightPanelTab === 'review') ||
+    (browserExpanded && rightPanelTab === 'browser');
   const [reviewRequests, setReviewRequests] = useState<Record<string, ReviewRequest>>({});
   const [visitedReviews, setVisitedReviews] = useState<Record<string, string>>({});
   const [changeCounts, setChangeCounts] = useState<Record<string, number>>({});
@@ -717,6 +723,7 @@ export function Layout() {
         : currentChangeCount),
     reviewBase: currentReviewCount?.base,
     terminals: activeTerminalId ? getUserTabsForWorktree(activeTerminalId).length : 0,
+    browser: activeSessionInfo ? (browserCounts[activeSessionInfo.repository.id] ?? 0) : 0,
     ...getScopeIndicators(activeSessionInfo?.repository, activeSession ?? undefined),
   };
 
@@ -908,6 +915,7 @@ export function Layout() {
       setActiveTerminal(sessionId);
       setActiveTab(tabId);
       setReviewExpanded(false);
+      setBrowserExpanded(false);
       exitOverview();
       setFocusArea('mainTerminal');
     },
@@ -1033,10 +1041,7 @@ export function Layout() {
               <div
                 className="flex-1 flex flex-col min-w-0"
                 style={{
-                  display:
-                    !isOverviewMode && reviewExpanded && rightPanelTab === 'review'
-                      ? 'none'
-                      : undefined,
+                  display: !isOverviewMode && rightPanelExpanded ? 'none' : undefined,
                 }}
               >
                 {/* Overview replaces the per-session header while it is open */}
@@ -1114,7 +1119,7 @@ export function Layout() {
                     const isVisible = isOverviewMode
                       ? (!overviewRepositoryId || config.repositoryId === overviewRepositoryId) &&
                         !hiddenOverviewAgents.has(config.terminalId)
-                      : !(reviewExpanded && rightPanelTab === 'review') &&
+                      : !rightPanelExpanded &&
                         (isWorktreeGrid ? config.sessionId === activeTerminalId : isActiveTab);
 
                     return (
@@ -1235,8 +1240,7 @@ export function Layout() {
                 ref={rightPanelRef}
                 className="h-full min-w-0 flex-shrink-0 relative bg-card flex flex-col"
                 style={{
-                  width:
-                    reviewExpanded && rightPanelTab === 'review' ? '100%' : fileChangesPaneWidth,
+                  width: rightPanelExpanded ? '100%' : fileChangesPaneWidth,
                   display:
                     activeSession && activeSessionInfo && !isOverviewMode ? undefined : 'none',
                 }}
@@ -1246,7 +1250,7 @@ export function Layout() {
                 <div
                   className="absolute left-0 top-0 h-full w-1 cursor-ew-resize hover:bg-primary/30 z-10"
                   style={{
-                    display: reviewExpanded && rightPanelTab === 'review' ? 'none' : undefined,
+                    display: rightPanelExpanded ? 'none' : undefined,
                   }}
                   onMouseDown={(event) => {
                     if (event.button !== 0) return;
@@ -1271,7 +1275,9 @@ export function Layout() {
                     style={{
                       height: '100%',
                       display:
-                        rightPanelTab === 'review' || rightPanelTab === 'terminals'
+                        rightPanelTab === 'review' ||
+                        rightPanelTab === 'terminals' ||
+                        rightPanelTab === 'browser'
                           ? 'none'
                           : undefined,
                     }}
@@ -1310,6 +1316,35 @@ export function Layout() {
                     </div>
                   </div>
                 )}
+
+                {repositories.map((repository) => (
+                  <div
+                    key={repository.id}
+                    data-browser-repository={repository.id}
+                    hidden={
+                      rightPanelTab !== 'browser' ||
+                      activeSessionInfo?.repository.id !== repository.id
+                    }
+                    className={
+                      rightPanelTab === 'browser' &&
+                      activeSessionInfo?.repository.id === repository.id
+                        ? 'flex-1 min-h-0'
+                        : 'hidden'
+                    }
+                  >
+                    <BrowserPanel
+                      expanded={browserExpanded}
+                      onToggleExpanded={() => setBrowserExpanded((value) => !value)}
+                      onTabCountChange={(count) => {
+                        setBrowserCounts((previous) =>
+                          previous[repository.id] === count
+                            ? previous
+                            : { ...previous, [repository.id]: count }
+                        );
+                      }}
+                    />
+                  </div>
+                ))}
 
                 {Object.entries(visitedReviews)
                   .filter(([sessionId]) =>

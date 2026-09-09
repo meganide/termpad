@@ -1069,6 +1069,101 @@ describe('Layout', () => {
       expect(panel.style.width).toBe(width);
       expect(screen.queryByTestId('diff-review-modal')).not.toBeInTheDocument();
     });
+
+    it('expands browser inline, keeps tabs when switching tools, and restores the panel width', () => {
+      setupGitRepo();
+      render(<Layout />);
+      const panel = screen.getByTestId('right-panel');
+      const width = panel.style.width;
+      fireEvent.click(screen.getByTestId('right-panel-tab-browser'));
+      fireEvent.click(screen.getByRole('button', { name: 'New browser tab' }));
+      fireEvent.click(screen.getByRole('button', { name: 'Expand browser' }));
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByTestId('right-panel-tab-notes'));
+      expect(panel.style.width).toBe(width);
+      fireEvent.click(screen.getByTestId('right-panel-tab-browser'));
+      expect(
+        within(screen.getByRole('tablist', { name: 'Browser tabs' })).getAllByRole('tab')
+      ).toHaveLength(1);
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse browser' }));
+      expect(panel.style.width).toBe(width);
+    });
+
+    it('shares browser tabs within a repository and preserves separate pages and popups across repositories', () => {
+      const repository = createMockRepository({
+        id: 'repo-1',
+        worktreeSessions: [
+          createMockWorktreeSession({ id: 'session-1' }),
+          createMockWorktreeSession({ id: 'session-2' }),
+        ],
+      });
+      const otherRepository = createMockRepository({
+        id: 'repo-2',
+        worktreeSessions: [createMockWorktreeSession({ id: 'session-3' })],
+      });
+      useAppStore.setState({
+        repositories: [repository, otherRepository],
+        activeTerminalId: 'session-1',
+      });
+      const { container } = render(<Layout />);
+      fireEvent.click(screen.getByTestId('right-panel-tab-browser'));
+      const navigate = (address: string) => {
+        if (!screen.queryByRole('textbox', { name: 'Browser address' }))
+          fireEvent.click(screen.getByRole('button', { name: 'New browser tab' }));
+        fireEvent.change(screen.getByRole('textbox', { name: 'Browser address' }), {
+          target: { value: address },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+      };
+      navigate('localhost:3000');
+      const firstPage = container.querySelector('webview')!;
+      Object.assign(firstPage, { getWebContentsId: () => 42 });
+      fireEvent(firstPage, new Event('did-attach'));
+      act(() => useAppStore.setState({ activeTerminalId: 'session-2' }));
+      expect(screen.getByRole('textbox', { name: 'Browser address' })).toHaveValue(
+        'http://localhost:3000/'
+      );
+      expect(container.querySelector('webview')).toBe(firstPage);
+      fireEvent.click(screen.getByRole('button', { name: 'New browser tab' }));
+      navigate('localhost:3001');
+      expect(screen.getByTestId('right-panel-tab-browser')).toHaveTextContent('Browser (2)');
+      act(() => useAppStore.setState({ activeTerminalId: 'session-3' }));
+      expect(screen.getByTestId('right-panel-tab-browser')).toHaveTextContent('Browser (0)');
+      expect(screen.queryByRole('textbox', { name: 'Browser address' })).not.toBeInTheDocument();
+      expect(
+        within(screen.getByRole('tablist', { name: 'Browser tabs' })).queryAllByRole('tab')
+      ).toHaveLength(0);
+      navigate('localhost:4000');
+      const popupListeners = vi
+        .mocked(window.electronAPI.onBrowserNewTab)
+        .mock.calls.map(([listener]) => listener);
+      act(() => popupListeners.forEach((listener) => listener(42, 'https://example.com/popup')));
+      expect(screen.getByRole('textbox', { name: 'Browser address' })).toHaveValue(
+        'http://localhost:4000/'
+      );
+      expect(
+        within(screen.getByRole('tablist', { name: 'Browser tabs' })).getAllByRole('tab')
+      ).toHaveLength(1);
+      act(() => useAppStore.setState({ activeTerminalId: 'session-1' }));
+      expect(screen.getByTestId('right-panel-tab-browser')).toHaveTextContent('Browser (3)');
+      expect(
+        within(screen.getByRole('tablist', { name: 'Browser tabs' })).getAllByRole('tab')
+      ).toHaveLength(3);
+      expect(screen.getByRole('textbox', { name: 'Browser address' })).toHaveValue(
+        'https://example.com/popup'
+      );
+      expect(container.querySelector('webview')).toBe(firstPage);
+      fireEvent.click(screen.getByRole('button', { name: 'Close example.com' }));
+      expect(screen.getByTestId('right-panel-tab-browser')).toHaveTextContent('Browser (2)');
+      act(() =>
+        useAppStore.setState({ repositories: [otherRepository], activeTerminalId: 'session-3' })
+      );
+      expect(firstPage.isConnected).toBe(false);
+      expect(screen.getByRole('textbox', { name: 'Browser address' })).toHaveValue(
+        'http://localhost:4000/'
+      );
+    });
   });
 
   /**

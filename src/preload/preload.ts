@@ -44,6 +44,20 @@ interface DiffWindowAPI {
 console.log('[Preload] Script loading...');
 
 const electronAPI: ElectronAPI = {
+  onBrowserInspectElement: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, sourceId: number) => callback(sourceId);
+    ipcRenderer.on('browser:inspect-element', handler);
+    return () => ipcRenderer.removeListener('browser:inspect-element', handler);
+  },
+  openBrowserDevTools: (sourceId, bounds) =>
+    ipcRenderer.invoke('browser:open-devtools', sourceId, bounds),
+  closeBrowserDevTools: (sourceId) => ipcRenderer.invoke('browser:close-devtools', sourceId),
+  onBrowserNewTab: (callback) => {
+    const handler = (_event: Electron.IpcRendererEvent, sourceId: number, url: string) =>
+      callback(sourceId, url);
+    ipcRenderer.on('browser:new-tab', handler);
+    return () => ipcRenderer.removeListener('browser:new-tab', handler);
+  },
   platform: process.platform as 'darwin' | 'win32' | 'linux',
   ping: () => ipcRenderer.invoke('ping'),
   windowMinimize: () => ipcRenderer.send('window-minimize'),

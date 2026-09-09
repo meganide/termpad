@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { TerminalAPI } from '../shared/types';
+import type { ElectronAPI, TerminalAPI } from '../shared/types';
+import { ipcRenderer } from 'electron';
 
 const mocks = vi.hoisted(() => ({
   handlers: new Map<string, (...args: unknown[]) => Promise<void>>(),
@@ -25,6 +26,39 @@ beforeEach(async () => {
   mocks.exposed.clear();
   mocks.send.mockClear();
   await import('./preload');
+});
+
+describe('browser IPC', () => {
+  it('forwards inspect requests with the source page and removes the listener on cleanup', async () => {
+    const api = mocks.exposed.get('electronAPI') as ElectronAPI;
+    const callback = vi.fn();
+    const unsubscribe = api.onBrowserInspectElement(callback);
+    await mocks.handlers.get('browser:inspect-element')!(null, 42);
+    expect(callback).toHaveBeenCalledWith(42);
+    unsubscribe();
+    expect(ipcRenderer.removeListener).toHaveBeenCalledWith(
+      'browser:inspect-element',
+      expect.any(Function)
+    );
+  });
+
+  it('forwards inspector IDs and preserves the source page when dispatching popups', async () => {
+    const api = mocks.exposed.get('electronAPI') as ElectronAPI;
+    const bounds = { x: 100, y: 80, width: 400, height: 600, visible: true };
+    await api.openBrowserDevTools(42, bounds);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('browser:open-devtools', 42, bounds);
+    await api.closeBrowserDevTools(42);
+    expect(ipcRenderer.invoke).toHaveBeenCalledWith('browser:close-devtools', 42);
+    const callback = vi.fn();
+    const unsubscribe = api.onBrowserNewTab(callback);
+    await mocks.handlers.get('browser:new-tab')!(null, 42, 'https://example.com');
+    expect(callback).toHaveBeenCalledWith(42, 'https://example.com');
+    unsubscribe();
+    expect(ipcRenderer.removeListener).toHaveBeenCalledWith(
+      'browser:new-tab',
+      expect.any(Function)
+    );
+  });
 });
 
 describe('terminal IPC acknowledgements', () => {

@@ -14,6 +14,7 @@ import { loadAppState, saveAppState, flushPendingSave } from './storage';
 import { getConstrainedWindowSize } from './utils/windowUtils';
 import { initShellPath } from './utils/shellEnv';
 import type { AppState } from '../shared/types';
+import { configureBrowserGuests } from './browser';
 
 declare const MAIN_WINDOW_VITE_DEV_SERVER_URL: string;
 declare const MAIN_WINDOW_VITE_NAME: string;
@@ -226,6 +227,7 @@ async function createWindow(): Promise<void> {
       preload: preloadPath,
       contextIsolation: true,
       nodeIntegration: false,
+      webviewTag: true,
       sandbox: false, // Required for preload scripts on some Linux systems
     },
     // Windows: frameless with custom controls
@@ -238,6 +240,7 @@ async function createWindow(): Promise<void> {
     icon: appIcon,
   });
   // From here on the mainWindow existence check covers re-entry
+  configureBrowserGuests(mainWindow.webContents);
   isCreatingWindow = false;
 
   // Graceful show to prevent white flash

@@ -495,7 +495,19 @@ export interface OpenFolderResult {
 }
 
 // Electron API types
+export interface BrowserDevToolsBounds {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+  visible: boolean;
+}
+
 export interface ElectronAPI {
+  openBrowserDevTools: (sourceId: number, bounds: BrowserDevToolsBounds) => Promise<void>;
+  closeBrowserDevTools: (sourceId: number) => Promise<void>;
+  onBrowserNewTab: (callback: (sourceId: number, url: string) => void) => () => void;
+  onBrowserInspectElement: (callback: (sourceId: number) => void) => () => void;
   platform: 'darwin' | 'win32' | 'linux';
   ping: () => Promise<string>;
   windowMinimize: () => void;
