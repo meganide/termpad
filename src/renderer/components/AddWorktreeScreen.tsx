@@ -73,6 +73,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
     settings,
     addWorktreeSession,
     setActiveTerminal,
+    createTab,
     createUserTab,
     getUserTerminalIdForTab,
   } = useAppStore();
@@ -214,6 +215,17 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
 
       addWorktreeSession(repository.id, worktreeSession);
       setActiveTerminal(sessionId);
+
+      // Opening the tab runs its preset command when the terminal starts.
+      const defaultPreset = settings.defaultPresetId
+        ? settings.terminalPresets.find((preset) => preset.id === settings.defaultPresetId)
+        : settings.terminalPresets.find((preset) => preset.isBuiltIn);
+      createTab(
+        sessionId,
+        defaultPreset?.name || 'Terminal',
+        defaultPreset?.command || undefined,
+        defaultPreset?.icon
+      );
 
       // Execute setup script if configured
       const setupScript = repository.scriptsConfig?.setupScript;

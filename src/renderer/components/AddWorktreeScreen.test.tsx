@@ -2,6 +2,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddWorktreeScreen } from './AddWorktreeScreen';
 import { useAppStore } from '../stores/appStore';
+import { NEW_TERMINAL_PRESET } from '../../shared/types';
 import { resetAllStores, createMockRepository, createMockSettings } from '../../../tests/utils';
 
 // Mock UI components to simplify testing
@@ -107,6 +108,61 @@ describe('AddWorktreeScreen', () => {
   });
 
   describe('worktree creation', () => {
+    it.each([
+      {
+        description: 'the selected default command',
+        defaultPresetId: 'custom',
+        expected: { name: 'My Agent', command: 'codex --model test', icon: 'code' },
+      },
+      {
+        description: 'a plain shell when Terminal is the default',
+        defaultPresetId: null,
+        expected: { name: 'Terminal', command: undefined, icon: 'terminal' },
+      },
+      {
+        description: 'a plain shell when the selected preset is missing',
+        defaultPresetId: 'missing',
+        expected: { name: 'Terminal', command: undefined, icon: undefined },
+      },
+    ])(
+      'opens a terminal with $description after creation',
+      async ({ defaultPresetId, expected }) => {
+        useAppStore.setState({
+          settings: createMockSettings({
+            defaultPresetId,
+            terminalPresets: [
+              NEW_TERMINAL_PRESET,
+              {
+                id: 'custom',
+                name: 'My Agent',
+                command: 'codex --model test',
+                icon: 'code',
+                order: 1,
+              },
+            ],
+          }),
+        });
+
+        render(<AddWorktreeScreen onBack={mockOnBack} repositoryId={mockRepository.id} />);
+        fireEvent.change(screen.getByPlaceholderText('e.g., fix-authentication-bug'), {
+          target: { value: 'test-branch' },
+        });
+        await act(async () => {
+          fireEvent.click(screen.getByRole('button', { name: /Create Worktree/i }));
+        });
+
+        const state = useAppStore.getState();
+        const session = state.repositories[0].worktreeSessions[0];
+        expect(session.path).toBe('/test/worktrees/test-branch');
+        expect(state.activeTerminalId).toBe(session.id);
+        const tabs = state.getTabsForWorktree(session.id);
+        expect(tabs).toHaveLength(1);
+        expect(tabs[0]).toMatchObject(expected);
+        expect(state.activeTabId).toBe(tabs[0].id);
+        expect(mockOnBack).toHaveBeenCalledOnce();
+      }
+    );
+
     it('creates worktree when form is submitted', async () => {
       render(<AddWorktreeScreen onBack={mockOnBack} repositoryId={mockRepository.id} />);
 
@@ -203,6 +259,7 @@ describe('AddWorktreeScreen', () => {
         const userTabs = state.getUserTabsForWorktree(worktreeSession!.id);
         expect(userTabs.length).toBe(1);
         expect(userTabs[0].name).toBe('Setup');
+        expect(state.getTabsForWorktree(worktreeSession!.id)).toHaveLength(1);
       });
 
       // Wait for the setTimeout delay and script execution
@@ -406,6 +463,7 @@ describe('AddWorktreeScreen', () => {
 
       // Verify onBack was NOT called (stayed on screen)
       expect(mockOnBack).not.toHaveBeenCalled();
+      expect(useAppStore.getState().worktreeTabs).toHaveLength(0);
     });
 
     it('does not execute setup script when worktree creation fails', async () => {
