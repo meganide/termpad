@@ -1,6 +1,7 @@
 import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import {
   Settings,
+  Network,
   FolderPlus,
   Home,
   Bug,
@@ -10,6 +11,7 @@ import {
   Search,
   X,
 } from 'lucide-react';
+import { PortsDialog } from '../PortsDialog';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -22,6 +24,7 @@ import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
 import { cn } from '../../lib/utils';
 import { isMac } from '../../utils/shortcuts';
 import type { WorktreeSession, Repository } from '../../../shared/types';
+import { version } from '../../../../package.json';
 
 interface SidebarProps {
   width: number;
@@ -34,6 +37,8 @@ interface SidebarProps {
   onOpenSettings: () => void;
   onOpenHome: () => void;
   onSessionSelect?: (sessionId: string) => void;
+  onOpenPortTerminal?: (terminalId: string) => boolean;
+  onClosePortTerminal?: (terminalId: string) => Promise<boolean>;
   onToggleOverview: () => void;
   onOpenRepositoryOverview?: (repositoryId: string) => void;
   isOverviewMode: boolean;
@@ -53,6 +58,8 @@ export function Sidebar({
   onOpenSettings,
   onOpenHome,
   onSessionSelect,
+  onOpenPortTerminal,
+  onClosePortTerminal,
   onToggleOverview,
   onOpenRepositoryOverview,
   isOverviewMode,
@@ -62,6 +69,7 @@ export function Sidebar({
 }: SidebarProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [portsOpen, setPortsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSearchRepositories, setCollapsedSearchRepositories] = useState<Set<string>>(
     new Set()
@@ -272,7 +280,7 @@ export function Sidebar({
           termpad<span className="text-primary">.</span>
         </span>
         <span className="ml-auto rounded border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-          LOCAL
+          v{version}
         </span>
       </div>
       <nav className="sidebar-navigation" aria-label="Workspace navigation">
@@ -299,7 +307,26 @@ export function Sidebar({
             {isMac ? 'Cmd + O' : 'Ctrl + O'}
           </kbd>
         </button>
+        <button
+          className="sidebar-nav-item"
+          aria-haspopup="dialog"
+          onClick={(event) => {
+            event.stopPropagation();
+            setFocusArea('app');
+            setPortsOpen(true);
+          }}
+        >
+          <Network className="size-4" />
+          <span>Open ports</span>
+        </button>
       </nav>
+      {portsOpen && (
+        <PortsDialog
+          onClose={() => setPortsOpen(false)}
+          onOpenTerminal={onOpenPortTerminal}
+          onCloseTerminal={onClosePortTerminal}
+        />
+      )}
       <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-1">
         <div className="flex items-center gap-2">
           <span className="eyebrow">Repositories</span>

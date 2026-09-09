@@ -83,9 +83,9 @@ export function AddWorktreeScreen({
     settings,
     addWorktreeSession,
     setActiveTerminal,
+    createTab,
     createUserTab,
     getUserTerminalIdForTab,
-    createTab,
     getTerminalIdForTab,
   } = useAppStore();
 
@@ -227,6 +227,17 @@ export function AddWorktreeScreen({
       addWorktreeSession(repository.id, worktreeSession);
       setActiveTerminal(sessionId);
 
+      // Opening the tab runs its preset command when the terminal starts.
+      const defaultPreset = settings.defaultPresetId
+        ? settings.terminalPresets.find((preset) => preset.id === settings.defaultPresetId)
+        : settings.terminalPresets.find((preset) => preset.isBuiltIn);
+      const defaultTab = createTab(
+        sessionId,
+        defaultPreset?.name || 'Terminal',
+        defaultPreset?.command || undefined,
+        defaultPreset?.icon
+      );
+
       // Execute setup script if configured
       const setupScript = repository.scriptsConfig?.setupScript;
       if (setupScript) {
@@ -269,20 +280,11 @@ export function AddWorktreeScreen({
         } catch {
           toast.error('Could not copy todo to clipboard. It will still be sent to the terminal.');
         }
-        const preset =
-          settings.terminalPresets.find((item) => item.id === settings.defaultPresetId) ??
-          settings.terminalPresets.find((item) => item.isBuiltIn);
-        const tab = createTab(
-          sessionId,
-          preset?.name ?? 'Terminal',
-          preset?.command || undefined,
-          preset?.icon
-        );
         setActiveTerminal(sessionId);
         onTodoTerminalCreated?.(
-          getTerminalIdForTab(sessionId, tab.id),
+          getTerminalIdForTab(sessionId, defaultTab.id),
           movedTodo,
-          Boolean(preset?.command)
+          Boolean(defaultTab.command)
         );
       }
       onBack();
