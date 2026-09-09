@@ -20,11 +20,13 @@ import type {
   PRStatusMap,
   TerminalPreset,
   TodoItem,
+  TodoStatus,
 } from '../../shared/types';
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
 import { migrateGlobalContent } from '../utils/workspaceScope';
+import { getTodoColumns } from '../../shared/todoColumns';
 
 // Track pending idle notifications with their timeouts
 // Key: terminalId, Value: timeout handle
@@ -164,6 +166,8 @@ interface AppStore extends AppState {
   updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
   removeTodo: (scope: TodoScope, todoId: string) => void;
   reorderTodos: (scope: TodoScope, orderedTodoIds: string[]) => void;
+  addTodoColumn: (scope: TodoScope, name: string) => boolean;
+  reorderTodoColumns: (scope: TodoScope, ids: TodoStatus[]) => void;
   moveGlobalTodoToWorktree: (
     repositoryId: string,
     todoId: string,
@@ -264,6 +268,13 @@ export type TodoScope =
   | { type: 'worktree'; worktreeSessionId: string };
 
 export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority' | 'status'>>;
+
+export const getTodoRepository = (repositories: Repository[], scope: TodoScope) =>
+  repositories.find((repository) =>
+    scope.type === 'repository'
+      ? repository.id === scope.repositoryId
+      : repository.worktreeSessions.some((session) => session.id === scope.worktreeSessionId)
+  );
 
 const applyToScopedTodos = (
   repositories: Repository[],
@@ -862,6 +873,45 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // Todo actions
+  addTodoColumn: (scope, name) => {
+    const trimmed = name.trim();
+    const repository = getTodoRepository(get().repositories, scope);
+    if (!trimmed || !repository) return false;
+    const columns = getTodoColumns(repository.todoColumns);
+    if (columns.some((column) => column.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase()))
+      return false;
+    set((state) => ({
+      repositories: state.repositories.map((item) =>
+        item.id === repository.id
+          ? {
+              ...item,
+              todoColumns: [...columns, { id: `custom:${crypto.randomUUID()}`, name: trimmed }],
+            }
+          : item
+      ),
+    }));
+    persistState(get());
+    return true;
+  },
+
+  reorderTodoColumns: (scope, ids) => {
+    const repository = getTodoRepository(get().repositories, scope);
+    if (!repository) return;
+    const columns = getTodoColumns(repository.todoColumns);
+    const ordered = [...new Set(ids)].flatMap((id) => columns.filter((column) => column.id === id));
+    set((state) => ({
+      repositories: state.repositories.map((item) =>
+        item.id === repository.id
+          ? {
+              ...item,
+              todoColumns: [...ordered, ...columns.filter((column) => !ids.includes(column.id))],
+            }
+          : item
+      ),
+    }));
+    persistState(get());
+  },
+
   moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) =>
     get().moveTodoToWorktree({ type: 'repository', repositoryId }, todoId, worktreeSessionId),
 

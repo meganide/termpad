@@ -1,13 +1,21 @@
 import { Circle, Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
 import * as Dropdown from '../../components/ui/dropdown-menu';
 import * as Context from '../../components/ui/context-menu';
-import type { TodoItem, TodoPriority, TodoStatus, WorktreeSession } from '../../../shared/types';
-import { getTodoStatus, TODO_STATUSES, TODO_STATUS_LABELS, TODO_STATUS_COLORS } from './status';
+import type {
+  TodoColumn,
+  TodoItem,
+  TodoPriority,
+  TodoStatus,
+  WorktreeSession,
+} from '../../../shared/types';
+import { getTodoStatus, TODO_STATUS_COLORS } from './status';
+import { DEFAULT_TODO_COLUMNS } from '../../../shared/todoColumns';
 import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
 
 interface TodoActionItemsProps {
   context?: boolean;
   todo: TodoItem;
+  columns?: TodoColumn[];
   onOpen: () => void;
   onEdit: () => void;
   onCopy: () => void;
@@ -24,6 +32,7 @@ interface TodoActionItemsProps {
 export function TodoActionItems({
   context,
   todo,
+  columns = DEFAULT_TODO_COLUMNS,
   onOpen,
   onEdit,
   onCopy,
@@ -92,10 +101,12 @@ export function TodoActionItems({
               value={getTodoStatus(todo)}
               onValueChange={(value) => onStatusChange(value as TodoStatus)}
             >
-              {TODO_STATUSES.map((status) => (
-                <RadioItem key={status} value={status}>
-                  <span className={`size-2 rounded-full ${TODO_STATUS_COLORS[status]}`} />
-                  {TODO_STATUS_LABELS[status]}
+              {columns.map((column) => (
+                <RadioItem key={column.id} value={column.id}>
+                  <span
+                    className={`size-2 rounded-full ${TODO_STATUS_COLORS[column.id] ?? 'bg-primary'}`}
+                  />
+                  {column.name}
                 </RadioItem>
               ))}
             </RadioGroup>

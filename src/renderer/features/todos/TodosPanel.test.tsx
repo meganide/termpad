@@ -67,6 +67,60 @@ describe('TodosPanel', () => {
     vi.clearAllMocks();
   });
 
+  it('creates a custom column, keeps its todos visible in list view, and restores the board on remount', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    const panel = renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    await user.click(screen.getByRole('button', { name: 'Add column' }));
+    await user.type(screen.getByRole('textbox', { name: 'Column name' }), 'In review');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByRole('region', { name: 'In review' })).toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'In review' }));
+    expect(
+      within(screen.getByRole('region', { name: 'In review' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('button', { name: 'In review (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByText('Write tests')).toBeInTheDocument();
+    expect(screen.queryByText('All done')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    panel.unmount();
+    renderPanel();
+    expect(
+      within(screen.getByRole('region', { name: 'In review' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add column' }));
+    await user.type(screen.getByRole('textbox', { name: 'Column name' }), 'in REVIEW');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('unique');
+    expect(screen.getAllByRole('region', { name: 'In review' })).toHaveLength(1);
+  });
+
+  it('shows matching accordions for every column, including empty sections, and collapses Backlog', async () => {
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    const backlog = screen.getByRole('button', { name: 'Backlog (1)' });
+    expect(backlog).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'In progress (0)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Done (0)' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    fireEvent.click(backlog);
+    expect(screen.queryByRole('checkbox', { name: 'Write tests' })).not.toBeInTheDocument();
+    fireEvent.click(backlog);
+    expect(await screen.findByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
+  });
+
   it.each(['dropdown', 'right-click'])(
     'sends the full multiline todo and opens worktree creation from the %s menu',
     async (entry) => {
@@ -122,7 +176,7 @@ describe('TodosPanel', () => {
     await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
     fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Done' }));
     expect(getStoredTodos().repository[0]).toMatchObject({ status: 'done', completed: true });
-    expect(screen.getByRole('button', { name: 'Completed (1)' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done (1)' })).toBeInTheDocument();
   });
 
   it('makes kanban cards draggable without checkboxes or drag handles and keeps editing in the menu', async () => {
@@ -256,7 +310,7 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository).toEqual([]);
   });
 
-  it('moves a completed todo into the collapsed Completed accordion', async () => {
+  it('moves a completed todo into the collapsed Done accordion', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
@@ -266,20 +320,20 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository[0].completed).toBe(true);
     // Collapsed accordion content is unmounted, so the row is no longer reachable
     expect(screen.queryByRole('checkbox', { name: 'Write tests' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Completed \(1\)/ })).toBeInTheDocument();
-    expect(screen.getByText('All done')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Done \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Backlog (0)' })).toBeInTheDocument();
   });
 
-  it('un-completes a todo from the Completed accordion', async () => {
+  it('un-completes a todo from the Done accordion', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo({ completed: true })] });
     renderPanel();
 
-    await user.click(screen.getByRole('button', { name: /Completed \(1\)/ }));
+    await user.click(screen.getByRole('button', { name: /Done \(1\)/ }));
     await user.click(await screen.findByRole('checkbox', { name: 'Write tests' }));
 
     expect(getStoredTodos().repository[0].completed).toBe(false);
-    expect(screen.queryByRole('button', { name: /Completed/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done (0)' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
   });
 
@@ -378,14 +432,15 @@ describe('TodosPanel', () => {
     expect(writeText).toHaveBeenCalledWith('Write tests');
   });
 
-  it('offers a drag handle for active todos but not completed ones', () => {
+  it('offers drag handles for backlog and done todos', async () => {
     seedRepository({
       repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Done one', completed: true })],
     });
     renderPanel();
 
     expect(screen.getByLabelText('Reorder "Write tests"')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Reorder "Done one"')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done (1)' }));
+    expect(await screen.findByLabelText('Reorder "Done one"')).toBeInTheDocument();
   });
 
   it('reorders todos through the store', () => {

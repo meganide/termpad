@@ -28,7 +28,13 @@ import {
 } from '../../components/ui/alert-dialog';
 import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import type { TodoItem, TodoPriority, TodoStatus, WorktreeSession } from '../../../shared/types';
+import type {
+  TodoColumn,
+  TodoItem,
+  TodoPriority,
+  TodoStatus,
+  WorktreeSession,
+} from '../../../shared/types';
 import { getTodoStatus } from './status';
 import { PRIORITY_STYLES } from './priority';
 import { TodoDetailDialog } from './TodoDetailDialog';
@@ -45,6 +51,7 @@ interface TodoItemRowProps {
   onMove: (id: string) => void;
   onStatusChange: (status: TodoStatus) => void;
   card?: boolean;
+  columns?: TodoColumn[];
   onSendToTerminal?: () => void;
   onCreateWorktree?: () => void;
 }
@@ -60,6 +67,7 @@ export function TodoItemRow({
   onMove,
   onStatusChange,
   card = false,
+  columns,
   onSendToTerminal,
   onCreateWorktree,
 }: TodoItemRowProps) {
@@ -107,6 +115,7 @@ export function TodoItemRow({
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
   const actions = {
     todo,
+    columns,
     onOpen: () => {
       afterMenuClose.current = () => setIsDetailOpen(true);
     },
@@ -164,10 +173,13 @@ export function TodoItemRow({
                   }
                 : undefined
             }
-            style={{ transform: CSS.Transform.toString(transform), transition }}
+            style={{
+              transform: CSS.Transform.toString(isDragging ? null : transform),
+              transition,
+            }}
             className={`group relative flex ${card ? 'flex-wrap cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary' : ''} items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
               priorityStyle ? 'pl-3' : 'pl-2'
-            } ${isDragging ? 'z-10 opacity-80' : ''}`}
+            } ${isDragging ? 'opacity-30' : ''}`}
             data-testid="todo-item"
           >
             {priorityStyle && (
@@ -180,7 +192,7 @@ export function TodoItemRow({
               <button
                 type="button"
                 aria-label={`Reorder "${todo.text}"`}
-                className="mt-0.5 shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 {...attributes}
                 {...listeners}
               >
