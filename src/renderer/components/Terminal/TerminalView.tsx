@@ -191,6 +191,24 @@ export const TerminalView = memo(
         return colors;
       };
 
+      const openLink = (event: MouseEvent, uri: string) => {
+        // xterm activates links on mouseup, including right-clicks and macOS Ctrl-clicks.
+        if (event.button !== 0 || (window.electronAPI.platform === 'darwin' && event.ctrlKey)) {
+          return;
+        }
+
+        try {
+          const { protocol } = new URL(uri);
+          if (protocol !== 'http:' && protocol !== 'https:') return;
+        } catch {
+          return;
+        }
+
+        void window.electronAPI.openExternal(uri).catch((error) => {
+          console.error('[TerminalView] Failed to open link:', error);
+        });
+      };
+
       const terminal = new Terminal({
         fontFamily: 'JetBrains Mono, Consolas, monospace',
         fontSize,
@@ -198,12 +216,12 @@ export const TerminalView = memo(
         cursorBlink: true,
         theme: buildTheme(),
         allowProposedApi: true,
+        // Embedded (OSC 8) hyperlinks use a separate handler from detected web links.
+        linkHandler: { activate: openLink },
       });
 
       const fitAddon = new FitAddon();
-      const webLinksAddon = new WebLinksAddon((_event, uri) => {
-        window.electronAPI.openExternal(uri);
-      });
+      const webLinksAddon = new WebLinksAddon(openLink);
 
       terminal.loadAddon(fitAddon);
       terminal.loadAddon(webLinksAddon);

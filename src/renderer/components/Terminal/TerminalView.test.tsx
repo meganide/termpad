@@ -4,6 +4,8 @@ import { TerminalView } from './TerminalView';
 import { useAppStore } from '../../stores/appStore';
 import { resetAllStores } from '../../../../tests/utils';
 import { useTerminal } from '../../hooks/useTerminal';
+import type { ITerminalOptions } from '@xterm/xterm';
+import { WebLinksAddon } from '@xterm/addon-web-links';
 
 // Mocked hooks
 vi.mock('../../hooks/useTerminal');
@@ -28,7 +30,7 @@ const createMockTerminalInstance = () => ({
   rows: 24,
   options: {
     theme: {},
-  },
+  } as ITerminalOptions,
 });
 
 // Keep a reference to the current mock instance
@@ -70,7 +72,7 @@ vi.mock('@xterm/xterm', () => {
       rows = 24;
       options = { theme: {} };
 
-      constructor() {
+      constructor(options: ITerminalOptions) {
         // Copy the current mock instance methods
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         if (typeof (globalThis as any).__mockTerminalInstance !== 'undefined') {
@@ -93,6 +95,7 @@ vi.mock('@xterm/xterm', () => {
           this.cols = mock.cols;
           this.rows = mock.rows;
           this.options = mock.options;
+          Object.assign(this.options, options);
         }
       }
     },
@@ -117,7 +120,9 @@ vi.mock('@xterm/addon-fit', () => {
 
 vi.mock('@xterm/addon-web-links', () => {
   return {
-    WebLinksAddon: class MockWebLinksAddon {},
+    WebLinksAddon: class MockWebLinksAddon {
+      constructor(public handler: (event: MouseEvent, uri: string) => void) {}
+    },
   };
 });
 
@@ -283,6 +288,85 @@ describe('TerminalView', () => {
       render(<TerminalView {...defaultProps} />);
       expect(mockUseTerminalReturn.resize).not.toHaveBeenCalled();
     });
+  });
+
+  describe.each(['embedded', 'detected'] as const)('%s terminal links', (linkType) => {
+    const uri = 'https://github.com/meganide/termpad/pull/32';
+
+    function activateLink(event: MouseEvent, target = uri) {
+      if (linkType === 'embedded') {
+        const handler = mockTerminalInstance.options.linkHandler;
+        if (!handler) throw new Error('Embedded link handler was not configured');
+        handler.activate(event, target, {
+          start: { x: 1, y: 1 },
+          end: { x: 10, y: 1 },
+        });
+      } else {
+        const addon = mockTerminalInstance.loadAddon.mock.calls
+          .map(([loaded]) => loaded)
+          .find((loaded) => loaded instanceof WebLinksAddon);
+        if (!addon) throw new Error('Web links addon was not loaded');
+        (addon as unknown as { handler: (event: MouseEvent, uri: string) => void }).handler(
+          event,
+          target
+        );
+      }
+    }
+
+    it('opens a left-clicked link through Electron without a browser popup', () => {
+      const confirm = vi.spyOn(window, 'confirm');
+      const open = vi.spyOn(window, 'open');
+      render(<TerminalView {...defaultProps} />);
+
+      activateLink(new MouseEvent('mouseup', { button: 0 }));
+
+      expect(window.electronAPI.openExternal).toHaveBeenCalledExactlyOnceWith(uri);
+      expect(confirm).not.toHaveBeenCalled();
+      expect(open).not.toHaveBeenCalled();
+    });
+
+    it('allows right-click and copy without opening the link', async () => {
+      const confirm = vi.spyOn(window, 'confirm');
+      const { container } = render(<TerminalView {...defaultProps} />);
+      mockTerminalInstance.hasSelection.mockReturnValue(true);
+      mockTerminalInstance.getSelection.mockReturnValue(uri);
+      act(() => mockTerminalInstance.onSelectionChange.mock.calls[0][0]());
+
+      activateLink(new MouseEvent('mouseup', { button: 2 }));
+      fireEvent.contextMenu(container.querySelector('[tabindex="-1"]') as HTMLElement);
+      await act(async () => fireEvent.click(screen.getByText('Copy')));
+
+      expect(mockClipboard.writeText).toHaveBeenCalledWith(uri);
+      expect(window.electronAPI.openExternal).not.toHaveBeenCalled();
+      expect(confirm).not.toHaveBeenCalled();
+    });
+
+    it('ignores middle-clicks', () => {
+      render(<TerminalView {...defaultProps} />);
+      activateLink(new MouseEvent('mouseup', { button: 1 }));
+      expect(window.electronAPI.openExternal).not.toHaveBeenCalled();
+    });
+
+    it('ignores macOS Ctrl-clicks used for the context menu', () => {
+      const originalPlatform = window.electronAPI.platform;
+      window.electronAPI.platform = 'darwin';
+      try {
+        render(<TerminalView {...defaultProps} />);
+        activateLink(new MouseEvent('mouseup', { button: 0, ctrlKey: true }));
+        expect(window.electronAPI.openExternal).not.toHaveBeenCalled();
+      } finally {
+        window.electronAPI.platform = originalPlatform;
+      }
+    });
+
+    it.each(['javascript:alert(1)', 'file:///tmp/example', 'not a URL'])(
+      'does not open unsupported or invalid URLs: %s',
+      (target) => {
+        render(<TerminalView {...defaultProps} />);
+        activateLink(new MouseEvent('mouseup', { button: 0 }), target);
+        expect(window.electronAPI.openExternal).not.toHaveBeenCalled();
+      }
+    );
   });
 
   describe('terminal cleanup', () => {
