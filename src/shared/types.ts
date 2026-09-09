@@ -766,6 +766,7 @@ export interface DiffWindowAPI {
 
 declare global {
   interface Window {
+    ports: import('./ports').PortsAPI;
     electronAPI: ElectronAPI;
     terminal: TerminalAPI;
     storage: StorageAPI;
