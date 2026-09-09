@@ -12,6 +12,8 @@ import { TodoItemRow } from './TodoItemRow';
 import { TodoSections } from './TodoSections';
 
 interface TodoListProps {
+  assignments?: WorktreeSession[];
+  onDispatch?: (todo: TodoItem, targetId: string) => void;
   view?: 'list' | 'kanban';
   label: string;
   scope: TodoScope;
@@ -22,6 +24,8 @@ interface TodoListProps {
 }
 
 export function TodoList({
+  assignments,
+  onDispatch,
   view = 'list',
   label,
   scope,
@@ -55,6 +59,10 @@ export function TodoList({
     <TodoItemRow
       key={todo.id}
       todo={todo}
+      assignment={
+        assignments?.find((session) => session.todos?.some((item) => item.id === todo.id))?.label
+      }
+      dispatch={Boolean(onDispatch)}
       sortable={sortable}
       card={view === 'kanban'}
       columns={columns}
@@ -69,6 +77,10 @@ export function TodoList({
       onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
       moveTargets={moveTargets}
       onMove={(targetId) => {
+        if (onDispatch) {
+          onDispatch(todo, targetId);
+          return;
+        }
         if (scope.type !== 'repository') return;
         if (moveGlobalTodoToWorktree(scope.repositoryId, todo.id, targetId))
           toast.success(
@@ -114,7 +126,11 @@ export function TodoList({
         </Button>
       </form>
 
-      <div className="flex-1 min-h-0 overflow-auto space-y-2">
+      <div
+        className="flex-1 min-h-0 overflow-auto space-y-2"
+        style={{ overflowAnchor: 'none' }}
+        data-testid="todo-scroll-container"
+      >
         {view === 'kanban' ? (
           <TodoKanban
             todos={todos}

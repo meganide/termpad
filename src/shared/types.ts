@@ -199,6 +199,8 @@ export interface Repository {
   notes?: string; // User notes for this repository
   todos?: TodoItem[]; // User todos for this repository
   todoColumns?: TodoColumn[]; // Ordered kanban columns shared by the repository's worktrees
+  todoOrder?: string[]; // Global board order, including assigned worktree todos
+  planningMigrationVersion?: number;
 }
 
 export interface WindowState {

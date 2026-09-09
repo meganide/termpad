@@ -48,7 +48,7 @@ export interface TerminalViewHandle {
   copyAllOutput: () => Promise<void>;
   copySelection: () => Promise<void>;
   paste: () => Promise<void>;
-  sendText: (text: string, submit?: boolean) => Promise<void>;
+  sendText: (text: string, submit?: boolean, options?: { focus?: boolean }) => Promise<void>;
 }
 
 // System background color to override theme background when matchSystemBackground is true
@@ -134,7 +134,7 @@ export const TerminalView = memo(
       focus: () => terminalRef.current?.focus(),
       copySelection: handleCopy,
       paste: handlePaste,
-      sendText: async (text, submit = false) => {
+      sendText: async (text, submit = false, options) => {
         const terminal = terminalRef.current;
         const status = useAppStore.getState().terminals.get(effectiveTerminalId)?.status;
         if (!terminal || !status || status === 'stopped' || status === 'error') {
@@ -158,8 +158,10 @@ export const TerminalView = memo(
           write('\r');
           todoPastePendingRef.current = false;
         }
-        setFocusArea(terminalType === 'user' ? 'userTerminal' : 'mainTerminal');
-        terminal.focus();
+        if (options?.focus !== false) {
+          setFocusArea(terminalType === 'user' ? 'userTerminal' : 'mainTerminal');
+          terminal.focus();
+        }
       },
       copyAllOutput: async () => {
         const terminal = terminalRef.current;

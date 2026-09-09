@@ -22,7 +22,7 @@ describe('scope indicators', () => {
     });
   });
 
-  it('uses only global content in the primary checkout', () => {
+  it('uses local content in the primary checkout, like other worktrees', () => {
     const todo = { id: '1', text: 'Task', completed: true, createdAt: '' };
     expect(
       getScopeIndicators(
@@ -33,9 +33,9 @@ describe('scope indicators', () => {
           notes: '',
         }
       )
-    ).toEqual({ scope: 'global', todos: { completed: 1, total: 1 }, notes: true });
+    ).toEqual({ scope: 'worktree', todos: { completed: 2, total: 2 }, notes: false });
     expect(getScopeIndicators({ notes: '' }, { isMainWorktree: true, notes: 'Local' }).notes).toBe(
-      false
+      true
     );
     expect(getScopeIndicators().todos).toEqual({ completed: 0, total: 0 });
   });

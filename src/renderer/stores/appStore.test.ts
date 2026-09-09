@@ -99,7 +99,11 @@ describe('appStore - repository management', () => {
       const state = useAppStore.getState();
       expect(state.repositories).toHaveLength(1);
       // Store assigns portRangeStart automatically
-      expect(state.repositories[0]).toEqual({ ...repository, portRangeStart: 10000 });
+      expect(state.repositories[0]).toEqual({
+        ...repository,
+        portRangeStart: 10000,
+        planningMigrationVersion: 1,
+      });
     });
 
     it('should persist state after adding a repository', () => {
@@ -112,7 +116,7 @@ describe('appStore - repository management', () => {
       expect(window.storage.saveState).toHaveBeenCalledWith(
         expect.objectContaining({
           // Store assigns portRangeStart automatically
-          repositories: [{ ...repository, portRangeStart: 10000 }],
+          repositories: [{ ...repository, portRangeStart: 10000, planningMigrationVersion: 1 }],
         })
       );
     });

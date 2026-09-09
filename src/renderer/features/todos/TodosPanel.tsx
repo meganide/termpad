@@ -8,6 +8,7 @@ import type { TodoScope } from '../../stores/appStore';
 import { TodoList } from './TodoList';
 import type { TodoItem } from '../../../shared/types';
 import { isGlobalWorkspace } from '../../utils/workspaceScope';
+import { getRepositoryTodos } from './repositoryTodos';
 
 function TodoCount({ todos }: { todos: TodoItem[] }) {
   if (todos.length === 0) return null;
@@ -20,6 +21,10 @@ function TodoCount({ todos }: { todos: TodoItem[] }) {
 }
 
 interface TodosPanelProps {
+  scopeMode?: 'repository' | 'worktree';
+  defaultView?: 'list' | 'kanban';
+  onOpenPlanning?: () => void;
+  onDispatch?: (todo: TodoItem, targetId: string) => void;
   repositoryId: string;
   worktreeSessionId: string;
   repositoryName: string;
@@ -32,6 +37,10 @@ interface TodosPanelProps {
 }
 
 export function TodosPanel({
+  scopeMode,
+  defaultView = 'list',
+  onOpenPlanning,
+  onDispatch,
   repositoryId,
   worktreeSessionId,
   repositoryName,
@@ -42,8 +51,12 @@ export function TodosPanel({
   onSendToTerminal,
   onCreateWorktree,
 }: TodosPanelProps) {
-  const [view, setView] = useState<'list' | 'kanban'>(() =>
-    localStorage.getItem('termpad:todos-view') === 'kanban' ? 'kanban' : 'list'
+  const [view, setView] = useState<'list' | 'kanban'>(
+    defaultView === 'kanban'
+      ? 'kanban'
+      : localStorage.getItem('termpad:todos-view') === 'kanban'
+        ? 'kanban'
+        : 'list'
   );
   const repositories = useAppStore((s) => s.repositories);
   const { collapsed, toggle } = useCollapsibleScopes();
@@ -60,16 +73,18 @@ export function TodosPanel({
     [worktreeSessionId]
   );
 
-  const repositoryTodos = repository?.todos ?? [];
+  const repositoryTodos = getRepositoryTodos(repository);
   const worktreeTodos = worktree?.todos ?? [];
-  const global = isGlobalWorkspace(worktree);
+  const global = scopeMode ? scopeMode === 'repository' : isGlobalWorkspace(worktree);
   const scope = global ? repositoryScope : worktreeScope;
   const todos = global ? repositoryTodos : worktreeTodos;
   const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
   const scopeKey = global ? 'repository' : 'worktree';
-  const moveTargets = global
-    ? repository?.worktreeSessions.filter((session) => !isGlobalWorkspace(session))
-    : undefined;
+  const moveTargets = onDispatch
+    ? repository?.worktreeSessions
+    : global
+      ? repository?.worktreeSessions.filter((session) => !isGlobalWorkspace(session))
+      : undefined;
 
   return (
     <div className="h-full flex flex-col" data-testid="todos-panel">
@@ -79,6 +94,16 @@ export function TodosPanel({
         role="group"
         aria-label="Todo view"
       >
+        {onOpenPlanning && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="mr-auto h-7 text-xs"
+            onClick={onOpenPlanning}
+          >
+            Open Planning
+          </Button>
+        )}
         {(['list', 'kanban'] as const).map((mode) => (
           <Button
             key={mode}
@@ -124,6 +149,8 @@ export function TodosPanel({
             moveTargets={moveTargets}
             onSendToTerminal={onSendToTerminal}
             onCreateWorktree={onCreateWorktree}
+            onDispatch={onDispatch}
+            assignments={repository?.worktreeSessions}
           />
         </PanelSection>
       </div>

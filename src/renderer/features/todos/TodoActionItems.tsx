@@ -1,4 +1,14 @@
-import { Circle, Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
+import {
+  Circle,
+  Copy,
+  Expand,
+  Flag,
+  GitBranch,
+  Pencil,
+  Plus,
+  Terminal,
+  Trash2,
+} from 'lucide-react';
 import * as Dropdown from '../../components/ui/dropdown-menu';
 import * as Context from '../../components/ui/context-menu';
 import type {
@@ -13,6 +23,7 @@ import { DEFAULT_TODO_COLUMNS } from '../../../shared/todoColumns';
 import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
 
 interface TodoActionItemsProps {
+  dispatch?: boolean;
   context?: boolean;
   todo: TodoItem;
   columns?: TodoColumn[];
@@ -30,6 +41,7 @@ interface TodoActionItemsProps {
 
 // Both entry points use the same actions, labels, and availability rules.
 export function TodoActionItems({
+  dispatch,
   context,
   todo,
   columns = DEFAULT_TODO_COLUMNS,
@@ -113,16 +125,25 @@ export function TodoActionItems({
           </SubContent>
         </Portal>
       </Sub>
-      {moveTargets !== undefined && (
+      {(moveTargets !== undefined || onCreateWorktree) && (
         <Sub>
           <SubTrigger className="gap-2">
             <GitBranch />
-            Move to worktree
+            {dispatch || onCreateWorktree ? 'Start in worktree' : 'Move to worktree'}
           </SubTrigger>
           <Portal>
             <SubContent className="max-w-80 max-h-64 overflow-y-auto">
-              {moveTargets.length === 0 && <Item disabled>No worktrees available</Item>}
-              {moveTargets.map((target) => (
+              {onCreateWorktree && (
+                <Item onSelect={onCreateWorktree}>
+                  <Plus />
+                  New…
+                </Item>
+              )}
+              {onCreateWorktree && Boolean(moveTargets?.length) && <Separator />}
+              {!onCreateWorktree && !moveTargets?.length && (
+                <Item disabled>No worktrees available</Item>
+              )}
+              {moveTargets?.map((target) => (
                 <Item
                   key={target.id}
                   onSelect={() => onMove(target.id)}
@@ -138,15 +159,15 @@ export function TodoActionItems({
           </Portal>
         </Sub>
       )}
-      <Separator />
-      <Item disabled={!onSendToTerminal} onSelect={onSendToTerminal}>
-        <Terminal />
-        Send to active terminal
-      </Item>
-      <Item disabled={!onCreateWorktree} onSelect={onCreateWorktree}>
-        <GitBranch />
-        Create worktree from todo…
-      </Item>
+      {(!dispatch || onSendToTerminal) && (
+        <>
+          <Separator />
+          <Item disabled={!onSendToTerminal} onSelect={onSendToTerminal}>
+            <Terminal />
+            Send to active terminal
+          </Item>
+        </>
+      )}
       <Separator />
       <Item variant="destructive" onSelect={onRemove}>
         <Trash2 />

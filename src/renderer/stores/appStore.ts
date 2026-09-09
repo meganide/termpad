@@ -26,6 +26,7 @@ import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
 import { migrateGlobalContent } from '../utils/workspaceScope';
+import { getRepositoryTodos } from '../features/todos/repositoryTodos';
 import { getTodoColumns } from '../../shared/todoColumns';
 
 // Track pending idle notifications with their timeouts
@@ -212,7 +213,8 @@ interface AppStore extends AppState {
     worktreeSessionId: string,
     name: string,
     command?: string,
-    icon?: string
+    icon?: string,
+    options?: { activate?: boolean }
   ) => TerminalTab;
   closeTab: (tabId: string) => void;
   renameTab: (tabId: string, name: string) => void;
@@ -225,7 +227,12 @@ interface AppStore extends AppState {
   setWorktreeGridView: (worktreeSessionId: string, enabled: boolean) => void;
 
   // User terminal tab actions
-  createUserTab: (worktreeSessionId: string, name?: string, scriptId?: string) => TerminalTab;
+  createUserTab: (
+    worktreeSessionId: string,
+    name?: string,
+    scriptId?: string,
+    options?: { activate?: boolean }
+  ) => TerminalTab;
   findUserTabsWithScript: (
     repositoryId: string,
     scriptId: string
@@ -283,9 +290,26 @@ const applyToScopedTodos = (
 ): Repository[] =>
   repositories.map((repository) => {
     if (scope.type === 'repository') {
-      return repository.id === scope.repositoryId
-        ? { ...repository, todos: updater(repository.todos ?? []) }
-        : repository;
+      if (repository.id !== scope.repositoryId) return repository;
+      const updated = updater(getRepositoryTodos(repository));
+      const byId = new Map(updated.map((todo) => [todo.id, todo]));
+      const owners = new Map(
+        repository.worktreeSessions.flatMap((session) =>
+          (session.todos ?? []).map((todo) => [todo.id, session.id] as const)
+        )
+      );
+      return {
+        ...repository,
+        todos: updated.filter((todo) => !owners.has(todo.id)),
+        todoOrder: updated.map((todo) => todo.id),
+        worktreeSessions: repository.worktreeSessions.map((session) => ({
+          ...session,
+          todos: session.todos?.flatMap((todo) => {
+            const updatedTodo = byId.get(todo.id);
+            return updatedTodo ? [updatedTodo] : [];
+          }),
+        })),
+      };
     }
     return {
       ...repository,
@@ -634,6 +658,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
           ...state.repositories,
           {
             ...repository,
+            planningMigrationVersion: 1,
             portRangeStart,
             worktreeSessions: worktreeSessionsWithShortcutsAndPorts,
           },
@@ -814,7 +839,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
     set((state) => ({
       repositories: state.repositories.map((p) =>
         p.id === repositoryId
-          ? { ...p, worktreeSessions: p.worktreeSessions.filter((s) => s.id !== worktreeSessionId) }
+          ? {
+              ...p,
+              todos: [
+                ...(p.todos ?? []),
+                ...(p.worktreeSessions.find((s) => s.id === worktreeSessionId)?.todos ?? []),
+              ],
+              worktreeSessions: p.worktreeSessions.filter((s) => s.id !== worktreeSessionId),
+            }
           : p
       ),
     }));
@@ -924,7 +956,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
     );
     const sourceTodos =
       scope.type === 'repository'
-        ? repository?.todos
+        ? getRepositoryTodos(repository)
         : repository?.worktreeSessions.find((session) => session.id === scope.worktreeSessionId)
             ?.todos;
     const todo = sourceTodos?.find((item) => item.id === todoId);
@@ -933,7 +965,6 @@ export const useAppStore = create<AppStore>((set, get) => ({
       !repository ||
       !todo ||
       !target ||
-      target.isMainWorktree ||
       state.isPathDeleting(target.path) ||
       target.todos?.some((item) => item.id === todoId)
     )
@@ -953,6 +984,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
                   ? { ...session, todos: [moved, ...(session.todos ?? [])] }
                   : session
               ),
+              todoOrder: getRepositoryTodos(repository).map((item) => item.id),
             }
           : item
       ),
@@ -1436,7 +1468,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   setSidebarStatusFocus: (focus) => set({ sidebarStatusFocus: focus }),
 
   // Tab actions
-  createTab: (worktreeSessionId, name, command, icon) => {
+  createTab: (worktreeSessionId, name, command, icon, options) => {
     const tabId = generateTabId();
     const state = get();
     const existingTabState = state.worktreeTabs?.find(
@@ -1463,7 +1495,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       let newWorktreeTabs: WorktreeTabState[];
       if (existingIndex >= 0) {
         newWorktreeTabs = worktreeTabs.map((wt, i) =>
-          i === existingIndex ? { ...wt, tabs: [...wt.tabs, newTab], activeTabId: tabId } : wt
+          i === existingIndex
+            ? {
+                ...wt,
+                tabs: [...wt.tabs, newTab],
+                activeTabId: options?.activate === false ? (wt.activeTabId ?? tabId) : tabId,
+              }
+            : wt
         );
       } else {
         newWorktreeTabs = [
@@ -1474,7 +1512,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       return {
         worktreeTabs: newWorktreeTabs,
-        activeTabId: tabId,
+        activeTabId: options?.activate === false ? state.activeTabId : tabId,
       };
     });
 
@@ -1630,7 +1668,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // User terminal tab actions
-  createUserTab: (worktreeSessionId, name, scriptId) => {
+  createUserTab: (worktreeSessionId, name, scriptId, options) => {
     const tabId = generateTabId();
     const state = get();
     const existingTabState = state.userTerminalTabs?.find(
@@ -1656,7 +1694,13 @@ export const useAppStore = create<AppStore>((set, get) => ({
       let newUserTerminalTabs: UserTerminalTabState[];
       if (existingIndex >= 0) {
         newUserTerminalTabs = userTerminalTabs.map((ut, i) =>
-          i === existingIndex ? { ...ut, tabs: [...ut.tabs, newTab], activeTabId: tabId } : ut
+          i === existingIndex
+            ? {
+                ...ut,
+                tabs: [...ut.tabs, newTab],
+                activeTabId: options?.activate === false ? (ut.activeTabId ?? tabId) : tabId,
+              }
+            : ut
         );
       } else {
         newUserTerminalTabs = [
@@ -1667,7 +1711,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
       return {
         userTerminalTabs: newUserTerminalTabs,
-        activeUserTabId: tabId,
+        activeUserTabId: options?.activate === false ? state.activeUserTabId : tabId,
       };
     });
 

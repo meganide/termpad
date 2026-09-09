@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, within, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useAppStore } from '../../stores/appStore';
 import { resetAllStores, createMockRepositoryWithWorktreeSessions } from '../../../../tests/utils';
@@ -138,8 +138,9 @@ describe('TodosPanel', () => {
       await user.click(await screen.findByRole('menuitem', { name: 'Send to active terminal' }));
       expect(onSendToTerminal).toHaveBeenCalledExactlyOnceWith(todo);
       await openMenu();
-      await user.click(await screen.findByRole('menuitem', { name: 'Create worktree from todo…' }));
-      expect(onCreateWorktree).toHaveBeenCalledExactlyOnceWith(todo);
+      await user.click(await screen.findByRole('menuitem', { name: 'Start in worktree' }));
+      fireEvent.click(await screen.findByRole('menuitem', { name: 'New…' }));
+      await waitFor(() => expect(onCreateWorktree).toHaveBeenCalledExactlyOnceWith(todo));
       expect(getStoredTodos().repository).toEqual([todo]);
     }
   );

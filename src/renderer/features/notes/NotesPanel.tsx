@@ -20,6 +20,8 @@ import { useAppStore } from '../../stores/appStore';
 import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
 interface NotesPanelProps {
+  scopeMode?: 'repository' | 'worktree';
+  onOpenPlanning?: () => void;
   repositoryId: string;
   worktreeSessionId: string;
   repositoryName: string;
@@ -43,15 +45,15 @@ function useDebouncedSave(save: (value: string) => void, delayMs = 500) {
     [save, delayMs]
   );
 
-  useEffect(() => {
-    return () => {
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      pendingSaveRef.current?.();
-      pendingSaveRef.current = undefined;
-    };
+  const flush = useCallback(() => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    const pending = pendingSaveRef.current;
+    pendingSaveRef.current = undefined;
+    pending?.();
   }, []);
+  useEffect(() => flush, [flush]);
 
-  return debouncedSave;
+  return { debouncedSave, flush };
 }
 
 interface FormatState {
@@ -149,7 +151,7 @@ function NoteEditor({
   onChange: (value: string) => void;
 }) {
   const editorRef = useRef<HTMLDivElement>(null);
-  const debouncedSave = useDebouncedSave(onChange);
+  const { debouncedSave, flush } = useDebouncedSave(onChange);
   const prevIdentityRef = useRef('');
   const [fmt, setFmt] = useState<FormatState>({
     bold: false,
@@ -178,7 +180,12 @@ function NoteEditor({
   }, [updateFormatState]);
 
   useEffect(() => {
-    if (prevIdentityRef.current !== identity && editorRef.current) {
+    if (
+      editorRef.current &&
+      (prevIdentityRef.current !== identity ||
+        (document.activeElement !== editorRef.current &&
+          getEditorContent(editorRef.current) !== value))
+    ) {
       setEditorContent(editorRef.current, value);
       prevIdentityRef.current = identity;
     }
@@ -321,6 +328,7 @@ function NoteEditor({
         contentEditable
         suppressContentEditableWarning
         role="textbox"
+        onBlur={flush}
         aria-label={label}
         className={[
           'flex-1 min-h-0 overflow-y-auto rounded-lg bg-obsidian-800/60 px-3 py-2 text-sm text-foreground',
@@ -350,6 +358,8 @@ function NoteEditor({
 }
 
 export function NotesPanel({
+  scopeMode,
+  onOpenPlanning,
   repositoryId,
   worktreeSessionId,
   repositoryName,
@@ -364,7 +374,7 @@ export function NotesPanel({
 
   const repoNotes = repository?.notes ?? '';
   const worktreeNotes = worktree?.notes ?? '';
-  const global = isGlobalWorkspace(worktree);
+  const global = scopeMode ? scopeMode === 'repository' : isGlobalWorkspace(worktree);
   const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
   const scopeKey = global ? 'repository' : 'worktree';
 
@@ -381,6 +391,13 @@ export function NotesPanel({
   return (
     <div className="h-full flex flex-col" data-testid="notes-panel">
       {titleSlot && <div className="flex items-center px-3 h-[49px] shrink-0">{titleSlot}</div>}
+      {onOpenPlanning && (
+        <div className="px-3 pb-2">
+          <Button variant="ghost" size="sm" className="h-7 text-xs" onClick={onOpenPlanning}>
+            Open Planning
+          </Button>
+        </div>
+      )}
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
         <PanelSection
           label={label}

@@ -41,6 +41,8 @@ import { TodoDetailDialog } from './TodoDetailDialog';
 import { TodoActionItems } from './TodoActionItems';
 
 interface TodoItemRowProps {
+  assignment?: string;
+  dispatch?: boolean;
   todo: TodoItem;
   sortable: boolean;
   onToggle: (completed: boolean) => void;
@@ -57,6 +59,8 @@ interface TodoItemRowProps {
 }
 
 export function TodoItemRow({
+  assignment,
+  dispatch,
   todo,
   sortable,
   onToggle,
@@ -114,6 +118,7 @@ export function TodoItemRow({
   const createdAt = new Date(todo.createdAt);
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
   const actions = {
+    dispatch,
     todo,
     columns,
     onOpen: () => {
@@ -239,6 +244,14 @@ export function TodoItemRow({
               >
                 {todo.text}
               </button>
+            )}
+            {assignment && (
+              <span
+                title={`Assigned to ${assignment}`}
+                className="max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
+              >
+                {assignment}
+              </span>
             )}
             <Tooltip>
               <TooltipTrigger asChild>

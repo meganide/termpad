@@ -1,4 +1,4 @@
-import { render, screen, act } from '@testing-library/react';
+import { render, screen, act, fireEvent } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { Sidebar } from '@/components/Sidebar';
 import { useAppStore } from '@/stores/appStore';
@@ -14,6 +14,8 @@ describe('Sidebar', () => {
     onWorktreeRemove: vi.fn(),
     onOpenSettings: vi.fn(),
     onOpenHome: vi.fn(),
+    onOpenPlanning: vi.fn(),
+    onOpenRepositoryPlanning: vi.fn(),
   };
 
   beforeEach(() => {
@@ -43,6 +45,13 @@ describe('Sidebar', () => {
     render(<Sidebar {...defaultProps} />);
 
     expect(screen.getByText('Test Repository')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Planning' })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: 'Agent overview' }).nextElementSibling).toBe(
+      screen.getByRole('button', { name: 'Planning' })
+    );
+    fireEvent.contextMenu(screen.getByText('Test Repository'));
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Open Planning' }));
+    expect(defaultProps.onOpenRepositoryPlanning).toHaveBeenCalledWith('1');
   });
 
   it('renders add repository button in footer', () => {

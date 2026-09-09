@@ -1,5 +1,4 @@
 import type { Repository, WorktreeSession } from '../../../shared/types';
-import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
 export function hasNoteContent(notes?: string): boolean {
   if (!notes?.trim()) return false;
@@ -18,7 +17,7 @@ export function getScopeIndicators(
     completed: todos.filter((todo) => todo.completed).length,
     total: todos.length,
   });
-  const global = isGlobalWorkspace(worktree);
+  const global = !worktree;
   const content = global ? repository : worktree;
   return {
     scope: global ? ('global' as const) : ('worktree' as const),
