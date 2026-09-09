@@ -17,6 +17,7 @@ import { useTerminal } from '../../hooks/useTerminal';
 import { useAppStore } from '../../stores/appStore';
 import { getTerminalTheme } from '../../themes/terminalThemes';
 import { transformTerminalColors } from '../../utils/terminalColorTransformer';
+import { createScrollPreservingFit } from '../../utils/fitTerminalPreservingScroll';
 import { Copy, ClipboardPaste, XCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import type { FocusArea } from '../../../shared/types';
@@ -80,6 +81,9 @@ export const TerminalView = memo(
     const containerRef = useRef<HTMLDivElement>(null);
     const terminalRef = useRef<Terminal | null>(null);
     const fitAddonRef = useRef<FitAddon | null>(null);
+    const scrollPreservingFitRef = useRef<ReturnType<typeof createScrollPreservingFit> | null>(
+      null
+    );
     const menuRef = useRef<HTMLDivElement>(null);
     const hasSpawnedRef = useRef(false);
     const isReplayingRef = useRef(false);
@@ -247,6 +251,7 @@ export const TerminalView = memo(
       }
 
       fitAddonRef.current = fitAddon;
+      scrollPreservingFitRef.current = createScrollPreservingFit(terminal, fitAddon);
 
       // Track whether this effect's terminal has been disposed so async
       // callbacks (buffer replay) don't write to a stale instance.
@@ -398,6 +403,8 @@ export const TerminalView = memo(
         // xterm does not invoke queued write callbacks after disposal.
         for (const done of pendingWriteCallbacksRef.current) done();
         for (const chunk of pendingReplayWritesRef.current) chunk.resolve();
+        scrollPreservingFitRef.current?.dispose();
+        scrollPreservingFitRef.current = null;
         terminal.dispose();
         terminalRef.current = null;
         fitAddonRef.current = null;
@@ -426,29 +433,12 @@ export const TerminalView = memo(
       }
     }, [matchSystemBackground]);
 
-    // Fit the terminal while preserving the user's scroll position.
-    // xterm.js reflow (triggered by column/row changes) can reset the
-    // viewport to line 0. We save the position before fit and restore it.
+    // Preserve the line being read when switching layouts or resizing panes.
     const fitPreservingScroll = useCallback(() => {
-      const terminal = terminalRef.current;
-      const fitAddon = fitAddonRef.current;
-      if (!terminal || !fitAddon) return;
-
       // A collapsed container would reflow the scrollback to a 1-column buffer
       const container = containerRef.current;
       if (!container || container.offsetWidth === 0 || container.offsetHeight === 0) return;
-
-      const buffer = terminal.buffer.active;
-      const wasAtBottom = buffer.viewportY >= buffer.baseY;
-      const savedViewportY = buffer.viewportY;
-
-      fitAddon.fit();
-
-      if (wasAtBottom) {
-        terminal.scrollToBottom();
-      } else {
-        terminal.scrollToLine(Math.min(savedViewportY, buffer.baseY));
-      }
+      scrollPreservingFitRef.current?.fit();
     }, []);
 
     // Apply font size changes (overview mode renders agents at a smaller size)
