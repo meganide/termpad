@@ -23,6 +23,8 @@ vi.mock('./Sidebar/index', () => ({
     onWorktreeRemove,
     onOpenSettings,
     onOpenHome,
+    onOpenPortTerminal,
+    onClosePortTerminal,
     onToggleOverview,
     onOpenRepositoryOverview,
     activeOverviewRepositoryId,
@@ -35,6 +37,8 @@ vi.mock('./Sidebar/index', () => ({
     onWorktreeRemove: (session: { id: string }, repository: { id: string }) => void;
     onOpenSettings: () => void;
     onOpenHome: () => void;
+    onOpenPortTerminal: (id: string) => boolean;
+    onClosePortTerminal: (id: string) => Promise<boolean>;
     onToggleOverview: () => void;
     onOpenRepositoryOverview: (repositoryId: string) => void;
     isOverviewMode: boolean;
@@ -42,6 +46,18 @@ vi.mock('./Sidebar/index', () => ({
     hasAgents: boolean;
   }) => (
     <div data-testid="sidebar" data-overview-mode={isOverviewMode} data-has-agents={hasAgents}>
+      <button onClick={() => void onClosePortTerminal('session-2:tab-2')}>
+        Close agent port terminal
+      </button>
+      <button onClick={() => void onClosePortTerminal('user:session-2:user-tab')}>
+        Close user port terminal
+      </button>
+      <button onClick={() => onOpenPortTerminal('session-2:tab-2')}>
+        Go to agent port terminal
+      </button>
+      <button onClick={() => onOpenPortTerminal('user:session-2:user-tab')}>
+        Go to user port terminal
+      </button>
       <button
         aria-pressed={activeOverviewRepositoryId === 'repo-1'}
         onClick={() => onOpenRepositoryOverview('repo-1')}
@@ -1407,6 +1423,90 @@ describe('Layout', () => {
         fireEvent.click(screen.getByTestId('sidebar-toggle-overview'));
       });
     };
+
+    it('navigates from ports to the matching agent tab and exits overview', async () => {
+      setUpTwoAgents();
+      useAppStore.getState().setWorktreeGridView('session-2', true);
+      render(<Layout />);
+      await openOverview();
+      fireEvent.click(screen.getByRole('button', { name: 'Go to agent port terminal' }));
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(useAppStore.getState().activeTabId).toBe('tab-2');
+      expect(useAppStore.getState().focusArea).toBe('mainTerminal');
+      expect(
+        useAppStore.getState().worktreeTabs.find((group) => group.worktreeSessionId === 'session-2')
+          ?.isGridView
+      ).toBe(false);
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-overview-mode', 'false');
+      expect(screen.getByTestId('terminal-session-2:tab-2')).toHaveAttribute(
+        'data-visible',
+        'true'
+      );
+    });
+
+    it('navigates from ports to the exact user terminal and reveals its panel', async () => {
+      setUpTwoAgents();
+      useAppStore.setState({
+        userTerminalTabs: [
+          {
+            worktreeSessionId: 'session-2',
+            activeTabId: 'user-tab',
+            tabs: [
+              { id: 'user-tab', name: 'Server', createdAt: new Date().toISOString(), order: 0 },
+            ],
+          },
+        ],
+      });
+      render(<Layout />);
+      await openOverview();
+      fireEvent.click(screen.getByRole('button', { name: 'Go to user port terminal' }));
+      expect(useAppStore.getState().activeTerminalId).toBe('session-2');
+      expect(useAppStore.getState().activeUserTabId).toBe('user-tab');
+      expect(useAppStore.getState().focusArea).toBe('userTerminal');
+      expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
+      expect(screen.getByTestId('sidebar')).toHaveAttribute('data-overview-mode', 'false');
+    });
+
+    it('closes an inactive agent terminal without changing the selected worktree', async () => {
+      setUpTwoAgents();
+      render(<Layout />);
+      fireEvent.click(screen.getByRole('button', { name: 'Close agent port terminal' }));
+      await waitFor(() =>
+        expect(useAppStore.getState().getTabsForWorktree('session-2')).toHaveLength(0)
+      );
+      expect(window.terminal.kill).toHaveBeenCalledWith('session-2:tab-2', true);
+      expect(useAppStore.getState().activeTerminalId).toBe('session-1');
+      expect(useAppStore.getState().getTabsForWorktree('session-1')).toHaveLength(1);
+    });
+
+    it('closes only the matching user terminal tab', async () => {
+      setUpTwoAgents();
+      useAppStore.setState({
+        userTerminalTabs: [
+          {
+            worktreeSessionId: 'session-2',
+            activeTabId: 'user-tab',
+            tabs: [
+              { id: 'user-tab', name: 'Server', createdAt: new Date().toISOString(), order: 0 },
+              { id: 'other-tab', name: 'Keep open', createdAt: new Date().toISOString(), order: 1 },
+            ],
+          },
+        ],
+      });
+      render(<Layout />);
+      fireEvent.click(screen.getByRole('button', { name: 'Close user port terminal' }));
+      await waitFor(() =>
+        expect(
+          useAppStore
+            .getState()
+            .getUserTabsForWorktree('session-2')
+            .map((tab) => tab.id)
+        ).toEqual(['other-tab'])
+      );
+      expect(window.terminal.kill).toHaveBeenCalledWith('user:session-2:user-tab', true);
+      expect(useAppStore.getState().getTabsForWorktree('session-2')).toHaveLength(1);
+      expect(useAppStore.getState().activeTerminalId).toBe('session-1');
+    });
 
     it('shows all worktree tabs in a live grid and keeps terminals mounted across mode changes', async () => {
       setUpTwoAgents();

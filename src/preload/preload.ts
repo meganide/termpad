@@ -23,6 +23,7 @@ import type {
 } from '../shared/types';
 import type { ReviewData, ReviewSession } from '../shared/reviewTypes';
 import path from 'path';
+import type { PortsAPI } from '../shared/ports';
 
 // Diff window init data type
 interface DiffWindowInitData {
@@ -436,6 +437,11 @@ const updaterAPI: UpdaterAPI = {
   },
 };
 
+const portsAPI: PortsAPI = {
+  list: () => ipcRenderer.invoke('ports:list'),
+  stop: (port, force) => ipcRenderer.invoke('ports:stop', port, force),
+};
+contextBridge.exposeInMainWorld('ports', portsAPI);
 contextBridge.exposeInMainWorld('electronAPI', electronAPI);
 contextBridge.exposeInMainWorld('terminal', terminalAPI);
 contextBridge.exposeInMainWorld('storage', storageAPI);

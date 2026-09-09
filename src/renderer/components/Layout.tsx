@@ -902,6 +902,72 @@ export function Layout() {
     exitOverview();
   }, [exitOverview]);
 
+  const handleOpenPortTerminal = useCallback(
+    (terminalId: string): boolean => {
+      const state = useAppStore.getState();
+      // Resolve against live tabs rather than parsing IDs or recreating a closed terminal.
+      for (const kind of ['main', 'user'] as const) {
+        const groups = kind === 'main' ? state.worktreeTabs : state.userTerminalTabs;
+        for (const group of groups ?? []) {
+          const tab = group.tabs.find(
+            (tab) =>
+              (kind === 'main' ? state.getTerminalIdForTab : state.getUserTerminalIdForTab)(
+                group.worktreeSessionId,
+                tab.id
+              ) === terminalId
+          );
+          if (
+            !tab ||
+            !state.repositories.some((repo) =>
+              repo.worktreeSessions.some((session) => session.id === group.worktreeSessionId)
+            )
+          )
+            continue;
+          state.setActiveTerminal(group.worktreeSessionId);
+          if (kind === 'main') {
+            state.setActiveTab(tab.id);
+            state.setWorktreeGridView(group.worktreeSessionId, false);
+          } else {
+            state.setActiveUserTab(tab.id);
+            setRightPanelTab('terminals');
+          }
+          setActiveScreen({ type: 'main' });
+          setReviewExpanded(false);
+          exitOverview();
+          state.setFocusArea(kind === 'main' ? 'mainTerminal' : 'userTerminal');
+          return true;
+        }
+      }
+      return false;
+    },
+    [exitOverview]
+  );
+
+  const handleClosePortTerminal = useCallback(async (terminalId: string): Promise<boolean> => {
+    const state = useAppStore.getState();
+    for (const kind of ['main', 'user'] as const) {
+      const groups = kind === 'main' ? state.worktreeTabs : state.userTerminalTabs;
+      for (const group of groups ?? []) {
+        const tab = group.tabs.find(
+          (tab) =>
+            (kind === 'main' ? state.getTerminalIdForTab : state.getUserTerminalIdForTab)(
+              group.worktreeSessionId,
+              tab.id
+            ) === terminalId
+        );
+        if (!tab) continue;
+        // Wait for shell cleanup before removing the tab. Keep the tab if killing fails.
+        await window.terminal.kill(terminalId, true);
+        const current = useAppStore.getState();
+        current.unregisterTerminal(terminalId);
+        if (kind === 'main') current.closeTab(tab.id);
+        else current.closeUserTabById(group.worktreeSessionId, tab.id);
+        return true;
+      }
+    }
+    return false;
+  }, []);
+
   // Handler when an agent tile is clicked in overview mode - jump to that agent
   const handleAgentSelect = useCallback(
     (sessionId: string, tabId: string) => {
@@ -1005,6 +1071,8 @@ export function Layout() {
           onOpenSettings={handleOpenSettings}
           onOpenHome={handleOpenHome}
           onSessionSelect={handleSessionSelect}
+          onOpenPortTerminal={handleOpenPortTerminal}
+          onClosePortTerminal={handleClosePortTerminal}
           onToggleOverview={toggleOverview}
           onOpenRepositoryOverview={openRepositoryOverview}
           isOverviewMode={isOverviewMode}

@@ -358,7 +358,10 @@ class TerminalManager {
       // paths like /opt/homebrew/bin, ~/.local/bin, npm globals, etc.
       // This is necessary because packaged Electron apps don't inherit shell PATH.
       const baseEnv = getShellEnv();
-      const termpadEnv: Record<string, string> = {};
+      const termpadEnv: Record<string, string> = {
+        TERMPAD_TERMINAL: '1',
+        TERMPAD_TERMINAL_ID: worktreeSessionId,
+      };
 
       // Extract the worktree session ID from the terminal ID
       const actualWorktreeSessionId = extractWorktreeSessionId(worktreeSessionId);
@@ -383,9 +386,9 @@ class TerminalManager {
       // WSLENV is a colon-separated list of variable names with optional flags:
       // - /p: Translate Windows paths to WSL paths (used for path variables)
       // - No flag: Pass the variable as-is
-      const isWslShell = shellInfo?.id?.startsWith('wsl-');
-      if (isWslShell && Object.keys(termpadEnv).length > 0) {
-        const wslEnvParts: string[] = [];
+      // Include the marker even for native shells that later launch wsl.exe.
+      if (process.platform === 'win32') {
+        const wslEnvParts: string[] = ['TERMPAD_TERMINAL', 'TERMPAD_TERMINAL_ID'];
 
         // Add path variables with /p flag for automatic path translation
         if (termpadEnv['TERMPAD_WORKSPACE_PATH']) {
@@ -567,7 +570,11 @@ class TerminalManager {
    */
   async kill(worktreeSessionId: string, waitForExit = false): Promise<void> {
     const entry = this.terminals.get(worktreeSessionId);
-    if (!entry) return;
+    if (!entry) {
+      // The shell may have exited before its tab was closed; release replay history too.
+      this.clearBuffer(worktreeSessionId);
+      return;
+    }
 
     const pid = entry.pty.pid;
 
@@ -647,6 +654,10 @@ class TerminalManager {
 
     // Terminal exists, wait for ready promise
     await entry.readyPromise;
+  }
+
+  getTerminalProcesses(): { id: string; pid: number }[] {
+    return [...this.terminals].map(([id, entry]) => ({ id, pid: entry.pty.pid }));
   }
 
   getActiveCount(): number {
