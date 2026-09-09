@@ -373,7 +373,7 @@ export function NotesPanel({
   const repoNotes = repository?.notes ?? '';
   const worktreeNotes = worktree?.notes ?? '';
   const global = scopeMode ? scopeMode === 'repository' : isGlobalWorkspace(worktree);
-  const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
+  const label = global ? `All: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
 
   const handleRepoNotesChange = useCallback(
     (notes: string) => updateRepositoryNotes(repositoryId, notes),

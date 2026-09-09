@@ -46,7 +46,7 @@ export function PlanningWorkspace({
     );
   }
   const scopes = [
-    { id: 'global', label: 'Global', sessionId: '', mode: 'repository' as const },
+    { id: 'global', label: 'All', sessionId: '', mode: 'repository' as const },
     ...repository.worktreeSessions.map((session) => ({
       id: session.id,
       label: session.label,

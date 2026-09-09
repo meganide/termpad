@@ -78,7 +78,7 @@ export function TodosPanel({
   const global = scopeMode ? scopeMode === 'repository' : isGlobalWorkspace(worktree);
   const scope = global ? repositoryScope : worktreeScope;
   const todos = global ? repositoryTodos : worktreeTodos;
-  const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
+  const label = global ? `All: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
   const moveTargets = onDispatch
     ? repository?.worktreeSessions
     : global

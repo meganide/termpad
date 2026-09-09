@@ -44,9 +44,9 @@ export function RightPanelTabs({ active, onChange, counts = {} }: RightPanelTabs
     terminals: 'Open terminals in this worktree',
     browser: 'Browser tabs shared across worktrees in this repository',
     todos: counts.todos
-      ? `${counts.scope === 'global' ? 'Global' : 'Worktree'}: ${counts.todos.completed}/${counts.todos.total} completed`
-      : `${counts.scope === 'global' ? 'Global' : 'Worktree'} todos`,
-    notes: `${counts.scope === 'global' ? 'Global' : 'Worktree'}: ${counts.notes ? 'has notes' : 'no notes'}`,
+      ? `${counts.scope === 'global' ? 'All' : 'Worktree'}: ${counts.todos.completed}/${counts.todos.total} completed`
+      : `${counts.scope === 'global' ? 'All' : 'Worktree'} todos`,
+    notes: `${counts.scope === 'global' ? 'All' : 'Worktree'}: ${counts.notes ? 'has notes' : 'no notes'}`,
   };
   const hasNotes = counts.notes;
   return (

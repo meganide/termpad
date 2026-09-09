@@ -55,9 +55,9 @@ describe('NotesPanel', () => {
   it('shows global notes beneath a static title', () => {
     seedRepository({ repository: 'Global content', worktree: 'Old content' }, true);
     renderPanel();
-    expect(screen.getByRole('heading', { name: 'Global: Termpad' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Global: Termpad' })).not.toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Global: Termpad' })).toHaveTextContent(
+    expect(screen.getByRole('heading', { name: 'All: Termpad' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'All: Termpad' })).not.toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'All: Termpad' })).toHaveTextContent(
       'Global content'
     );
   });
@@ -91,7 +91,7 @@ describe('NotesPanel', () => {
       />
     );
     expect(useAppStore.getState().repositories[0].worktreeSessions[0].notes).toBe('Just typed');
-    expect(screen.getByRole('textbox', { name: 'Global: Termpad' })).toHaveTextContent(
+    expect(screen.getByRole('textbox', { name: 'All: Termpad' })).toHaveTextContent(
       'Global content'
     );
     expect(useAppStore.getState().repositories[0].notes).toBe('Global content');
