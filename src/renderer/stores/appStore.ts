@@ -20,11 +20,13 @@ import type {
   PRStatusMap,
   TerminalPreset,
   TodoItem,
+  TodoStatus,
 } from '../../shared/types';
 import { getDefaultAppState, NEW_TERMINAL_PRESET, CLAUDE_DEFAULT_PRESET } from '../../shared/types';
 import { migrateOldShortcut, getNextAvailableShortcut } from '../utils/shortcuts';
 import { normalizePath } from '../utils/worktreeUtils';
 import { migrateGlobalContent } from '../utils/workspaceScope';
+import { getTodoColumns } from '../../shared/todoColumns';
 
 // Track pending idle notifications with their timeouts
 // Key: terminalId, Value: timeout handle
@@ -154,10 +156,18 @@ interface AppStore extends AppState {
   updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
   // Todo actions (scoped to a repository or a worktree session)
+  moveTodoToWorktree: (
+    scope: TodoScope,
+    todoId: string,
+    targetId: string,
+    status?: TodoItem['status']
+  ) => boolean;
   addTodo: (scope: TodoScope, text: string) => void;
   updateTodo: (scope: TodoScope, todoId: string, updates: TodoUpdate) => void;
   removeTodo: (scope: TodoScope, todoId: string) => void;
   reorderTodos: (scope: TodoScope, orderedTodoIds: string[]) => void;
+  addTodoColumn: (scope: TodoScope, name: string) => boolean;
+  reorderTodoColumns: (scope: TodoScope, ids: TodoStatus[]) => void;
   moveGlobalTodoToWorktree: (
     repositoryId: string,
     todoId: string,
@@ -257,7 +267,14 @@ export type TodoScope =
   | { type: 'repository'; repositoryId: string }
   | { type: 'worktree'; worktreeSessionId: string };
 
-export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority'>>;
+export type TodoUpdate = Partial<Pick<TodoItem, 'text' | 'completed' | 'priority' | 'status'>>;
+
+export const getTodoRepository = (repositories: Repository[], scope: TodoScope) =>
+  repositories.find((repository) =>
+    scope.type === 'repository'
+      ? repository.id === scope.repositoryId
+      : repository.worktreeSessions.some((session) => session.id === scope.worktreeSessionId)
+  );
 
 const applyToScopedTodos = (
   repositories: Repository[],
@@ -856,30 +873,84 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   // Todo actions
-  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) => {
+  addTodoColumn: (scope, name) => {
+    const trimmed = name.trim();
+    const repository = getTodoRepository(get().repositories, scope);
+    if (!trimmed || !repository) return false;
+    const columns = getTodoColumns(repository.todoColumns);
+    if (columns.some((column) => column.name.toLocaleLowerCase() === trimmed.toLocaleLowerCase()))
+      return false;
+    set((state) => ({
+      repositories: state.repositories.map((item) =>
+        item.id === repository.id
+          ? {
+              ...item,
+              todoColumns: [...columns, { id: `custom:${crypto.randomUUID()}`, name: trimmed }],
+            }
+          : item
+      ),
+    }));
+    persistState(get());
+    return true;
+  },
+
+  reorderTodoColumns: (scope, ids) => {
+    const repository = getTodoRepository(get().repositories, scope);
+    if (!repository) return;
+    const columns = getTodoColumns(repository.todoColumns);
+    const ordered = [...new Set(ids)].flatMap((id) => columns.filter((column) => column.id === id));
+    set((state) => ({
+      repositories: state.repositories.map((item) =>
+        item.id === repository.id
+          ? {
+              ...item,
+              todoColumns: [...ordered, ...columns.filter((column) => !ids.includes(column.id))],
+            }
+          : item
+      ),
+    }));
+    persistState(get());
+  },
+
+  moveGlobalTodoToWorktree: (repositoryId, todoId, worktreeSessionId) =>
+    get().moveTodoToWorktree({ type: 'repository', repositoryId }, todoId, worktreeSessionId),
+
+  moveTodoToWorktree: (scope, todoId, targetId, status) => {
     const state = get();
-    const repository = state.repositories.find((item) => item.id === repositoryId);
-    const target = repository?.worktreeSessions.find((session) => session.id === worktreeSessionId);
-    const todo = repository?.todos?.find((item) => item.id === todoId);
+    const repository = state.repositories.find((item) =>
+      scope.type === 'repository'
+        ? item.id === scope.repositoryId
+        : item.worktreeSessions.some((session) => session.id === scope.worktreeSessionId)
+    );
+    const sourceTodos =
+      scope.type === 'repository'
+        ? repository?.todos
+        : repository?.worktreeSessions.find((session) => session.id === scope.worktreeSessionId)
+            ?.todos;
+    const todo = sourceTodos?.find((item) => item.id === todoId);
+    const target = repository?.worktreeSessions.find((session) => session.id === targetId);
     if (
       !repository ||
+      !todo ||
       !target ||
       target.isMainWorktree ||
-      !todo ||
-      state.deletingPaths.has(target.path) ||
+      state.isPathDeleting(target.path) ||
       target.todos?.some((item) => item.id === todoId)
     )
       return false;
-    // Update both scopes together, preserving the todo's ID, date, completion, and priority.
+    const moved = status ? { ...todo, status, completed: status === 'done' } : todo;
+    // Remove and insert in one state update so the original is never duplicated or lost.
+    const repositories = applyToScopedTodos(state.repositories, scope, (todos) =>
+      todos.filter((item) => item.id !== todoId)
+    );
     set({
-      repositories: state.repositories.map((item) =>
-        item.id === repositoryId
+      repositories: repositories.map((item) =>
+        item.id === repository.id
           ? {
               ...item,
-              todos: item.todos?.filter((item) => item.id !== todoId),
               worktreeSessions: item.worktreeSessions.map((session) =>
-                session.id === worktreeSessionId
-                  ? { ...session, todos: [todo, ...(session.todos ?? [])] }
+                session.id === targetId
+                  ? { ...session, todos: [moved, ...(session.todos ?? [])] }
                   : session
               ),
             }
@@ -907,6 +978,11 @@ export const useAppStore = create<AppStore>((set, get) => ({
   },
 
   updateTodo: (scope, todoId, updates) => {
+    // Keep the legacy completion flag in sync for existing counters and saved data.
+    if (updates.status !== undefined)
+      updates = { ...updates, completed: updates.status === 'done' };
+    else if (updates.completed !== undefined)
+      updates = { ...updates, status: updates.completed ? 'done' : 'backlog' };
     const trimmedText = updates.text?.trim();
     if (updates.text !== undefined && !trimmedText) return;
 

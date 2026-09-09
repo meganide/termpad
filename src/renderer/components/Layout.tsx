@@ -1,9 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cn } from '../lib/utils';
-import { Terminal as TerminalIcon } from 'lucide-react';
+import { Maximize2, Minimize2, Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
-import type { FileStatus, Repository, TerminalTab, WorktreeSession } from '../../shared/types';
+import { Button } from './ui/button';
+import type {
+  FileStatus,
+  Repository,
+  TerminalTab,
+  TodoItem,
+  WorktreeSession,
+} from '../../shared/types';
 import { SourceControlPane } from '../features/source-control';
 import { UserTerminalSection } from '../features/user-terminals';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -11,7 +18,7 @@ import { useResizeSelectionLock } from '../hooks/useResizeSelectionLock';
 import { usePRStatusPolling } from '../hooks/usePRStatusPolling';
 import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
 import { useShallow } from 'zustand/react/shallow';
-import { useAppStore } from '../stores/appStore';
+import { useAppStore, type TodoScope } from '../stores/appStore';
 import { ReviewPanel, type ReviewRequest } from '../features/review/ReviewPanel';
 import { AddRepositoryScreen } from './AddRepositoryScreen';
 import { AddWorktreeScreen } from './AddWorktreeScreen';
@@ -39,6 +46,7 @@ import { BrowserPanel } from '../features/browser/BrowserPanel';
 import { getScopeIndicators } from './RightPanel/scopeIndicators';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
+import { waitForTerminalStartup } from '../services/terminalStartup';
 
 export function Layout() {
   const {
@@ -188,7 +196,7 @@ export function Layout() {
   type ActiveScreen =
     | { type: 'main' }
     | { type: 'settings'; tab: SettingsTab }
-    | { type: 'addWorktree'; repositoryId: string | null }
+    | { type: 'addWorktree'; repositoryId: string | null; todo?: TodoItem; todoScope?: TodoScope }
     | { type: 'home' }
     | { type: 'addRepository' }
     | { type: 'repositorySettings'; repositoryId: string };
@@ -198,10 +206,16 @@ export function Layout() {
   const [rightPanelTab, setRightPanelTab] = useState<RightPanelTab>('changes');
   const [reviewExpanded, setReviewExpanded] = useState(false);
   const [browserExpanded, setBrowserExpanded] = useState(false);
+  const [todosExpanded, setTodosExpanded] = useState(false);
+  const [expandedToolTabs, setExpandedToolTabs] = useState<Partial<Record<RightPanelTab, boolean>>>(
+    {}
+  );
   const [browserCounts, setBrowserCounts] = useState<Record<string, number>>({});
   const rightPanelExpanded =
     (reviewExpanded && rightPanelTab === 'review') ||
-    (browserExpanded && rightPanelTab === 'browser');
+    (browserExpanded && rightPanelTab === 'browser') ||
+    (todosExpanded && rightPanelTab === 'todos') ||
+    Boolean(expandedToolTabs[rightPanelTab]);
   const [reviewRequests, setReviewRequests] = useState<Record<string, ReviewRequest>>({});
   const [visitedReviews, setVisitedReviews] = useState<Record<string, string>>({});
   const [changeCounts, setChangeCounts] = useState<Record<string, number>>({});
@@ -693,6 +707,55 @@ export function Layout() {
   // Refs for user terminal views (keyed by terminalId)
   const userTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const mainTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const activeMainTerminalId =
+    activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null;
+  const activeMainStatus = activeMainTerminalId
+    ? terminals.get(activeMainTerminalId)?.status
+    : undefined;
+  const canSendTodo = Boolean(
+    activeMainStatus && !['starting', 'stopped', 'error'].includes(activeMainStatus)
+  );
+
+  const handleSendTodo = async (todo: TodoItem) => {
+    if (!activeMainTerminalId) return;
+    try {
+      const terminal = mainTerminalRefs.current.get(activeMainTerminalId);
+      if (!terminal) throw new Error('Open a terminal in the main area first.');
+      const sourceSession = allSessions.find(({ session }) => session.id === activeTerminalId);
+      const scope: TodoScope | undefined = sourceSession
+        ? sourceSession.session.isMainWorktree
+          ? { type: 'repository', repositoryId: sourceSession.repository.id }
+          : { type: 'worktree', worktreeSessionId: sourceSession.session.id }
+        : undefined;
+      setTodosExpanded(false);
+      await terminal.sendText(todo.text);
+      if (scope) useAppStore.getState().updateTodo(scope, todo.id, { status: 'in_progress' });
+    } catch (error) {
+      toast.error('Could not send todo', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const handleTodoTerminalCreated = async (
+    terminalId: string,
+    todo: TodoItem,
+    hasCommand: boolean
+  ) => {
+    try {
+      setTodosExpanded(false);
+      await waitForTerminalStartup(terminalId, hasCommand);
+      const terminal = mainTerminalRefs.current.get(terminalId);
+      if (!terminal) throw new Error('The new terminal is no longer open.');
+      await terminal.sendText(todo.text, true);
+    } catch (error) {
+      toast.error('Worktree created, but the todo could not be sent', {
+        description: error instanceof Error ? error.message : String(error),
+        duration: 10000,
+      });
+    }
+  };
+
   const agentActionRefs = useRef<Map<string, AgentTileActionsHandle>>(new Map());
 
   // Copy output from the active user terminal
@@ -988,6 +1051,8 @@ export function Layout() {
       setActiveTab(tabId);
       setReviewExpanded(false);
       setBrowserExpanded(false);
+      setTodosExpanded(false);
+      setExpandedToolTabs({});
       exitOverview();
       setFocusArea('mainTerminal');
     },
@@ -1348,12 +1413,33 @@ export function Layout() {
                   }}
                 />
 
-                <div className="flex min-h-[49px] shrink-0 items-center px-3 py-2">
+                <div className="flex min-h-[49px] shrink-0 items-center gap-2 px-3 py-2">
                   <RightPanelTabs
                     active={rightPanelTab}
                     onChange={selectRightPanelTab}
                     counts={rightPanelCounts}
                   />
+                  {['changes', 'notes', 'terminals'].includes(rightPanelTab) && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="ml-auto h-7 w-7 shrink-0"
+                      aria-label={`${rightPanelExpanded ? 'Collapse' : 'Expand'} ${rightPanelTab}`}
+                      title={`${rightPanelExpanded ? 'Collapse' : 'Expand'} ${rightPanelTab}`}
+                      onClick={() =>
+                        setExpandedToolTabs((previous) => ({
+                          ...previous,
+                          [rightPanelTab]: !previous[rightPanelTab],
+                        }))
+                      }
+                    >
+                      {rightPanelExpanded ? (
+                        <Minimize2 className="size-3.5" />
+                      ) : (
+                        <Maximize2 className="size-3.5" />
+                      )}
+                    </Button>
+                  )}
                 </div>
 
                 {/* Changes, Notes, and Todos stay mounted so git watchers and an in-progress commit
@@ -1396,11 +1482,31 @@ export function Layout() {
                     </div>
                     <div className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}>
                       <TodosPanel
+                        expanded={todosExpanded}
+                        onToggleExpanded={() => setTodosExpanded((value) => !value)}
                         titleSlot={null}
                         repositoryId={activeSessionInfo.repository.id}
                         worktreeSessionId={activeSessionInfo.session.id}
                         repositoryName={activeSessionInfo.repository.name}
                         worktreeLabel={activeSessionInfo.session.label}
+                        onSendToTerminal={canSendTodo ? handleSendTodo : undefined}
+                        onCreateWorktree={(todo) => {
+                          setActiveScreen({
+                            type: 'addWorktree',
+                            repositoryId: activeSessionInfo.repository.id,
+                            todo,
+                            todoScope: activeSessionInfo.session.isMainWorktree
+                              ? {
+                                  type: 'repository',
+                                  repositoryId: activeSessionInfo.repository.id,
+                                }
+                              : {
+                                  type: 'worktree',
+                                  worktreeSessionId: activeSessionInfo.session.id,
+                                },
+                          });
+                          setFocusArea('app');
+                        }}
                       />
                     </div>
                   </div>
@@ -1544,6 +1650,9 @@ export function Layout() {
               <AddWorktreeScreen
                 onBack={() => setActiveScreen({ type: 'main' })}
                 repositoryId={activeScreen.repositoryId}
+                todo={activeScreen.todo}
+                todoScope={activeScreen.todoScope}
+                onTodoTerminalCreated={handleTodoTerminalCreated}
               />
             </div>
           )}

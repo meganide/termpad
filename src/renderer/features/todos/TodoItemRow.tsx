@@ -28,7 +28,14 @@ import {
 } from '../../components/ui/alert-dialog';
 import { Textarea } from '../../components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
-import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import type {
+  TodoColumn,
+  TodoItem,
+  TodoPriority,
+  TodoStatus,
+  WorktreeSession,
+} from '../../../shared/types';
+import { getTodoStatus } from './status';
 import { PRIORITY_STYLES } from './priority';
 import { TodoDetailDialog } from './TodoDetailDialog';
 import { TodoActionItems } from './TodoActionItems';
@@ -42,6 +49,11 @@ interface TodoItemRowProps {
   onRemove: () => void;
   moveTargets?: WorktreeSession[];
   onMove: (id: string) => void;
+  onStatusChange: (status: TodoStatus) => void;
+  card?: boolean;
+  columns?: TodoColumn[];
+  onSendToTerminal?: () => void;
+  onCreateWorktree?: () => void;
 }
 
 export function TodoItemRow({
@@ -53,6 +65,11 @@ export function TodoItemRow({
   onRemove,
   moveTargets,
   onMove,
+  onStatusChange,
+  card = false,
+  columns,
+  onSendToTerminal,
+  onCreateWorktree,
 }: TodoItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(todo.text);
@@ -68,7 +85,7 @@ export function TodoItemRow({
   };
   const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
     id: todo.id,
-    disabled: !sortable,
+    disabled: !sortable || isEditing,
   });
 
   const startEditing = () => {
@@ -93,10 +110,12 @@ export function TodoItemRow({
     }
   }, [todo.text]);
 
+  const done = getTodoStatus(todo) === 'done';
   const createdAt = new Date(todo.createdAt);
   const priorityStyle = todo.priority ? PRIORITY_STYLES[todo.priority] : undefined;
   const actions = {
     todo,
+    columns,
     onOpen: () => {
       afterMenuClose.current = () => setIsDetailOpen(true);
     },
@@ -110,6 +129,17 @@ export function TodoItemRow({
     onPriorityChange,
     moveTargets,
     onMove,
+    onStatusChange,
+    onSendToTerminal: onSendToTerminal
+      ? () => {
+          afterMenuClose.current = onSendToTerminal;
+        }
+      : undefined,
+    onCreateWorktree: onCreateWorktree
+      ? () => {
+          afterMenuClose.current = onCreateWorktree;
+        }
+      : undefined,
   };
 
   return (
@@ -118,10 +148,38 @@ export function TodoItemRow({
         <ContextMenuTrigger asChild disabled={isEditing}>
           <li
             ref={setNodeRef}
-            style={{ transform: CSS.Transform.toString(transform), transition }}
-            className={`group relative flex items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
+            {...(card && !isEditing ? attributes : {})}
+            {...(card && !isEditing ? listeners : {})}
+            aria-label={card ? `Move todo: ${todo.text}` : undefined}
+            onPointerDown={
+              card
+                ? (event) => {
+                    // Menus and the editor retain their own pointer interactions.
+                    if (
+                      (event.target as HTMLElement).closest(
+                        'button, textarea, input, [role="menu"]'
+                      )
+                    )
+                      return;
+                    if (!isEditing) listeners?.onPointerDown?.(event);
+                  }
+                : undefined
+            }
+            onKeyDown={
+              card
+                ? (event) => {
+                    if (event.target === event.currentTarget && !isEditing)
+                      listeners?.onKeyDown?.(event);
+                  }
+                : undefined
+            }
+            style={{
+              transform: CSS.Transform.toString(isDragging ? null : transform),
+              transition,
+            }}
+            className={`group relative flex ${card ? 'flex-wrap cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary' : ''} items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
               priorityStyle ? 'pl-3' : 'pl-2'
-            } ${isDragging ? 'z-10 opacity-80' : ''}`}
+            } ${isDragging ? 'opacity-30' : ''}`}
             data-testid="todo-item"
           >
             {priorityStyle && (
@@ -130,23 +188,25 @@ export function TodoItemRow({
                 className={`absolute left-1 top-1.5 bottom-1.5 w-1 rounded-full ${priorityStyle.stripe}`}
               />
             )}
-            {sortable && (
+            {sortable && !card && (
               <button
                 type="button"
                 aria-label={`Reorder "${todo.text}"`}
-                className="mt-0.5 shrink-0 cursor-grab text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                className="mt-0.5 shrink-0 cursor-grab touch-none text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                 {...attributes}
                 {...listeners}
               >
                 <GripVertical className="h-3.5 w-3.5" />
               </button>
             )}
-            <Checkbox
-              checked={todo.completed}
-              onCheckedChange={(checked) => onToggle(checked === true)}
-              aria-label={todo.text}
-              className="mt-0.5"
-            />
+            {!card && (
+              <Checkbox
+                checked={done}
+                onCheckedChange={(checked) => onToggle(checked === true)}
+                aria-label={todo.text}
+                className="mt-0.5"
+              />
+            )}
             {isEditing ? (
               <Textarea
                 autoFocus
@@ -163,12 +223,18 @@ export function TodoItemRow({
                 aria-label={`Edit "${todo.text}"`}
                 className="min-h-0 max-h-40 flex-1 resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0"
               />
+            ) : card ? (
+              <span
+                className={`order-first w-full line-clamp-6 whitespace-pre-wrap break-words text-sm ${done ? 'text-muted-foreground' : 'text-foreground'}`}
+              >
+                {todo.text}
+              </span>
             ) : (
               <button
                 type="button"
                 onClick={startEditing}
                 className={`line-clamp-2 flex-1 whitespace-pre-wrap break-words text-left text-sm ${
-                  todo.completed ? 'text-muted-foreground line-through' : 'text-foreground'
+                  done ? 'text-muted-foreground line-through' : 'text-foreground'
                 }`}
               >
                 {todo.text}

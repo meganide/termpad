@@ -107,6 +107,126 @@ describe('AddWorktreeScreen', () => {
     vi.useRealTimers();
   });
 
+  it.each([
+    { command: undefined, setup: false },
+    { command: 'claude', setup: false },
+    { command: 'codex', setup: false },
+    { command: 'codex', setup: true },
+  ])(
+    'sends the todo to exactly one default terminal ($command, setup: $setup)',
+    async ({ command, setup }) => {
+      const todo = {
+        id: 'original',
+        text: 'First line\nSecond line',
+        completed: false,
+        createdAt: '2026-01-01',
+        priority: 'high' as const,
+      };
+      const onTodoTerminalCreated = vi.fn();
+      const copy = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+      useAppStore.setState({
+        repositories: [
+          {
+            ...mockRepository,
+            todos: [todo],
+            scriptsConfig: {
+              setupScript: setup ? 'echo setup' : null,
+              runScripts: [],
+              cleanupScript: null,
+              exclusiveMode: false,
+              lastUsedRunScriptId: null,
+            },
+          },
+        ],
+        settings: createMockSettings({
+          defaultPresetId: 'chosen',
+          terminalPresets: [
+            {
+              id: 'chosen',
+              name: 'My default',
+              command: command ?? '',
+              icon: 'terminal',
+              order: 0,
+            },
+          ],
+        }),
+      });
+      render(
+        <AddWorktreeScreen
+          repositoryId="repo-1"
+          onBack={mockOnBack}
+          todo={todo}
+          onTodoTerminalCreated={onTodoTerminalCreated}
+        />
+      );
+      fireEvent.change(screen.getByLabelText('Worktree Name'), {
+        target: { value: 'Todo Feature' },
+      });
+      fireEvent.click(screen.getByRole('button', { name: 'Create Worktree and Send Todo' }));
+      await waitFor(() => expect(onTodoTerminalCreated).toHaveBeenCalledOnce());
+      const state = useAppStore.getState();
+      const repo = state.repositories[0];
+      const worktree = repo.worktreeSessions.at(-1)!;
+      const tabs = state.getTabsForWorktree(worktree.id);
+      expect(tabs).toHaveLength(1);
+      const tab = tabs[0];
+      const setupTabs = state.getUserTabsForWorktree(worktree.id);
+      expect(setupTabs).toHaveLength(setup ? 1 : 0);
+      if (setup) {
+        expect(window.terminal.write).toHaveBeenCalledWith(
+          state.getUserTerminalIdForTab(worktree.id, setupTabs[0].id),
+          'echo setup\n'
+        );
+      }
+      expect(worktree).toMatchObject({
+        label: 'Todo Feature',
+        path: '/test/worktrees/test-branch',
+        branchName: 'todo-feature',
+      });
+      expect(worktree.todos?.[0]).toMatchObject({
+        text: todo.text,
+        priority: 'high',
+        completed: false,
+      });
+      expect(worktree.todos?.[0]).toEqual({ ...todo, status: 'in_progress' });
+      expect(repo.todos).toEqual([]);
+      expect(tab).toMatchObject({ name: 'My default', command });
+      expect(state.activeTerminalId).toBe(worktree.id);
+      expect(state.activeTabId).toBe(tab.id);
+      expect(copy).toHaveBeenCalledWith(todo.text);
+      expect(onTodoTerminalCreated).toHaveBeenCalledWith(
+        state.getTerminalIdForTab(worktree.id, tab.id),
+        { ...todo, status: 'in_progress' },
+        Boolean(command)
+      );
+      expect(mockOnBack).toHaveBeenCalledOnce();
+      copy.mockRestore();
+    }
+  );
+
+  it('does not open a terminal or copy the todo when worktree creation fails', async () => {
+    vi.mocked(window.terminal.createWorktree).mockResolvedValue({
+      success: false,
+      error: 'Branch already exists',
+    });
+    const onTodoTerminalCreated = vi.fn();
+    const todo = { id: 'todo', text: 'Task', completed: false, createdAt: '2026-01-01' };
+    render(
+      <AddWorktreeScreen
+        repositoryId="repo-1"
+        onBack={mockOnBack}
+        todo={todo}
+        onTodoTerminalCreated={onTodoTerminalCreated}
+      />
+    );
+    fireEvent.change(screen.getByLabelText('Worktree Name'), { target: { value: 'existing' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Create Worktree and Send Todo' }));
+    expect(await screen.findByText('Branch already exists')).toBeInTheDocument();
+    expect(onTodoTerminalCreated).not.toHaveBeenCalled();
+    expect(mockOnBack).not.toHaveBeenCalled();
+    expect(useAppStore.getState().worktreeTabs).toHaveLength(0);
+  });
+
   describe('worktree creation', () => {
     it.each([
       {

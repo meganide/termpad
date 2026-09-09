@@ -1,5 +1,6 @@
 import { render, screen, fireEvent, act, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { toast } from 'sonner';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { Layout } from './Layout';
 import { App } from '../App';
@@ -9,6 +10,8 @@ import {
   createMockRepository,
   createMockWorktreeSession,
 } from '../../../tests/utils';
+
+const sendTodoText = vi.hoisted(() => vi.fn().mockResolvedValue(undefined));
 
 // Mock child components to simplify testing
 vi.mock('./TitleBar', () => ({
@@ -95,27 +98,40 @@ vi.mock('./Sidebar/index', () => ({
   ),
 }));
 
-vi.mock('./Terminal/TerminalView', () => ({
-  TerminalView: ({
-    sessionId,
-    terminalId,
-    isVisible,
-    isFocused,
-  }: {
-    sessionId: string;
-    terminalId?: string;
-    isVisible: boolean;
-    isFocused?: boolean;
-  }) => (
-    <div
-      data-testid={`terminal-${terminalId ?? sessionId}`}
-      data-visible={isVisible}
-      data-focused={isFocused}
-    >
-      TerminalView
-    </div>
-  ),
-}));
+vi.mock('./Terminal/TerminalView', async () => {
+  const { useImperativeHandle } = await import('react');
+  return {
+    TerminalView: ({
+      sessionId,
+      terminalId,
+      isVisible,
+      isFocused,
+      ref,
+    }: {
+      sessionId: string;
+      terminalId?: string;
+      isVisible: boolean;
+      isFocused?: boolean;
+      ref?: React.Ref<import('./Terminal/TerminalView').TerminalViewHandle>;
+    }) => {
+      useImperativeHandle(ref, () => ({
+        sendText: (text, submit) => sendTodoText(terminalId ?? sessionId, text, submit),
+        copyAllOutput: vi.fn(),
+        copySelection: vi.fn(),
+        paste: vi.fn(),
+      }));
+      return (
+        <div
+          data-testid={`terminal-${terminalId ?? sessionId}`}
+          data-visible={isVisible}
+          data-focused={isFocused}
+        >
+          TerminalView
+        </div>
+      );
+    },
+  };
+});
 
 vi.mock('./Terminal/TabBar', () => ({
   TabBar: ({
@@ -387,6 +403,51 @@ describe('Layout', () => {
   afterEach(() => {
     vi.clearAllMocks();
   });
+
+  it.each([false, true])(
+    'sends todos to the selected main terminal (grid: %s), even when a user terminal has focus',
+    async (grid) => {
+      const user = userEvent.setup();
+      useAppStore.setState({ initialize: vi.fn() });
+      const session = {
+        ...createMockWorktreeSession({ id: 'todo-session' }),
+        isMainWorktree: true,
+      };
+      const todo = {
+        id: 'todo',
+        text: 'Full todo text',
+        completed: false,
+        createdAt: '2026-01-01',
+      };
+      useAppStore.setState({
+        repositories: [
+          { ...createMockRepository({ id: 'repo-1', worktreeSessions: [session] }), todos: [todo] },
+        ],
+      });
+      const store = useAppStore.getState();
+      store.setActiveTerminal(session.id);
+      store.createTab(session.id, 'Other main terminal');
+      const chosen = store.createTab(session.id, 'Chosen terminal', 'codex');
+      const terminalId = store.getTerminalIdForTab(session.id, chosen.id);
+      store.registerTerminal(terminalId);
+      store.updateTerminalStatus(terminalId, 'idle');
+      store.createUserTab(session.id, 'Side terminal');
+      store.setFocusArea('userTerminal');
+      store.setWorktreeGridView(session.id, grid);
+      render(<Layout />);
+      fireEvent.click(screen.getByTestId('right-panel-tab-todos'));
+      fireEvent.contextMenu(screen.getByTestId('todo-item'));
+      expect(
+        await screen.findByRole('menuitem', { name: 'Send to active terminal' })
+      ).not.toHaveAttribute('data-disabled');
+      await user.click(await screen.findByRole('menuitem', { name: 'Send to active terminal' }));
+      expect(toast.error).not.toHaveBeenCalled();
+      await waitFor(() =>
+        expect(sendTodoText).toHaveBeenCalledExactlyOnceWith(terminalId, todo.text, undefined)
+      );
+      expect(useAppStore.getState().repositories[0].todos?.[0].status).toBe('in_progress');
+    }
+  );
 
   describe('loading state', () => {
     it('shows loading state when not initialized', () => {
@@ -1070,6 +1131,37 @@ describe('Layout', () => {
       );
       expect(screen.getByTestId('user-terminal-panel')).toBeVisible();
       expect(useAppStore.getState().focusArea).toBe('userTerminal');
+    });
+
+    it.each(['changes', 'notes', 'terminals'])(
+      'expands and collapses the %s tab without losing the panel width',
+      (tab) => {
+        setupGitRepo();
+        render(<Layout />);
+        const panel = screen.getByTestId('right-panel');
+        const width = panel.style.width;
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+        fireEvent.click(screen.getByRole('button', { name: `Expand ${tab}` }));
+        expect(panel.style.width).toBe('100%');
+        fireEvent.click(screen.getByTestId('right-panel-tab-todos'));
+        expect(panel.style.width).toBe(width);
+        fireEvent.click(screen.getByTestId(`right-panel-tab-${tab}`));
+        expect(panel.style.width).toBe('100%');
+        fireEvent.click(screen.getByRole('button', { name: `Collapse ${tab}` }));
+        expect(panel.style.width).toBe(width);
+      }
+    );
+
+    it('expands the todo board and restores the panel width', () => {
+      setupGitRepo();
+      render(<Layout />);
+      const panel = screen.getByTestId('right-panel');
+      const width = panel.style.width;
+      fireEvent.click(screen.getByTestId('right-panel-tab-todos'));
+      fireEvent.click(screen.getByRole('button', { name: 'Expand todos' }));
+      expect(panel.style.width).toBe('100%');
+      fireEvent.click(screen.getByRole('button', { name: 'Collapse todos' }));
+      expect(panel.style.width).toBe(width);
     });
 
     it('expands review inline and restores the previous panel width', () => {

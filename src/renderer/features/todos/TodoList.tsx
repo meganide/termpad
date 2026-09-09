@@ -2,42 +2,34 @@ import { useCallback, useMemo, useState } from 'react';
 import { Plus } from 'lucide-react';
 import { toast } from 'sonner';
 import { useShallow } from 'zustand/react/shallow';
-import {
-  DndContext,
-  KeyboardSensor,
-  PointerSensor,
-  closestCenter,
-  useSensor,
-  useSensors,
-  type DragEndEvent,
-} from '@dnd-kit/core';
-import { restrictToVerticalAxis } from '@dnd-kit/modifiers';
-import {
-  SortableContext,
-  arrayMove,
-  sortableKeyboardCoordinates,
-  verticalListSortingStrategy,
-} from '@dnd-kit/sortable';
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from '../../components/ui/accordion';
 import { Button } from '../../components/ui/button';
 import { Textarea } from '../../components/ui/textarea';
-import { useAppStore, type TodoScope } from '../../stores/appStore';
+import { getTodoRepository, useAppStore, type TodoScope } from '../../stores/appStore';
 import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import { getTodoColumns } from '../../../shared/todoColumns';
+import { TodoKanban } from './TodoKanban';
 import { TodoItemRow } from './TodoItemRow';
+import { TodoSections } from './TodoSections';
 
 interface TodoListProps {
+  view?: 'list' | 'kanban';
   label: string;
   scope: TodoScope;
   todos: TodoItem[];
   moveTargets?: WorktreeSession[];
+  onSendToTerminal?: (todo: TodoItem) => void;
+  onCreateWorktree?: (todo: TodoItem) => void;
 }
 
-export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
+export function TodoList({
+  view = 'list',
+  label,
+  scope,
+  todos,
+  moveTargets,
+  onSendToTerminal,
+  onCreateWorktree,
+}: TodoListProps) {
   const { addTodo, updateTodo, removeTodo, reorderTodos, moveGlobalTodoToWorktree } = useAppStore(
     useShallow((s) => ({
       addTodo: s.addTodo,
@@ -47,12 +39,11 @@ export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
       moveGlobalTodoToWorktree: s.moveGlobalTodoToWorktree,
     }))
   );
+  const savedColumns = useAppStore((s) => getTodoRepository(s.repositories, scope)?.todoColumns);
+  const columns = useMemo(() => getTodoColumns(savedColumns), [savedColumns]);
+  const addTodoColumn = useAppStore((s) => s.addTodoColumn);
+  const reorderTodoColumns = useAppStore((s) => s.reorderTodoColumns);
   const [draft, setDraft] = useState('');
-
-  const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
-    useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
-  );
 
   const submitDraft = useCallback(() => {
     if (!draft.trim()) return;
@@ -60,43 +51,22 @@ export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
     setDraft('');
   }, [addTodo, draft, scope]);
 
-  const { active, completed } = useMemo(
-    () => ({
-      active: todos.filter((todo) => !todo.completed),
-      completed: todos.filter((todo) => todo.completed),
-    }),
-    [todos]
-  );
-
-  const handleDragEnd = useCallback(
-    (event: DragEndEvent) => {
-      const { active: dragged, over } = event;
-      if (!over || dragged.id === over.id) return;
-
-      const oldIndex = active.findIndex((todo) => todo.id === dragged.id);
-      const newIndex = active.findIndex((todo) => todo.id === over.id);
-      if (oldIndex === -1 || newIndex === -1) return;
-
-      const reordered = arrayMove(active, oldIndex, newIndex);
-      reorderTodos(
-        scope,
-        [...reordered, ...completed].map((todo) => todo.id)
-      );
-    },
-    [active, completed, reorderTodos, scope]
-  );
-
   const renderRow = (todo: TodoItem, sortable: boolean) => (
     <TodoItemRow
       key={todo.id}
       todo={todo}
       sortable={sortable}
+      card={view === 'kanban'}
+      columns={columns}
+      onStatusChange={(status) => updateTodo(scope, todo.id, { status })}
       onToggle={(isCompleted) => updateTodo(scope, todo.id, { completed: isCompleted })}
       onRename={(text) => updateTodo(scope, todo.id, { text })}
       onPriorityChange={(priority: TodoPriority | undefined) =>
         updateTodo(scope, todo.id, { priority })
       }
       onRemove={() => removeTodo(scope, todo.id)}
+      onSendToTerminal={onSendToTerminal ? () => onSendToTerminal(todo) : undefined}
+      onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
       moveTargets={moveTargets}
       onMove={(targetId) => {
         if (scope.type !== 'repository') return;
@@ -144,42 +114,30 @@ export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
         </Button>
       </form>
 
-      <div className="flex-1 min-h-0 overflow-y-auto space-y-2">
-        {todos.length === 0 && (
-          <p className="pt-4 text-center text-sm text-muted-foreground">No todos yet</p>
-        )}
-
-        {active.length > 0 && (
-          <DndContext
-            sensors={sensors}
-            collisionDetection={closestCenter}
-            onDragEnd={handleDragEnd}
-            modifiers={[restrictToVerticalAxis]}
-          >
-            <SortableContext
-              items={active.map((todo) => todo.id)}
-              strategy={verticalListSortingStrategy}
-            >
-              <ul className="space-y-1">{active.map((todo) => renderRow(todo, true))}</ul>
-            </SortableContext>
-          </DndContext>
-        )}
-
-        {todos.length > 0 && active.length === 0 && (
-          <p className="pt-4 text-center text-sm text-muted-foreground">All done</p>
-        )}
-
-        {completed.length > 0 && (
-          <Accordion type="single" collapsible>
-            <AccordionItem value="completed" className="border-b-0">
-              <AccordionTrigger className="rounded-lg px-2 py-1.5 text-xs font-mono uppercase tracking-[0.2em] text-muted-foreground hover:no-underline hover:bg-obsidian-800/60">
-                Completed ({completed.length})
-              </AccordionTrigger>
-              <AccordionContent className="pb-0 pt-1">
-                <ul className="space-y-1">{completed.map((todo) => renderRow(todo, false))}</ul>
-              </AccordionContent>
-            </AccordionItem>
-          </Accordion>
+      <div className="flex-1 min-h-0 overflow-auto space-y-2">
+        {view === 'kanban' ? (
+          <TodoKanban
+            todos={todos}
+            columns={columns}
+            onAddColumn={(name) => addTodoColumn(scope, name)}
+            onReorderColumns={(ids) => reorderTodoColumns(scope, ids)}
+            renderTodo={(todo) => renderRow(todo, true)}
+            onStatusChange={(todo, status) => updateTodo(scope, todo.id, { status })}
+            onReorder={(ids) => reorderTodos(scope, ids)}
+          />
+        ) : (
+          <>
+            {todos.length === 0 && (
+              <p className="pt-4 text-center text-sm text-muted-foreground">No todos yet</p>
+            )}
+            <TodoSections
+              todos={todos}
+              columns={columns}
+              renderTodo={(todo) => renderRow(todo, true)}
+              onStatusChange={(todo, status) => updateTodo(scope, todo.id, { status })}
+              onReorder={(ids) => reorderTodos(scope, ids)}
+            />
+          </>
         )}
       </div>
     </div>

@@ -131,11 +131,19 @@ export interface CustomShortcut {
   metaKey: boolean;
 }
 
+export type TodoStatus = 'backlog' | 'in_progress' | 'done' | `custom:${string}`;
+
+export interface TodoColumn {
+  id: TodoStatus;
+  name: string;
+}
+
 export type TodoPriority = 'low' | 'medium' | 'high';
 
 // A single todo entry. Scoped to either a repository or a worktree session.
 // Array position is the user's manual ordering.
 export interface TodoItem {
+  status?: TodoStatus; // Older saved todos derive status from completed.
   id: string;
   text: string;
   completed: boolean;
@@ -190,6 +198,7 @@ export interface Repository {
   portRangeStart?: number; // Base port for this repo (e.g., 10000), assigned on creation
   notes?: string; // User notes for this repository
   todos?: TodoItem[]; // User todos for this repository
+  todoColumns?: TodoColumn[]; // Ordered kanban columns shared by the repository's worktrees
 }
 
 export interface WindowState {

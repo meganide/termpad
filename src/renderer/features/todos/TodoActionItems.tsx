@@ -1,12 +1,21 @@
-import { Copy, Expand, Flag, GitBranch, Pencil, Trash2 } from 'lucide-react';
+import { Circle, Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
 import * as Dropdown from '../../components/ui/dropdown-menu';
 import * as Context from '../../components/ui/context-menu';
-import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
+import type {
+  TodoColumn,
+  TodoItem,
+  TodoPriority,
+  TodoStatus,
+  WorktreeSession,
+} from '../../../shared/types';
+import { getTodoStatus, TODO_STATUS_COLORS } from './status';
+import { DEFAULT_TODO_COLUMNS } from '../../../shared/todoColumns';
 import { PRIORITY_ORDER, PRIORITY_STYLES } from './priority';
 
 interface TodoActionItemsProps {
   context?: boolean;
   todo: TodoItem;
+  columns?: TodoColumn[];
   onOpen: () => void;
   onEdit: () => void;
   onCopy: () => void;
@@ -14,12 +23,16 @@ interface TodoActionItemsProps {
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   moveTargets?: WorktreeSession[];
   onMove: (id: string) => void;
+  onStatusChange: (status: TodoStatus) => void;
+  onSendToTerminal?: () => void;
+  onCreateWorktree?: () => void;
 }
 
 // Both entry points use the same actions, labels, and availability rules.
 export function TodoActionItems({
   context,
   todo,
+  columns = DEFAULT_TODO_COLUMNS,
   onOpen,
   onEdit,
   onCopy,
@@ -27,6 +40,9 @@ export function TodoActionItems({
   onPriorityChange,
   moveTargets,
   onMove,
+  onStatusChange,
+  onSendToTerminal,
+  onCreateWorktree,
 }: TodoActionItemsProps) {
   const Item = context ? Context.ContextMenuItem : Dropdown.DropdownMenuItem;
   const Separator = context ? Context.ContextMenuSeparator : Dropdown.DropdownMenuSeparator;
@@ -51,7 +67,7 @@ export function TodoActionItems({
         Copy
       </Item>
       <Sub>
-        <SubTrigger>
+        <SubTrigger className="gap-2">
           <Flag />
           Priority
         </SubTrigger>
@@ -74,9 +90,32 @@ export function TodoActionItems({
           </SubContent>
         </Portal>
       </Sub>
+      <Sub>
+        <SubTrigger className="gap-2">
+          <Circle />
+          Status
+        </SubTrigger>
+        <Portal>
+          <SubContent>
+            <RadioGroup
+              value={getTodoStatus(todo)}
+              onValueChange={(value) => onStatusChange(value as TodoStatus)}
+            >
+              {columns.map((column) => (
+                <RadioItem key={column.id} value={column.id}>
+                  <span
+                    className={`size-2 rounded-full ${TODO_STATUS_COLORS[column.id] ?? 'bg-primary'}`}
+                  />
+                  {column.name}
+                </RadioItem>
+              ))}
+            </RadioGroup>
+          </SubContent>
+        </Portal>
+      </Sub>
       {moveTargets !== undefined && (
         <Sub>
-          <SubTrigger>
+          <SubTrigger className="gap-2">
             <GitBranch />
             Move to worktree
           </SubTrigger>
@@ -99,6 +138,15 @@ export function TodoActionItems({
           </Portal>
         </Sub>
       )}
+      <Separator />
+      <Item disabled={!onSendToTerminal} onSelect={onSendToTerminal}>
+        <Terminal />
+        Send to active terminal
+      </Item>
+      <Item disabled={!onCreateWorktree} onSelect={onCreateWorktree}>
+        <GitBranch />
+        Create worktree from todo…
+      </Item>
       <Separator />
       <Item variant="destructive" onSelect={onRemove}>
         <Trash2 />

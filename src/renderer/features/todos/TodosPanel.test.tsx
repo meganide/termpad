@@ -9,7 +9,7 @@ import { TodosPanel } from './TodosPanel';
 const REPOSITORY_ID = 'repo-1';
 const WORKTREE_ID = `session-${REPOSITORY_ID}-0`;
 
-const renderPanel = () =>
+const renderPanel = (actions: Partial<React.ComponentProps<typeof TodosPanel>> = {}) =>
   render(
     <TodosPanel
       repositoryId={REPOSITORY_ID}
@@ -17,6 +17,7 @@ const renderPanel = () =>
       repositoryName="Termpad"
       worktreeLabel="feature-x"
       titleSlot={null}
+      {...actions}
     />
   );
 
@@ -62,7 +63,181 @@ const getStoredTodos = () => {
 describe('TodosPanel', () => {
   beforeEach(() => {
     resetAllStores();
+    localStorage.removeItem('termpad:todos-view');
     vi.clearAllMocks();
+  });
+
+  it('creates a custom column, keeps its todos visible in list view, and restores the board on remount', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    const panel = renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    await user.click(screen.getByRole('button', { name: 'Add column' }));
+    await user.type(screen.getByRole('textbox', { name: 'Column name' }), 'In review');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByRole('region', { name: 'In review' })).toBeInTheDocument();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'In review' }));
+    expect(
+      within(screen.getByRole('region', { name: 'In review' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('button', { name: 'In review (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByText('Write tests')).toBeInTheDocument();
+    expect(screen.queryByText('All done')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    panel.unmount();
+    renderPanel();
+    expect(
+      within(screen.getByRole('region', { name: 'In review' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Add column' }));
+    await user.type(screen.getByRole('textbox', { name: 'Column name' }), 'in REVIEW');
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+    expect(screen.getByRole('alert')).toHaveTextContent('unique');
+    expect(screen.getAllByRole('region', { name: 'In review' })).toHaveLength(1);
+  });
+
+  it('shows matching accordions for every column, including empty sections, and collapses Backlog', async () => {
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    const backlog = screen.getByRole('button', { name: 'Backlog (1)' });
+    expect(backlog).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('button', { name: 'In progress (0)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.getByRole('button', { name: 'Done (0)' })).toHaveAttribute(
+      'aria-expanded',
+      'false'
+    );
+    fireEvent.click(backlog);
+    expect(screen.queryByRole('checkbox', { name: 'Write tests' })).not.toBeInTheDocument();
+    fireEvent.click(backlog);
+    expect(await screen.findByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
+  });
+
+  it.each(['dropdown', 'right-click'])(
+    'sends the full multiline todo and opens worktree creation from the %s menu',
+    async (entry) => {
+      const user = userEvent.setup();
+      const todo = makeTodo({ text: 'First line\nSecond line' });
+      const onSendToTerminal = vi.fn();
+      const onCreateWorktree = vi.fn();
+      seedRepository({ repository: [todo] });
+      renderPanel({ onSendToTerminal, onCreateWorktree });
+      const openMenu = async () => {
+        if (entry === 'right-click') fireEvent.contextMenu(screen.getByTestId('todo-item'));
+        else await user.click(screen.getByRole('button', { name: /^Actions for/ }));
+      };
+      await openMenu();
+      await user.click(await screen.findByRole('menuitem', { name: 'Send to active terminal' }));
+      expect(onSendToTerminal).toHaveBeenCalledExactlyOnceWith(todo);
+      await openMenu();
+      await user.click(await screen.findByRole('menuitem', { name: 'Create worktree from todo…' }));
+      expect(onCreateWorktree).toHaveBeenCalledExactlyOnceWith(todo);
+      expect(getStoredTodos().repository).toEqual([todo]);
+    }
+  );
+
+  it('disables sending when no running main terminal is available', async () => {
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    expect(
+      await screen.findByRole('menuitem', { name: 'Send to active terminal' })
+    ).toHaveAttribute('data-disabled');
+  });
+
+  it('sets status manually in the list and groups in-progress todos in an expanded accordion', async () => {
+    const user = userEvent.setup();
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'In progress' }));
+    expect(getStoredTodos().repository[0]).toMatchObject({
+      status: 'in_progress',
+      completed: false,
+    });
+    expect(screen.getByRole('button', { name: 'In progress (1)' })).toHaveAttribute(
+      'aria-expanded',
+      'true'
+    );
+    expect(screen.queryByText('All done')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'In progress (1)' }));
+    expect(screen.queryByText('Write tests')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'In progress (1)' }));
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Done' }));
+    expect(getStoredTodos().repository[0]).toMatchObject({ status: 'done', completed: true });
+    expect(screen.getByRole('button', { name: 'Done (1)' })).toBeInTheDocument();
+  });
+
+  it('makes kanban cards draggable without checkboxes or drag handles and keeps editing in the menu', async () => {
+    const user = userEvent.setup();
+    seedRepository({
+      repository: [makeTodo(), makeTodo({ id: 'done', text: 'Finished', completed: true })],
+    });
+    renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    const board = screen.getByTestId('todo-kanban');
+    expect(within(board).queryByRole('checkbox')).not.toBeInTheDocument();
+    expect(within(board).queryByLabelText(/^Reorder/)).not.toBeInTheDocument();
+    expect(within(board).getByRole('button', { name: 'Move todo: Write tests' })).toHaveAttribute(
+      'tabindex',
+      '0'
+    );
+    expect(within(board).getByRole('button', { name: 'Move todo: Finished' })).toBeInTheDocument();
+    await user.click(screen.getByLabelText('Actions for "Write tests"'));
+    await user.click(await screen.findByRole('menuitem', { name: 'Edit' }));
+    const editor = screen.getByLabelText('Edit "Write tests"');
+    await user.clear(editor);
+    await user.type(editor, 'Updated card{Enter}');
+    expect(getStoredTodos().repository[0].text).toBe('Updated card');
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.getByRole('checkbox', { name: 'Updated card' })).toBeInTheDocument();
+    expect(screen.getByLabelText('Reorder "Updated card"')).toBeInTheDocument();
+  });
+
+  it('switches between list and kanban, keeps legacy todos in their columns, and remembers the view', async () => {
+    const user = userEvent.setup();
+    seedRepository({
+      repository: [
+        makeTodo(),
+        makeTodo({ id: 'active', text: 'Working', status: 'in_progress' }),
+        makeTodo({ id: 'done', text: 'Finished', completed: true }),
+      ],
+    });
+    const { unmount } = renderPanel();
+    await user.click(screen.getByRole('button', { name: 'Kanban' }));
+    expect(
+      within(screen.getByRole('region', { name: 'Backlog' })).getByText('Write tests')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'In progress' })).getByText('Working')
+    ).toBeInTheDocument();
+    expect(
+      within(screen.getByRole('region', { name: 'Done' })).getByText('Finished')
+    ).toBeInTheDocument();
+    fireEvent.contextMenu(
+      within(screen.getByRole('region', { name: 'In progress' })).getByTestId('todo-item')
+    );
+    await user.click(await screen.findByRole('menuitem', { name: 'Status' }));
+    fireEvent.click(await screen.findByRole('menuitemradio', { name: 'Backlog' }));
+    expect(
+      within(screen.getByRole('region', { name: 'Backlog' })).getByText('Working')
+    ).toBeInTheDocument();
+    unmount();
+    renderPanel();
+    expect(screen.getByRole('button', { name: 'Kanban' })).toHaveAttribute('aria-pressed', 'true');
+    await user.click(screen.getByRole('button', { name: 'List' }));
+    expect(screen.queryByTestId('todo-kanban')).not.toBeInTheDocument();
   });
 
   it('shows only the global empty state in the primary checkout', () => {
@@ -135,7 +310,7 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository).toEqual([]);
   });
 
-  it('moves a completed todo into the collapsed Completed accordion', async () => {
+  it('moves a completed todo into the collapsed Done accordion', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
@@ -145,20 +320,20 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository[0].completed).toBe(true);
     // Collapsed accordion content is unmounted, so the row is no longer reachable
     expect(screen.queryByRole('checkbox', { name: 'Write tests' })).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Completed \(1\)/ })).toBeInTheDocument();
-    expect(screen.getByText('All done')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /Done \(1\)/ })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Backlog (0)' })).toBeInTheDocument();
   });
 
-  it('un-completes a todo from the Completed accordion', async () => {
+  it('un-completes a todo from the Done accordion', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo({ completed: true })] });
     renderPanel();
 
-    await user.click(screen.getByRole('button', { name: /Completed \(1\)/ }));
+    await user.click(screen.getByRole('button', { name: /Done \(1\)/ }));
     await user.click(await screen.findByRole('checkbox', { name: 'Write tests' }));
 
     expect(getStoredTodos().repository[0].completed).toBe(false);
-    expect(screen.queryByRole('button', { name: /Completed/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Done (0)' })).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
   });
 
@@ -257,14 +432,15 @@ describe('TodosPanel', () => {
     expect(writeText).toHaveBeenCalledWith('Write tests');
   });
 
-  it('offers a drag handle for active todos but not completed ones', () => {
+  it('offers drag handles for backlog and done todos', async () => {
     seedRepository({
       repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Done one', completed: true })],
     });
     renderPanel();
 
     expect(screen.getByLabelText('Reorder "Write tests"')).toBeInTheDocument();
-    expect(screen.queryByLabelText('Reorder "Done one"')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Done (1)' }));
+    expect(await screen.findByLabelText('Reorder "Done one"')).toBeInTheDocument();
   });
 
   it('reorders todos through the store', () => {
