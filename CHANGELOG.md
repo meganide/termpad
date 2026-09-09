@@ -1,5 +1,42 @@
 # termpad
 
+## 0.9.0
+
+### Minor Changes
+
+- [#35](https://github.com/meganide/termpad/pull/35) [`f749e05`](https://github.com/meganide/termpad/commit/f749e050aaf4988c3566c14648c6f9ce39bc5d4e) Thanks [@meganide](https://github.com/meganide)! - Add an Open ports view to inspect listening TCP ports and manage the processes using them.
+  - Filter by Termpad, Outside Termpad, or All, with Termpad selected by default and unique process counts on each filter.
+  - Search by port, process, PID, or address and see CPU averages and resident memory usage, refreshed every five seconds while the view is open.
+  - Jump to the owning agent or user terminal from a process's actions menu.
+  - Stop or force-stop a process, with an optional checkbox to close its terminal tab and release saved output.
+  - Keep the dialog and table layout stable when switching filters.
+
+  Support discovery on macOS, Linux, Windows, and running WSL distributions. Recheck process identity before stopping it and protect Termpad's own process.
+
+- [#38](https://github.com/meganide/termpad/pull/38) [`289a14e`](https://github.com/meganide/termpad/commit/289a14ee63bb0531f515e9bbdaf57a523b7a9db2) Thanks [@meganide](https://github.com/meganide)! - Enlarge the Performance modal and move Open ports into it, replacing the separate sidebar entry. Remember the selected Performance tab when the modal reopens and pause polling for inactive views. Load resource counts on open even when the saved tab is Open ports. Show the open-port count in its tab, loading it on open and updating it after port scans.
+
+- [#32](https://github.com/meganide/termpad/pull/32) [`56f6076`](https://github.com/meganide/termpad/commit/56f60761aa503ebc1afb8a2aa0b7c2c5ce5f022e) Thanks [@meganide](https://github.com/meganide)! - Add a browser to the right panel with repository-scoped tabs, a tab count, an expandable view, and native right-click menus. Repositories start with zero browser tabs, and the last tab can be closed.
+
+  Add DevTools inside a resizable right-hand pane, with drag and keyboard resizing and a double-click reset. Show errors when a browser page crashes or DevTools cannot load.
+
+- [#38](https://github.com/meganide/termpad/pull/38) [`289a14e`](https://github.com/meganide/termpad/commit/289a14ee63bb0531f515e9bbdaf57a523b7a9db2) Thanks [@meganide](https://github.com/meganide)! - Add a Performance view for Termpad terminals, running processes, and browser tabs. Inspect live CPU and memory usage across repositories, sort and filter the list, jump to an item's terminal or browser tab, and close tabs or stop processes. Include Windows and running WSL processes while protecting Termpad's app helpers.
+
+- [#39](https://github.com/meganide/termpad/pull/39) [`23e30a0`](https://github.com/meganide/termpad/commit/23e30a0d5513e728f4cf7dc3649ffe72552b458a) Thanks [@meganide](https://github.com/meganide)! - Send todos to the active terminal or create a named worktree from a todo, move it into the new worktree, and submit it to the automatically started default terminal. Mark dispatched todos as in progress and separate consecutive sends with a newline.
+
+  Add list and kanban views with Backlog, In progress, Done, and custom columns. Drag todos between columns or list accordions to update their status, preview todos while dragging, and reorder kanban columns. Save custom columns and their order per repository, and support manual status changes from todo menus.
+
+  Add expand and collapse controls to every right-panel tab and improve spacing in todo action menus.
+
+### Patch Changes
+
+- [#37](https://github.com/meganide/termpad/pull/37) [`14db173`](https://github.com/meganide/termpad/commit/14db173e92b8db286dd45270e7d2327a14fe2247) Thanks [@meganide](https://github.com/meganide)! - Automatically open a terminal and run the default terminal preset command after creating a worktree. Open a plain shell when Terminal is the default.
+
+- [#34](https://github.com/meganide/termpad/pull/34) [`c2bc382`](https://github.com/meganide/termpad/commit/c2bc382973b12c71ac61e1974505bc31565bf80c) Thanks [@meganide](https://github.com/meganide)! - Fix terminal hyperlinks opening in the default browser without a warning popup, and prevent right-clicks and macOS Ctrl-clicks from opening links so the copy menu remains usable.
+
+- [#40](https://github.com/meganide/termpad/pull/40) [`29c2c95`](https://github.com/meganide/termpad/commit/29c2c95f22e8eec986b7f13db2aacacecb5655aa) Thanks [@meganide](https://github.com/meganide)! - Preserve terminal scroll positions when switching between agent overview and worktree views, including when Codex clears and redraws its transcript after resizing. Keep following new output when already scrolled to the bottom.
+
+- [#36](https://github.com/meganide/termpad/pull/36) [`3f2c340`](https://github.com/meganide/termpad/commit/3f2c340c22e469179e8cede72d786187886ec75a) Thanks [@meganide](https://github.com/meganide)! - Show the current Termpad version in the sidebar instead of the LOCAL label.
+
 ## 0.8.0
 
 ### Minor Changes
