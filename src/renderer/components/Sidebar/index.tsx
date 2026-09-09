@@ -24,6 +24,7 @@ import { ADD_REPOSITORY_ITEM_ID } from '../../utils/sidebarNavigation';
 import { cn } from '../../lib/utils';
 import { isMac } from '../../utils/shortcuts';
 import type { WorktreeSession, Repository } from '../../../shared/types';
+import { version } from '../../../../package.json';
 
 interface SidebarProps {
   width: number;
@@ -279,7 +280,7 @@ export function Sidebar({
           termpad<span className="text-primary">.</span>
         </span>
         <span className="ml-auto rounded border border-sidebar-border px-1.5 py-0.5 font-mono text-[10px] text-muted-foreground">
-          LOCAL
+          v{version}
         </span>
       </div>
       <nav className="sidebar-navigation" aria-label="Workspace navigation">
