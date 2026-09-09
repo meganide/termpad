@@ -49,7 +49,7 @@ const makeTodo = (overrides: Partial<TodoItem> = {}): TodoItem => ({
   ...overrides,
 });
 
-const repositoryList = () => screen.getByLabelText('Add a todo to Global: Termpad');
+const repositoryList = () => screen.getByLabelText('Add a todo to All: Termpad');
 const worktreeList = () => screen.getByLabelText('Add a todo to Worktree: feature-x');
 
 const getStoredTodos = () => {
@@ -271,7 +271,7 @@ describe('TodosPanel', () => {
 
     expect(getStoredTodos().worktree.map((t) => t.text)).toEqual(['Rebase branch']);
     expect(getStoredTodos().repository).toEqual([]);
-    expect(screen.queryByLabelText('Add a todo to Global: Termpad')).not.toBeInTheDocument();
+    expect(screen.queryByLabelText('Add a todo to All: Termpad')).not.toBeInTheDocument();
   });
 
   it('trims the new todo text and clears the input', async () => {
@@ -527,8 +527,8 @@ describe('TodosPanel', () => {
   it('shows the global scope as a static title with its todos visible', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
-    expect(screen.getByRole('heading', { name: 'Global: Termpad' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Global: Termpad' })).not.toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'All: Termpad' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'All: Termpad' })).not.toBeInTheDocument();
     expect(repositoryList()).toBeInTheDocument();
     expect(screen.getByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
   });
@@ -538,9 +538,9 @@ describe('TodosPanel', () => {
       repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Second', completed: true })],
     });
     renderPanel();
-    expect(
-      screen.getByRole('heading', { name: 'Global: Termpad' }).parentElement
-    ).toHaveTextContent('1/2');
+    expect(screen.getByRole('heading', { name: 'All: Termpad' }).parentElement).toHaveTextContent(
+      '1/2'
+    );
   });
 
   it('deletes a todo', async () => {
