@@ -42,6 +42,7 @@ import { TodoActionItems } from './TodoActionItems';
 
 interface TodoItemRowProps {
   assignment?: string;
+  onOpenWorktree?: () => void;
   dispatch?: boolean;
   todo: TodoItem;
   sortable: boolean;
@@ -60,6 +61,7 @@ interface TodoItemRowProps {
 
 export function TodoItemRow({
   assignment,
+  onOpenWorktree,
   dispatch,
   todo,
   sortable,
@@ -245,14 +247,28 @@ export function TodoItemRow({
                 {todo.text}
               </button>
             )}
-            {assignment && (
-              <span
-                title={`Assigned to ${assignment}`}
-                className="max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
-              >
-                {assignment}
-              </span>
-            )}
+            {assignment &&
+              (onOpenWorktree ? (
+                <button
+                  type="button"
+                  title={`Assigned to ${assignment}`}
+                  aria-label={`Open worktree ${assignment}`}
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onOpenWorktree();
+                  }}
+                  className="max-w-full cursor-pointer truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                >
+                  {assignment}
+                </button>
+              ) : (
+                <span
+                  title={`Assigned to ${assignment}`}
+                  className="max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                >
+                  {assignment}
+                </span>
+              ))}
             <Tooltip>
               <TooltipTrigger asChild>
                 <time

@@ -15,7 +15,6 @@ import {
 import { Button } from '../../components/ui/button';
 import { Tooltip, TooltipContent, TooltipTrigger } from '../../components/ui/tooltip';
 import { PanelSection } from '../../components/RightPanel/PanelSection';
-import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
 import { isGlobalWorkspace } from '../../utils/workspaceScope';
 
@@ -367,7 +366,6 @@ export function NotesPanel({
   titleSlot,
 }: NotesPanelProps) {
   const { repositories, updateRepositoryNotes, updateWorktreeNotes } = useAppStore();
-  const { collapsed, toggle } = useCollapsibleScopes();
 
   const repository = repositories.find((r) => r.id === repositoryId);
   const worktree = repository?.worktreeSessions.find((ws) => ws.id === worktreeSessionId);
@@ -376,7 +374,6 @@ export function NotesPanel({
   const worktreeNotes = worktree?.notes ?? '';
   const global = scopeMode ? scopeMode === 'repository' : isGlobalWorkspace(worktree);
   const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
-  const scopeKey = global ? 'repository' : 'worktree';
 
   const handleRepoNotesChange = useCallback(
     (notes: string) => updateRepositoryNotes(repositoryId, notes),
@@ -399,11 +396,7 @@ export function NotesPanel({
         </div>
       )}
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
-        <PanelSection
-          label={label}
-          collapsed={collapsed[scopeKey]}
-          onToggle={() => toggle(scopeKey)}
-        >
+        <PanelSection label={label}>
           <NoteEditor
             key={global ? repositoryId : worktreeSessionId}
             label={label}

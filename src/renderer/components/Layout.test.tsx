@@ -549,6 +549,25 @@ describe('Layout', () => {
     expect(within(workspace).getByLabelText('Planning scope')).toHaveValue('global');
     expect(scroll).toBeVisible();
     expect(scroll.scrollTop).toBe(360);
+    const target = createMockWorktreeSession({ id: 'assigned-worktree', label: 'Feature branch' });
+    let targetTabId = '';
+    act(() => {
+      const state = useAppStore.getState();
+      state.addWorktreeSession(repository.id, target);
+      targetTabId = state.createTab(target.id, 'Existing agent', undefined, undefined, {
+        activate: false,
+      }).id;
+      state.moveGlobalTodoToWorktree(repository.id, 'todo', target.id);
+    });
+    await user.click(within(scroll).getByRole('button', { name: 'Open worktree Feature branch' }));
+    expect(useAppStore.getState().activeTerminalId).toBe(target.id);
+    expect(useAppStore.getState().activeTabId).toBe(targetTabId);
+    expect(workspace).not.toBeVisible();
+    expect(useAppStore.getState().getTabsForWorktree(target.id)).toHaveLength(1);
+    fireEvent.click(screen.getByRole('button', { name: 'Open repository planning' }));
+    expect(scroll).toBeVisible();
+    expect(scroll.scrollTop).toBe(360);
+    expect(within(workspace).getByRole('textbox', { name: /Add a todo/ })).toHaveValue('Next idea');
   });
 
   describe('loading state', () => {

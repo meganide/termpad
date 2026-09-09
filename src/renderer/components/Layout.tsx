@@ -1053,6 +1053,24 @@ export function Layout() {
     exitOverview();
   }, [exitOverview]);
 
+  const handleOpenTodoWorktree = (sessionId: string) => {
+    const state = useAppStore.getState();
+    const session = state.repositories
+      .flatMap((repository) => repository.worktreeSessions)
+      .find((item) => item.id === sessionId);
+    if (!session || state.isPathDeleting(session.path)) {
+      toast.error('This worktree is no longer available.');
+      return;
+    }
+    setActiveTerminal(sessionId);
+    setReviewExpanded(false);
+    setBrowserExpanded(false);
+    setTodosExpanded(false);
+    setExpandedToolTabs({});
+    handleSessionSelect();
+    setFocusArea('mainTerminal');
+  };
+
   const handleOpenPortTerminal = useCallback(
     (terminalId: string): boolean => {
       const state = useAppStore.getState();
@@ -1600,6 +1618,7 @@ export function Layout() {
                             className={rightPanelTab === 'todos' ? 'h-full' : 'hidden'}
                           >
                             <TodosPanel
+                              onOpenWorktree={handleOpenTodoWorktree}
                               scopeMode="worktree"
                               onOpenPlanning={() =>
                                 openPlanning(repository.id, {
@@ -1780,6 +1799,7 @@ export function Layout() {
                 }
               >
                 <PlanningWorkspace
+                  onOpenWorktree={handleOpenTodoWorktree}
                   locationRequest={planningLocations[repository.id]}
                   repository={repository}
                   repositories={repositories}

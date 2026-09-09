@@ -524,34 +524,23 @@ describe('TodosPanel', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('collapses and expands the global scope', async () => {
-    const user = userEvent.setup();
+  it('shows the global scope as a static title with its todos visible', () => {
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
-
-    const repositoryHeader = screen.getByRole('button', { name: 'Global: Termpad' });
-    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('heading', { name: 'Global: Termpad' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Global: Termpad' })).not.toBeInTheDocument();
     expect(repositoryList()).toBeInTheDocument();
-
-    await user.click(repositoryHeader);
-
-    expect(repositoryHeader).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.queryByLabelText('Add a todo to Global: Termpad')).not.toBeInTheDocument();
-
-    await user.click(repositoryHeader);
-    expect(repositoryList()).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Write tests' })).toBeInTheDocument();
   });
 
-  it('keeps the todo count visible while a scope is collapsed', async () => {
-    const user = userEvent.setup();
+  it('keeps the todo count beside the scope title', () => {
     seedRepository({
       repository: [makeTodo(), makeTodo({ id: 'todo-2', text: 'Second', completed: true })],
     });
     renderPanel();
-
-    await user.click(screen.getByRole('button', { name: 'Global: Termpad' }));
-
-    expect(screen.getByText('1/2')).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { name: 'Global: Termpad' }).parentElement
+    ).toHaveTextContent('1/2');
   });
 
   it('deletes a todo', async () => {

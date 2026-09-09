@@ -2,7 +2,6 @@ import { Columns3, List, Maximize2, Minimize2 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
 import { useMemo, useState, type ReactNode } from 'react';
 import { PanelSection } from '../../components/RightPanel/PanelSection';
-import { useCollapsibleScopes } from '../../components/RightPanel/useCollapsibleScopes';
 import { useAppStore } from '../../stores/appStore';
 import type { TodoScope } from '../../stores/appStore';
 import { TodoList } from './TodoList';
@@ -25,6 +24,7 @@ interface TodosPanelProps {
   defaultView?: 'list' | 'kanban';
   onOpenPlanning?: () => void;
   onDispatch?: (todo: TodoItem, targetId: string) => void;
+  onOpenWorktree?: (worktreeSessionId: string) => void;
   repositoryId: string;
   worktreeSessionId: string;
   repositoryName: string;
@@ -41,6 +41,7 @@ export function TodosPanel({
   defaultView = 'list',
   onOpenPlanning,
   onDispatch,
+  onOpenWorktree,
   repositoryId,
   worktreeSessionId,
   repositoryName,
@@ -59,7 +60,6 @@ export function TodosPanel({
         : 'list'
   );
   const repositories = useAppStore((s) => s.repositories);
-  const { collapsed, toggle } = useCollapsibleScopes();
 
   const repository = repositories.find((r) => r.id === repositoryId);
   const worktree = repository?.worktreeSessions.find((ws) => ws.id === worktreeSessionId);
@@ -79,7 +79,6 @@ export function TodosPanel({
   const scope = global ? repositoryScope : worktreeScope;
   const todos = global ? repositoryTodos : worktreeTodos;
   const label = global ? `Global: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
-  const scopeKey = global ? 'repository' : 'worktree';
   const moveTargets = onDispatch
     ? repository?.worktreeSessions
     : global
@@ -134,12 +133,7 @@ export function TodosPanel({
         )}
       </div>
       <div className="flex-1 min-h-0 flex flex-col gap-3 px-3 pb-3">
-        <PanelSection
-          label={label}
-          collapsed={collapsed[scopeKey]}
-          onToggle={() => toggle(scopeKey)}
-          headerAccessory={<TodoCount todos={todos} />}
-        >
+        <PanelSection label={label} headerAccessory={<TodoCount todos={todos} />}>
           <TodoList
             key={global ? repositoryId : worktreeSessionId}
             label={label}
@@ -150,6 +144,7 @@ export function TodosPanel({
             onSendToTerminal={onSendToTerminal}
             onCreateWorktree={onCreateWorktree}
             onDispatch={onDispatch}
+            onOpenWorktree={onOpenWorktree}
             assignments={repository?.worktreeSessions}
           />
         </PanelSection>

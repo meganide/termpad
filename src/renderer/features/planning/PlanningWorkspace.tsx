@@ -18,6 +18,7 @@ interface PlanningWorkspaceProps {
   onRepositoryChange: (repositoryId: string) => void;
   onBack: () => void;
   onDispatch: (todo: TodoItem, targetId: string) => void;
+  onOpenWorktree?: (worktreeSessionId: string) => void;
   onCreateWorktree: (todo: TodoItem, scope: TodoScope) => void;
 }
 
@@ -28,6 +29,7 @@ export function PlanningWorkspace({
   onRepositoryChange,
   onBack,
   onDispatch,
+  onOpenWorktree,
   onCreateWorktree,
 }: PlanningWorkspaceProps) {
   const [tab, setTab] = useState<'todos' | 'notes'>('todos');
@@ -153,6 +155,7 @@ export function PlanningWorkspace({
                   {...props}
                   defaultView="kanban"
                   onDispatch={onDispatch}
+                  onOpenWorktree={onOpenWorktree}
                   onCreateWorktree={(todo) =>
                     onCreateWorktree(
                       todo,
