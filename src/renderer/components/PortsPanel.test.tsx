@@ -1,6 +1,6 @@
 import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { PortsDialog } from './PortsDialog';
+import { PortsPanel } from './PortsPanel';
 
 const entry = {
   pid: 123,
@@ -50,7 +50,7 @@ async function selectStop() {
 
 describe('Open ports', () => {
   it('shows listeners and filters by process or port', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByText('3000')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'All (2)' }));
     fireEvent.change(screen.getByLabelText('Filter ports'), { target: { value: 'python' } });
@@ -60,7 +60,7 @@ describe('Open ports', () => {
     expect(screen.getByText('No ports match your filter.')).toBeInTheDocument();
   });
   it('defaults to Termpad and switches between outside and all listeners', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByText('3000')).toBeInTheDocument();
     expect(screen.queryByText('8080')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Termpad (1)' })).toHaveAttribute(
@@ -78,7 +78,7 @@ describe('Open ports', () => {
   });
 
   it('combines origin and text filters and clears a hidden stop selection', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     await selectStop();
     fireEvent.click(screen.getByRole('button', { name: 'Outside Termpad (1)' }));
     expect(screen.queryByRole('region', { name: 'Confirm stop process' })).not.toBeInTheDocument();
@@ -90,7 +90,7 @@ describe('Open ports', () => {
   });
 
   it('keeps the origin filter on refresh and resets to Termpad when reopened', async () => {
-    const { unmount } = render(<PortsDialog onClose={vi.fn()} />);
+    const { unmount } = render(<PortsPanel onNavigate={vi.fn()} />);
     await screen.findByText('3000');
     fireEvent.click(screen.getByRole('button', { name: 'Outside Termpad (1)' }));
     fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
@@ -100,7 +100,7 @@ describe('Open ports', () => {
       'true'
     );
     unmount();
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByText('3000')).toBeInTheDocument();
     expect(screen.queryByText('8080')).not.toBeInTheDocument();
   });
@@ -110,7 +110,7 @@ describe('Open ports', () => {
       ports: [entry, { ...entry, port: 3001 }, { ...entry, distro: 'Ubuntu', origin: 'outside' }],
       warnings: [],
     });
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     await screen.findByText('3000');
     expect(screen.getByRole('button', { name: 'Termpad (1)' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Outside Termpad (1)' })).toBeInTheDocument();
@@ -120,7 +120,7 @@ describe('Open ports', () => {
   it('opens the owning terminal from the dropdown and closes the dialog', async () => {
     const onOpenTerminal = vi.fn().mockReturnValue(true);
     const onClose = vi.fn();
-    render(<PortsDialog onClose={onClose} onOpenTerminal={onOpenTerminal} />);
+    render(<PortsPanel onNavigate={onClose} onOpenTerminal={onOpenTerminal} />);
     await openActions();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to terminal' }));
     expect(onOpenTerminal).toHaveBeenCalledWith('session:tab');
@@ -130,7 +130,7 @@ describe('Open ports', () => {
 
   it('keeps the dialog open if the terminal was closed since scanning', async () => {
     const onClose = vi.fn();
-    render(<PortsDialog onClose={onClose} onOpenTerminal={() => false} />);
+    render(<PortsPanel onNavigate={onClose} onOpenTerminal={() => false} />);
     await openActions();
     fireEvent.click(screen.getByRole('menuitem', { name: 'Go to terminal' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('terminal is no longer available');
@@ -142,7 +142,7 @@ describe('Open ports', () => {
       ports: [{ ...entry, terminalId: undefined }],
       warnings: [],
     });
-    render(<PortsDialog onClose={vi.fn()} onOpenTerminal={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} onOpenTerminal={vi.fn()} />);
     await openActions();
     expect(screen.getByRole('menuitem', { name: 'Go to terminal' })).toHaveAttribute(
       'aria-disabled',
@@ -151,7 +151,7 @@ describe('Open ports', () => {
   });
 
   it('shows CPU and memory usage and updates them on refresh', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByText('12.5%')).toBeInTheDocument();
     expect(screen.getByText('64.0 MiB')).toBeInTheDocument();
     expect(screen.getByRole('columnheader', { name: 'CPU' })).toBeInTheDocument();
@@ -170,7 +170,7 @@ describe('Open ports', () => {
       ports: [{ ...entry, cpuPercent: 0, memoryBytes: 0 }],
       warnings: [],
     });
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByText('0.0%')).toBeInTheDocument();
     expect(screen.getByText('0.0 MiB')).toBeInTheDocument();
     vi.mocked(window.ports.list).mockResolvedValue({
@@ -184,18 +184,50 @@ describe('Open ports', () => {
   });
 
   it('requires confirmation and sends only the selected listener', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     await selectStop();
     expect(window.ports.stop).not.toHaveBeenCalled();
     const confirmation = screen.getByRole('region', { name: 'Confirm stop process' });
-    expect(within(confirmation).getByText(/closes all of its ports/)).toBeInTheDocument();
+    expect(confirmation).toHaveTextContent(
+      'This stops the entire process and closes all of its listeners on port 3000.'
+    );
     fireEvent.click(within(confirmation).getByRole('button', { name: 'Stop process' }));
     await waitFor(() => expect(window.ports.stop).toHaveBeenCalledWith(entry, false));
     expect(await screen.findByText(/Stop requested for node/)).toBeInTheDocument();
   });
+
+  it('warns about every port owned by the process, including filtered listeners', async () => {
+    vi.mocked(window.ports.list).mockResolvedValue({
+      ports: [
+        entry,
+        { ...entry, port: 3001 },
+        { ...entry, port: 3001, address: '::1' },
+        { ...entry, pid: 456, port: 8080 },
+        { ...entry, distro: 'Ubuntu', port: 9000 },
+      ],
+      warnings: [],
+    });
+    render(<PortsPanel onNavigate={vi.fn()} />);
+    await screen.findByText('3000');
+    fireEvent.change(screen.getByLabelText('Filter ports'), { target: { value: '3000' } });
+    await selectStop();
+    expect(
+      screen.queryByRole('button', { name: /Actions for node on port 3001/ })
+    ).not.toBeInTheDocument();
+    const confirmation = screen.getByRole('region', { name: 'Confirm stop process' });
+    expect(confirmation).toHaveTextContent(
+      'This stops the entire process and closes all of its listeners on ports 3000 and 3001.'
+    );
+    expect(confirmation).not.toHaveTextContent('8080');
+    expect(confirmation).not.toHaveTextContent('9000');
+    expect(window.ports.stop).not.toHaveBeenCalled();
+    fireEvent.click(within(confirmation).getByRole('button', { name: 'Cancel' }));
+    expect(window.ports.stop).not.toHaveBeenCalled();
+  });
+
   it('keeps the owning terminal open by default', async () => {
     const onCloseTerminal = vi.fn().mockResolvedValue(true);
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={onCloseTerminal} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={onCloseTerminal} />);
     await selectStop();
     expect(screen.getByRole('checkbox', { name: 'Also close terminal' })).not.toBeChecked();
     fireEvent.click(screen.getByRole('button', { name: 'Stop process' }));
@@ -211,7 +243,7 @@ describe('Open ports', () => {
         finishStop = resolve;
       })
     );
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={onCloseTerminal} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={onCloseTerminal} />);
     await selectStop();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Also close terminal' }));
     fireEvent.click(screen.getByRole('button', { name: 'Stop process' }));
@@ -227,7 +259,7 @@ describe('Open ports', () => {
   it('keeps the terminal open when stopping fails', async () => {
     const onCloseTerminal = vi.fn().mockResolvedValue(true);
     vi.mocked(window.ports.stop).mockResolvedValue({ success: false, error: 'Permission denied' });
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={onCloseTerminal} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={onCloseTerminal} />);
     await selectStop();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Also close terminal' }));
     fireEvent.click(screen.getByRole('button', { name: 'Stop process' }));
@@ -237,7 +269,7 @@ describe('Open ports', () => {
 
   it('reports terminal cleanup errors separately from the successful stop request', async () => {
     const onCloseTerminal = vi.fn().mockRejectedValue(new Error('Shell cleanup failed'));
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={onCloseTerminal} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={onCloseTerminal} />);
     await selectStop();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Also close terminal' }));
     fireEvent.click(screen.getByRole('button', { name: 'Stop process' }));
@@ -252,13 +284,13 @@ describe('Open ports', () => {
       ports: [{ ...entry, terminalId: undefined }],
       warnings: [],
     });
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={vi.fn()} />);
     await selectStop();
     expect(screen.getByRole('checkbox', { name: 'Also close terminal' })).toBeDisabled();
   });
 
   it('resets the close-terminal checkbox for the next stop confirmation', async () => {
-    render(<PortsDialog onClose={vi.fn()} onCloseTerminal={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} onCloseTerminal={vi.fn()} />);
     await selectStop();
     fireEvent.click(screen.getByRole('checkbox', { name: 'Also close terminal' }));
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
@@ -267,7 +299,7 @@ describe('Open ports', () => {
   });
 
   it('allows cancelling and explicitly force stopping', async () => {
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     await selectStop();
     fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(window.ports.stop).not.toHaveBeenCalled();
@@ -278,15 +310,15 @@ describe('Open ports', () => {
   });
   it('shows stop errors and keeps the process available', async () => {
     vi.mocked(window.ports.stop).mockResolvedValue({ success: false, error: 'Permission denied' });
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     await selectStop();
     fireEvent.click(screen.getByRole('button', { name: 'Stop process' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Permission denied');
-    expect(screen.getByText('3000')).toBeInTheDocument();
+    expect(within(screen.getByRole('table')).getByText('3000')).toBeInTheDocument();
   });
   it('distinguishes a failed scan from an empty result and allows retry', async () => {
     vi.mocked(window.ports.list).mockRejectedValueOnce(new Error('lsof unavailable'));
-    render(<PortsDialog onClose={vi.fn()} />);
+    render(<PortsPanel onNavigate={vi.fn()} />);
     expect(await screen.findByRole('alert')).toHaveTextContent('lsof unavailable');
     expect(
       screen.queryByText('No listening TCP ports found for your user.')
@@ -303,7 +335,7 @@ describe('Open ports', () => {
           finish = resolve;
         })
       );
-      const { unmount } = render(<PortsDialog onClose={vi.fn()} />);
+      const { unmount } = render(<PortsPanel onNavigate={vi.fn()} />);
       await act(async () => {
         vi.advanceTimersByTime(10000);
       });

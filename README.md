@@ -34,6 +34,8 @@ Switching views keeps terminals running and preserves scrollback. Each worktree 
 
 ### Performance readings
 
+The Performance modal remembers your selected tab when reopened. Its **Open ports** tab includes the port list, origin filters, terminal navigation, and stop controls. Only the selected view refreshes in the background.
+
 Terminal rows include their child processes. Browser rows show their renderer process usage; tabs that share a renderer are marked **Shared process**. Overall totals count each process once, including Termpad’s app helpers. App helpers are protected from being stopped in this view.
 
 CPU is measured between samples (100% is one core); newly discovered processes need a second reading. Memory is resident memory / working set, so shared memory can appear in more than one process. Windows and running WSL distributions are measured separately. WSL processes are associated using the terminal marker inherited from Termpad. A failed WSL scan is shown as a warning.

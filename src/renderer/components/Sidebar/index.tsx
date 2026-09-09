@@ -2,7 +2,6 @@ import { useRef, useCallback, useEffect, useState, useMemo } from 'react';
 import {
   Activity,
   Settings,
-  Network,
   FolderPlus,
   Home,
   Bug,
@@ -13,7 +12,6 @@ import {
   X,
 } from 'lucide-react';
 import { PerformanceDialog } from '../PerformanceDialog';
-import { PortsDialog } from '../PortsDialog';
 import { RepositoryTree } from './RepositoryTree';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -73,7 +71,6 @@ export function Sidebar({
   const scrollRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [performanceOpen, setPerformanceOpen] = useState(false);
-  const [portsOpen, setPortsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [collapsedSearchRepositories, setCollapsedSearchRepositories] = useState<Set<string>>(
     new Set()
@@ -317,18 +314,6 @@ export function Sidebar({
           onClick={(event) => {
             event.stopPropagation();
             setFocusArea('app');
-            setPortsOpen(true);
-          }}
-        >
-          <Network className="size-4" />
-          <span>Open ports</span>
-        </button>
-        <button
-          className="sidebar-nav-item"
-          aria-haspopup="dialog"
-          onClick={(event) => {
-            event.stopPropagation();
-            setFocusArea('app');
             setPerformanceOpen(true);
           }}
         >
@@ -344,13 +329,7 @@ export function Sidebar({
           onOpenBrowser={onOpenPerformanceBrowser}
         />
       )}
-      {portsOpen && (
-        <PortsDialog
-          onClose={() => setPortsOpen(false)}
-          onOpenTerminal={onOpenPortTerminal}
-          onCloseTerminal={onClosePortTerminal}
-        />
-      )}
+
       <div className="relative flex shrink-0 items-center justify-between gap-2 px-4 pt-4 pb-1">
         <div className="flex items-center gap-2">
           <span className="eyebrow">Repositories</span>
