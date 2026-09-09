@@ -35,9 +35,18 @@ interface TodoListProps {
   scope: TodoScope;
   todos: TodoItem[];
   moveTargets?: WorktreeSession[];
+  onSendToTerminal?: (todo: TodoItem) => void;
+  onCreateWorktree?: (todo: TodoItem) => void;
 }
 
-export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
+export function TodoList({
+  label,
+  scope,
+  todos,
+  moveTargets,
+  onSendToTerminal,
+  onCreateWorktree,
+}: TodoListProps) {
   const { addTodo, updateTodo, removeTodo, reorderTodos, moveGlobalTodoToWorktree } = useAppStore(
     useShallow((s) => ({
       addTodo: s.addTodo,
@@ -97,6 +106,8 @@ export function TodoList({ label, scope, todos, moveTargets }: TodoListProps) {
         updateTodo(scope, todo.id, { priority })
       }
       onRemove={() => removeTodo(scope, todo.id)}
+      onSendToTerminal={onSendToTerminal ? () => onSendToTerminal(todo) : undefined}
+      onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
       moveTargets={moveTargets}
       onMove={(targetId) => {
         if (scope.type !== 'repository') return;

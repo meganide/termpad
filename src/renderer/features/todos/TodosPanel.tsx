@@ -23,6 +23,8 @@ interface TodosPanelProps {
   repositoryName: string;
   worktreeLabel: string;
   titleSlot: ReactNode;
+  onSendToTerminal?: (todo: TodoItem) => void;
+  onCreateWorktree?: (todo: TodoItem) => void;
 }
 
 export function TodosPanel({
@@ -31,6 +33,8 @@ export function TodosPanel({
   repositoryName,
   worktreeLabel,
   titleSlot,
+  onSendToTerminal,
+  onCreateWorktree,
 }: TodosPanelProps) {
   const repositories = useAppStore((s) => s.repositories);
   const { collapsed, toggle } = useCollapsibleScopes();
@@ -74,6 +78,8 @@ export function TodosPanel({
             scope={scope}
             todos={todos}
             moveTargets={moveTargets}
+            onSendToTerminal={onSendToTerminal}
+            onCreateWorktree={onCreateWorktree}
           />
         </PanelSection>
       </div>

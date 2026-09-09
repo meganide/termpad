@@ -1,6 +1,7 @@
+import { createRef } from 'react';
 import { render, screen, fireEvent, act } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { TerminalView } from './TerminalView';
+import { TerminalView, type TerminalViewHandle } from './TerminalView';
 import { useAppStore } from '../../stores/appStore';
 import { resetAllStores } from '../../../../tests/utils';
 import { useTerminal } from '../../hooks/useTerminal';
@@ -11,6 +12,7 @@ vi.mock('../../hooks/useTerminal');
 // Create mock terminal instance
 const createMockTerminalInstance = () => ({
   open: vi.fn(),
+  paste: vi.fn(),
   write: vi.fn(),
   dispose: vi.fn(),
   focus: vi.fn(),
@@ -53,6 +55,7 @@ vi.mock('@xterm/xterm', () => {
   return {
     Terminal: class MockTerminal {
       open = vi.fn();
+      paste = vi.fn();
       write = vi.fn();
       dispose = vi.fn();
       focus = vi.fn();
@@ -77,6 +80,7 @@ vi.mock('@xterm/xterm', () => {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const mock = (globalThis as any).__mockTerminalInstance;
           this.open = mock.open;
+          this.paste = mock.paste;
           this.write = mock.write;
           this.dispose = mock.dispose;
           this.focus = mock.focus;
@@ -648,6 +652,38 @@ describe('TerminalView', () => {
 
       expect(mockTerminalInstance.focus).toHaveBeenCalled();
     });
+  });
+
+  it('pastes todo text through xterm and sends Enter separately only when requested', async () => {
+    const ref = createRef<TerminalViewHandle>();
+    render(<TerminalView {...defaultProps} ref={ref} />);
+    act(() => {
+      useAppStore.getState().registerTerminal(defaultProps.sessionId);
+      useAppStore.getState().updateTerminalStatus(defaultProps.sessionId, 'idle');
+    });
+    await act(async () => {
+      await ref.current!.sendText('First\nSecond');
+    });
+    expect(mockTerminalInstance.paste).toHaveBeenCalledWith('First\nSecond');
+    expect(mockUseTerminalReturn.write).not.toHaveBeenCalled();
+    await act(async () => {
+      const pending = ref.current!.sendText('New worktree task', true);
+      expect(mockUseTerminalReturn.write).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(100);
+      await pending;
+    });
+    expect(mockTerminalInstance.paste).toHaveBeenLastCalledWith('New worktree task');
+    expect(mockUseTerminalReturn.write).toHaveBeenCalledExactlyOnceWith('\r');
+  });
+
+  it('rejects todo input for a stopped terminal', async () => {
+    const ref = createRef<TerminalViewHandle>();
+    render(<TerminalView {...defaultProps} ref={ref} />);
+    await expect(ref.current!.sendText('Do not lose this todo', true)).rejects.toThrow(
+      'no longer running'
+    );
+    expect(mockTerminalInstance.paste).not.toHaveBeenCalled();
+    expect(mockUseTerminalReturn.write).not.toHaveBeenCalled();
   });
 
   describe('paste functionality', () => {

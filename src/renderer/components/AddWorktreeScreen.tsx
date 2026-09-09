@@ -25,7 +25,8 @@ import {
 } from './ui/command';
 import { Badge } from './ui/badge';
 import { useAppStore } from '../stores/appStore';
-import type { WorktreeSession, BranchInfo, WorktreeInfo } from '../../shared/types';
+import type { WorktreeSession, BranchInfo, WorktreeInfo, TodoItem } from '../../shared/types';
+import { toast } from 'sonner';
 import { cn } from '@/lib/utils';
 import { WorktreePicker } from './WorktreePicker';
 import { getImportableWorktrees, normalizePathSlashes } from '../utils/worktreeUtils';
@@ -35,6 +36,8 @@ type Mode = 'create' | 'import';
 interface AddWorktreeScreenProps {
   onBack: () => void;
   repositoryId: string | null;
+  todo?: TodoItem;
+  onTodoTerminalCreated?: (terminalId: string, todo: TodoItem, hasCommand: boolean) => void;
 }
 
 function generateId(): string {
@@ -51,7 +54,12 @@ function sanitizeBranchName(name: string): string {
     .slice(0, 50);
 }
 
-export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenProps) {
+export function AddWorktreeScreen({
+  onBack,
+  repositoryId,
+  todo,
+  onTodoTerminalCreated,
+}: AddWorktreeScreenProps) {
   const [mode, setMode] = useState<Mode>('create');
   // Create mode state
   const [worktreeName, setWorktreeName] = useState('');
@@ -75,6 +83,8 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
     setActiveTerminal,
     createUserTab,
     getUserTerminalIdForTab,
+    createTab,
+    getTerminalIdForTab,
   } = useAppStore();
 
   const repository = useMemo(
@@ -177,7 +187,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
   }, [repositoryId, loadBranches, loadWorktrees]);
 
   const handleCreate = async () => {
-    if (!repository || !sanitizedName) return;
+    if (!repository || !sanitizedName || isLoading) return;
 
     setIsLoading(true);
     setError(null);
@@ -210,6 +220,18 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
         worktreeName: sanitizedName,
         createdAt: new Date().toISOString(),
         isExternal: false,
+        ...(todo
+          ? {
+              todos: [
+                {
+                  ...todo,
+                  id: generateId(),
+                  completed: false,
+                  createdAt: new Date().toISOString(),
+                },
+              ],
+            }
+          : {}),
       };
 
       addWorktreeSession(repository.id, worktreeSession);
@@ -233,6 +255,27 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
           });
       }
 
+      if (todo) {
+        try {
+          await navigator.clipboard.writeText(todo.text);
+        } catch {
+          toast.error('Could not copy todo to clipboard. It will still be sent to the terminal.');
+        }
+        const preset =
+          settings.terminalPresets.find((item) => item.id === settings.defaultPresetId) ??
+          settings.terminalPresets.find((item) => item.isBuiltIn);
+        const tab = createTab(
+          sessionId,
+          preset?.name ?? 'Terminal',
+          preset?.command || undefined,
+          preset?.icon
+        );
+        onTodoTerminalCreated?.(
+          getTerminalIdForTab(sessionId, tab.id),
+          todo,
+          Boolean(preset?.command)
+        );
+      }
       onBack();
     } catch (err) {
       setError('Failed to create worktree');
@@ -343,48 +386,50 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
       <div className="w-44 shrink-0 flex flex-col border-r border-border/60 bg-sidebar-panel">
         <div className="px-5 pt-6 pb-4 eyebrow">Worktrees</div>
         <nav className="flex-1 p-3 space-y-1">
-          {navItems.map((item) => {
-            const Icon = item.icon;
-            const isActive = mode === item.id;
-            const buttonContent = (
-              <button
-                onClick={() => !item.disabled && setMode(item.id)}
-                disabled={item.disabled}
-                className={cn(
-                  'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
-                  isActive
-                    ? 'bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]'
-                    : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
-                  item.disabled &&
-                    'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
-                )}
-              >
-                <Icon className="h-4 w-4" />
-                {item.label}
-                {item.badge !== undefined && (
-                  <Badge variant="secondary" className="ml-auto text-xs">
-                    {item.badge}
-                  </Badge>
-                )}
-              </button>
-            );
-
-            if (item.disabled) {
-              return (
-                <Tooltip key={item.id}>
-                  <TooltipTrigger asChild>
-                    <span className="block">{buttonContent}</span>
-                  </TooltipTrigger>
-                  <TooltipContent side="right">
-                    No worktrees available to import. Create a worktree first in order to be able to
-                    import one.
-                  </TooltipContent>
-                </Tooltip>
+          {navItems
+            .filter((item) => !todo || item.id === 'create')
+            .map((item) => {
+              const Icon = item.icon;
+              const isActive = mode === item.id;
+              const buttonContent = (
+                <button
+                  onClick={() => !item.disabled && setMode(item.id)}
+                  disabled={item.disabled}
+                  className={cn(
+                    'w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors',
+                    isActive
+                      ? 'bg-primary/10 text-primary shadow-[inset_2px_0_0_var(--primary)]'
+                      : 'text-muted-foreground hover:bg-accent/60 hover:text-foreground',
+                    item.disabled &&
+                      'opacity-50 cursor-not-allowed hover:bg-transparent hover:text-muted-foreground'
+                  )}
+                >
+                  <Icon className="h-4 w-4" />
+                  {item.label}
+                  {item.badge !== undefined && (
+                    <Badge variant="secondary" className="ml-auto text-xs">
+                      {item.badge}
+                    </Badge>
+                  )}
+                </button>
               );
-            }
 
-            return cloneElement(buttonContent, { key: item.id });
-          })}
+              if (item.disabled) {
+                return (
+                  <Tooltip key={item.id}>
+                    <TooltipTrigger asChild>
+                      <span className="block">{buttonContent}</span>
+                    </TooltipTrigger>
+                    <TooltipContent side="right">
+                      No worktrees available to import. Create a worktree first in order to be able
+                      to import one.
+                    </TooltipContent>
+                  </Tooltip>
+                );
+              }
+
+              return cloneElement(buttonContent, { key: item.id });
+            })}
         </nav>
 
         {/* Back button at bottom */}
@@ -405,13 +450,27 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
         <div className="flex-1 overflow-y-auto p-6 lg:p-10">
           <div className="max-w-2xl mx-auto">
             <div className="mb-8 border-b border-border/60 pb-6">
-              <h1 className="text-2xl font-semibold tracking-tight mb-2">Add Worktree</h1>
+              <h1 className="text-2xl font-semibold tracking-tight mb-2">
+                {todo ? 'Create worktree from todo' : 'Add Worktree'}
+              </h1>
               <p className="text-sm text-muted-foreground">
                 {mode === 'create' ? 'Create a new worktree' : 'Import existing worktrees'} for
                 &quot;
                 {repository.name}&quot;
               </p>
             </div>
+
+            {todo && (
+              <div className="mb-6 space-y-2 rounded-lg bg-muted/30 p-4">
+                <p className="text-sm text-muted-foreground">
+                  Copies this todo to the new worktree, opens your default terminal, and pastes the
+                  text followed by Enter.
+                </p>
+                <p className="max-h-32 overflow-y-auto whitespace-pre-wrap break-words text-sm">
+                  {todo.text}
+                </p>
+              </div>
+            )}
 
             {/* Explanation box */}
             <div className="rounded-lg bg-muted/30 p-4 mb-6 depth-inset">
@@ -621,7 +680,7 @@ export function AddWorktreeScreen({ onBack, repositoryId }: AddWorktreeScreenPro
                   disabled={!sanitizedName || isLoading}
                 >
                   {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                  Create Worktree
+                  {todo ? 'Create Worktree and Send Todo' : 'Create Worktree'}
                 </Button>
                 <Button variant="ghost" size="sm" className="h-9" onClick={onBack}>
                   Cancel

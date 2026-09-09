@@ -1,4 +1,4 @@
-import { Copy, Expand, Flag, GitBranch, Pencil, Trash2 } from 'lucide-react';
+import { Copy, Expand, Flag, GitBranch, Pencil, Terminal, Trash2 } from 'lucide-react';
 import * as Dropdown from '../../components/ui/dropdown-menu';
 import * as Context from '../../components/ui/context-menu';
 import type { TodoItem, TodoPriority, WorktreeSession } from '../../../shared/types';
@@ -14,6 +14,8 @@ interface TodoActionItemsProps {
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   moveTargets?: WorktreeSession[];
   onMove: (id: string) => void;
+  onSendToTerminal?: () => void;
+  onCreateWorktree?: () => void;
 }
 
 // Both entry points use the same actions, labels, and availability rules.
@@ -27,6 +29,8 @@ export function TodoActionItems({
   onPriorityChange,
   moveTargets,
   onMove,
+  onSendToTerminal,
+  onCreateWorktree,
 }: TodoActionItemsProps) {
   const Item = context ? Context.ContextMenuItem : Dropdown.DropdownMenuItem;
   const Separator = context ? Context.ContextMenuSeparator : Dropdown.DropdownMenuSeparator;
@@ -99,6 +103,15 @@ export function TodoActionItems({
           </Portal>
         </Sub>
       )}
+      <Separator />
+      <Item disabled={!onSendToTerminal} onSelect={onSendToTerminal}>
+        <Terminal />
+        Send to active terminal
+      </Item>
+      <Item disabled={!onCreateWorktree} onSelect={onCreateWorktree}>
+        <GitBranch />
+        Create worktree from todo…
+      </Item>
       <Separator />
       <Item variant="destructive" onSelect={onRemove}>
         <Trash2 />

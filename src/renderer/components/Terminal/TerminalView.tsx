@@ -46,6 +46,7 @@ export interface TerminalViewHandle {
   copyAllOutput: () => Promise<void>;
   copySelection: () => Promise<void>;
   paste: () => Promise<void>;
+  sendText: (text: string, submit?: boolean) => Promise<void>;
 }
 
 // System background color to override theme background when matchSystemBackground is true
@@ -126,6 +127,31 @@ export const TerminalView = memo(
     useImperativeHandle(ref, () => ({
       copySelection: handleCopy,
       paste: handlePaste,
+      sendText: async (text, submit = false) => {
+        const terminal = terminalRef.current;
+        const status = useAppStore.getState().terminals.get(effectiveTerminalId)?.status;
+        if (!terminal || !status || status === 'stopped' || status === 'error') {
+          throw new Error('The terminal is no longer running.');
+        }
+        // xterm respects the application's bracketed-paste mode, including multiline prompts.
+        terminal.paste(text);
+        if (submit) {
+          // Let terminal applications process the paste before delivering Enter separately.
+          await new Promise((resolve) => setTimeout(resolve, 100));
+          const currentStatus = useAppStore.getState().terminals.get(effectiveTerminalId)?.status;
+          if (
+            terminalRef.current !== terminal ||
+            !currentStatus ||
+            currentStatus === 'stopped' ||
+            currentStatus === 'error'
+          ) {
+            throw new Error('The terminal closed before the todo could be submitted.');
+          }
+          write('\r');
+        }
+        setFocusArea(terminalType === 'user' ? 'userTerminal' : 'mainTerminal');
+        terminal.focus();
+      },
       copyAllOutput: async () => {
         const terminal = terminalRef.current;
         if (!terminal) return;

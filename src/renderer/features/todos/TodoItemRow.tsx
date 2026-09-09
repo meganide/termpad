@@ -42,6 +42,8 @@ interface TodoItemRowProps {
   onRemove: () => void;
   moveTargets?: WorktreeSession[];
   onMove: (id: string) => void;
+  onSendToTerminal?: () => void;
+  onCreateWorktree?: () => void;
 }
 
 export function TodoItemRow({
@@ -53,6 +55,8 @@ export function TodoItemRow({
   onRemove,
   moveTargets,
   onMove,
+  onSendToTerminal,
+  onCreateWorktree,
 }: TodoItemRowProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [draft, setDraft] = useState(todo.text);
@@ -110,6 +114,16 @@ export function TodoItemRow({
     onPriorityChange,
     moveTargets,
     onMove,
+    onSendToTerminal: onSendToTerminal
+      ? () => {
+          afterMenuClose.current = onSendToTerminal;
+        }
+      : undefined,
+    onCreateWorktree: onCreateWorktree
+      ? () => {
+          afterMenuClose.current = onCreateWorktree;
+        }
+      : undefined,
   };
 
   return (

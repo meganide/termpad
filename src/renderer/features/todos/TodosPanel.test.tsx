@@ -9,7 +9,7 @@ import { TodosPanel } from './TodosPanel';
 const REPOSITORY_ID = 'repo-1';
 const WORKTREE_ID = `session-${REPOSITORY_ID}-0`;
 
-const renderPanel = () =>
+const renderPanel = (actions: Partial<React.ComponentProps<typeof TodosPanel>> = {}) =>
   render(
     <TodosPanel
       repositoryId={REPOSITORY_ID}
@@ -17,6 +17,7 @@ const renderPanel = () =>
       repositoryName="Termpad"
       worktreeLabel="feature-x"
       titleSlot={null}
+      {...actions}
     />
   );
 
@@ -63,6 +64,38 @@ describe('TodosPanel', () => {
   beforeEach(() => {
     resetAllStores();
     vi.clearAllMocks();
+  });
+
+  it.each(['dropdown', 'right-click'])(
+    'sends the full multiline todo and opens worktree creation from the %s menu',
+    async (entry) => {
+      const user = userEvent.setup();
+      const todo = makeTodo({ text: 'First line\nSecond line' });
+      const onSendToTerminal = vi.fn();
+      const onCreateWorktree = vi.fn();
+      seedRepository({ repository: [todo] });
+      renderPanel({ onSendToTerminal, onCreateWorktree });
+      const openMenu = async () => {
+        if (entry === 'right-click') fireEvent.contextMenu(screen.getByTestId('todo-item'));
+        else await user.click(screen.getByRole('button', { name: /^Actions for/ }));
+      };
+      await openMenu();
+      await user.click(await screen.findByRole('menuitem', { name: 'Send to active terminal' }));
+      expect(onSendToTerminal).toHaveBeenCalledExactlyOnceWith(todo);
+      await openMenu();
+      await user.click(await screen.findByRole('menuitem', { name: 'Create worktree from todo…' }));
+      expect(onCreateWorktree).toHaveBeenCalledExactlyOnceWith(todo);
+      expect(getStoredTodos().repository).toEqual([todo]);
+    }
+  );
+
+  it('disables sending when no running main terminal is available', async () => {
+    seedRepository({ repository: [makeTodo()] });
+    renderPanel();
+    fireEvent.contextMenu(screen.getByTestId('todo-item'));
+    expect(
+      await screen.findByRole('menuitem', { name: 'Send to active terminal' })
+    ).toHaveAttribute('data-disabled');
   });
 
   it('shows only the global empty state in the primary checkout', () => {

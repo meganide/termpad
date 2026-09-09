@@ -3,7 +3,13 @@ import { cn } from '../lib/utils';
 import { Terminal as TerminalIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Toaster } from './ui/sonner';
-import type { FileStatus, Repository, TerminalTab, WorktreeSession } from '../../shared/types';
+import type {
+  FileStatus,
+  Repository,
+  TerminalTab,
+  TodoItem,
+  WorktreeSession,
+} from '../../shared/types';
 import { SourceControlPane } from '../features/source-control';
 import { UserTerminalSection } from '../features/user-terminals';
 import { useKeyboardShortcuts } from '../hooks/useKeyboardShortcuts';
@@ -39,6 +45,7 @@ import { BrowserPanel } from '../features/browser/BrowserPanel';
 import { getScopeIndicators } from './RightPanel/scopeIndicators';
 import { useAutoUpdater } from '../hooks/useAutoUpdater';
 import { useTermpadConfig } from '../hooks/useTermpadConfig';
+import { waitForTerminalStartup } from '../services/terminalStartup';
 
 export function Layout() {
   const {
@@ -188,7 +195,7 @@ export function Layout() {
   type ActiveScreen =
     | { type: 'main' }
     | { type: 'settings'; tab: SettingsTab }
-    | { type: 'addWorktree'; repositoryId: string | null }
+    | { type: 'addWorktree'; repositoryId: string | null; todo?: TodoItem }
     | { type: 'home' }
     | { type: 'addRepository' }
     | { type: 'repositorySettings'; repositoryId: string };
@@ -693,6 +700,46 @@ export function Layout() {
   // Refs for user terminal views (keyed by terminalId)
   const userTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
   const mainTerminalRefs = useRef<Map<string, TerminalViewHandle>>(new Map());
+  const activeMainTerminalId =
+    activeTerminalId && activeTabId ? getTerminalIdForTab(activeTerminalId, activeTabId) : null;
+  const activeMainStatus = activeMainTerminalId
+    ? terminals.get(activeMainTerminalId)?.status
+    : undefined;
+  const canSendTodo = Boolean(
+    activeMainStatus && !['starting', 'stopped', 'error'].includes(activeMainStatus)
+  );
+
+  const handleSendTodo = async (todo: TodoItem) => {
+    if (!activeMainTerminalId) return;
+    try {
+      const terminal = mainTerminalRefs.current.get(activeMainTerminalId);
+      if (!terminal) throw new Error('Open a terminal in the main area first.');
+      await terminal.sendText(todo.text);
+    } catch (error) {
+      toast.error('Could not send todo', {
+        description: error instanceof Error ? error.message : String(error),
+      });
+    }
+  };
+
+  const handleTodoTerminalCreated = async (
+    terminalId: string,
+    todo: TodoItem,
+    hasCommand: boolean
+  ) => {
+    try {
+      await waitForTerminalStartup(terminalId, hasCommand);
+      const terminal = mainTerminalRefs.current.get(terminalId);
+      if (!terminal) throw new Error('The new terminal is no longer open.');
+      await terminal.sendText(todo.text, true);
+    } catch (error) {
+      toast.error('Worktree created, but the todo could not be sent', {
+        description: error instanceof Error ? error.message : String(error),
+        duration: 10000,
+      });
+    }
+  };
+
   const agentActionRefs = useRef<Map<string, AgentTileActionsHandle>>(new Map());
 
   // Copy output from the active user terminal
@@ -1312,6 +1359,15 @@ export function Layout() {
                         worktreeSessionId={activeSessionInfo.session.id}
                         repositoryName={activeSessionInfo.repository.name}
                         worktreeLabel={activeSessionInfo.session.label}
+                        onSendToTerminal={canSendTodo ? handleSendTodo : undefined}
+                        onCreateWorktree={(todo) => {
+                          setActiveScreen({
+                            type: 'addWorktree',
+                            repositoryId: activeSessionInfo.repository.id,
+                            todo,
+                          });
+                          setFocusArea('app');
+                        }}
                       />
                     </div>
                   </div>
@@ -1454,6 +1510,8 @@ export function Layout() {
               <AddWorktreeScreen
                 onBack={() => setActiveScreen({ type: 'main' })}
                 repositoryId={activeScreen.repositoryId}
+                todo={activeScreen.todo}
+                onTodoTerminalCreated={handleTodoTerminalCreated}
               />
             </div>
           )}
