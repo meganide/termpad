@@ -1,5 +1,17 @@
 # termpad
 
+## 0.11.0
+
+### Minor Changes
+
+- [#45](https://github.com/meganide/termpad/pull/45) [`d09a7ba`](https://github.com/meganide/termpad/commit/d09a7bacbb3c46d0a4fbfeb10e6fe9bd2e096118) Thanks [@meganide](https://github.com/meganide)! - Add a Move to action to todo menus for moving todos between Global and worktrees within a repository while preserving their status and details. Keep todo card labels, dates, and menu buttons aligned when opening menus or editing.
+
+### Patch Changes
+
+- [#43](https://github.com/meganide/termpad/pull/43) [`6c78d93`](https://github.com/meganide/termpad/commit/6c78d932d6e9d7b46cc2fcd6e8c110ebe74c85fc) Thanks [@meganide](https://github.com/meganide)! - Rename the Global scope to All in notes and todos headings, Planning's scope selector, and tab tooltips.
+
+- [#46](https://github.com/meganide/termpad/pull/46) [`bf53f8e`](https://github.com/meganide/termpad/commit/bf53f8e817e6ed629855b870b13cec6ccb21bb7b) Thanks [@meganide](https://github.com/meganide)! - Fix duplicate worktree entries in the sidebar when worktree creation overlaps with automatic discovery. Reuse the existing session so terminals stay attached to the correct worktree.
+
 ## 0.10.0
 
 ### Minor Changes
