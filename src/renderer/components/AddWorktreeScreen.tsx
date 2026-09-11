@@ -212,10 +212,8 @@ export function AddWorktreeScreen({
         return;
       }
 
-      const sessionId = generateId();
-
       const worktreeSession: WorktreeSession = {
-        id: sessionId,
+        id: generateId(),
         label: worktreeName,
         path: normalizePathSlashes(result.path!),
         branchName: sanitizedName,
@@ -224,7 +222,8 @@ export function AddWorktreeScreen({
         isExternal: false,
       };
 
-      addWorktreeSession(repository.id, worktreeSession);
+      const sessionId = addWorktreeSession(repository.id, worktreeSession);
+      if (!sessionId) throw new Error('Repository was removed during worktree creation');
       if (!todo) setActiveTerminal(sessionId);
 
       // Opening the tab runs its preset command when the terminal starts.
@@ -308,14 +307,8 @@ export function AddWorktreeScreen({
 
       for (const worktree of importableWorktrees) {
         if (selectedWorktreePaths.has(worktree.path)) {
-          const sessionId = generateId();
-          if (!firstSessionId) {
-            firstSessionId = sessionId;
-          }
-          importedSessionIds.push(sessionId);
-
           const worktreeSession: WorktreeSession = {
-            id: sessionId,
+            id: generateId(),
             label: worktree.branch || window.terminal.getBasename(worktree.path),
             path: normalizePathSlashes(worktree.path),
             branchName: worktree.branch || undefined,
@@ -324,7 +317,12 @@ export function AddWorktreeScreen({
             isExternal: true,
           };
 
-          addWorktreeSession(repository.id, worktreeSession);
+          const sessionId = addWorktreeSession(repository.id, worktreeSession);
+          if (!sessionId) throw new Error('Repository was removed during worktree import');
+          if (!firstSessionId) {
+            firstSessionId = sessionId;
+          }
+          importedSessionIds.push(sessionId);
         }
       }
 
