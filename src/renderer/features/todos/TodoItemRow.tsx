@@ -51,7 +51,9 @@ interface TodoItemRowProps {
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   onRemove: () => void;
   moveTargets?: WorktreeSession[];
-  onMove: (id: string) => void;
+  currentWorktreeId?: string;
+  onMove: (id: string | null) => void;
+  onDispatch?: (id: string) => void;
   onStatusChange: (status: TodoStatus) => void;
   card?: boolean;
   columns?: TodoColumn[];
@@ -70,7 +72,9 @@ export function TodoItemRow({
   onPriorityChange,
   onRemove,
   moveTargets,
+  currentWorktreeId,
   onMove,
+  onDispatch,
   onStatusChange,
   card = false,
   columns,
@@ -135,7 +139,9 @@ export function TodoItemRow({
     },
     onPriorityChange,
     moveTargets,
+    currentWorktreeId,
     onMove,
+    onDispatch,
     onStatusChange,
     onSendToTerminal: onSendToTerminal
       ? () => {
@@ -184,7 +190,7 @@ export function TodoItemRow({
               transform: CSS.Transform.toString(isDragging ? null : transform),
               transition,
             }}
-            className={`group relative flex ${card ? 'flex-wrap cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary' : ''} items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
+            className={`group relative flex ${card ? 'flex-col cursor-grab active:cursor-grabbing touch-none select-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary' : ''} items-start gap-2 rounded-lg bg-obsidian-800/60 py-1.5 pr-2 hover:bg-obsidian-800/80 ${
               priorityStyle ? 'pl-3' : 'pl-2'
             } ${isDragging ? 'opacity-30' : ''}`}
             data-testid="todo-item"
@@ -228,7 +234,7 @@ export function TodoItemRow({
                   if (event.key === 'Escape') cancelEdit();
                 }}
                 aria-label={`Edit "${todo.text}"`}
-                className="min-h-0 max-h-40 flex-1 resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0"
+                className={`min-h-0 max-h-40 ${card ? 'w-full' : 'flex-1'} resize-none border-0 bg-transparent px-1 py-0 text-sm shadow-none focus-visible:ring-0`}
               />
             ) : card ? (
               <span
@@ -247,59 +253,69 @@ export function TodoItemRow({
                 {todo.text}
               </button>
             )}
-            {assignment &&
-              (onOpenWorktree ? (
-                <button
-                  type="button"
-                  title={`Assigned to ${assignment}`}
-                  aria-label={`Open worktree ${assignment}`}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onOpenWorktree();
-                  }}
-                  className="max-w-full cursor-pointer truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                >
-                  {assignment}
-                </button>
-              ) : (
-                <span
-                  title={`Assigned to ${assignment}`}
-                  className="max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
-                >
-                  {assignment}
-                </span>
-              ))}
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <time
-                  dateTime={todo.createdAt}
-                  className="mt-0.5 shrink-0 font-mono text-[10px] text-muted-foreground"
-                >
-                  {format(createdAt, 'MMM d')}
-                </time>
-              </TooltipTrigger>
-              <TooltipContent side="left">Created {format(createdAt, 'PPp')}</TooltipContent>
-            </Tooltip>
-            <DropdownMenu>
+            <div
+              className={
+                card
+                  ? 'grid w-full min-w-0 grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-2'
+                  : 'contents'
+              }
+            >
+              <div className={card ? 'min-w-0' : 'contents'}>
+                {assignment &&
+                  (onOpenWorktree ? (
+                    <button
+                      type="button"
+                      title={`Assigned to ${assignment}`}
+                      aria-label={`Open worktree ${assignment}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onOpenWorktree();
+                      }}
+                      className="block max-w-full cursor-pointer truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary hover:bg-primary/20 hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                    >
+                      {assignment}
+                    </button>
+                  ) : (
+                    <span
+                      title={`Assigned to ${assignment}`}
+                      className="block max-w-full truncate rounded bg-primary/10 px-2 py-0.5 text-xs text-primary"
+                    >
+                      {assignment}
+                    </span>
+                  ))}
+              </div>
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label={`Actions for "${todo.text}"`}
-                      className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
-                    >
-                      <MoreHorizontal className="size-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <time
+                    dateTime={todo.createdAt}
+                    className={`${card ? '' : 'mt-0.5'} shrink-0 font-mono text-[10px] text-muted-foreground`}
+                  >
+                    {format(createdAt, 'MMM d')}
+                  </time>
                 </TooltipTrigger>
-                <TooltipContent side="left">Todo actions (or right-click)</TooltipContent>
+                <TooltipContent side="left">Created {format(createdAt, 'PPp')}</TooltipContent>
               </Tooltip>
-              <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
-                <TodoActionItems {...actions} />
-              </DropdownMenuContent>
-            </DropdownMenu>
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label={`Actions for "${todo.text}"`}
+                        className="h-6 w-6 shrink-0 text-muted-foreground hover:text-foreground"
+                      >
+                        <MoreHorizontal className="size-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent side="left">Todo actions (or right-click)</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end" onCloseAutoFocus={handleMenuCloseAutoFocus}>
+                  <TodoActionItems {...actions} />
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           </li>
         </ContextMenuTrigger>
         <ContextMenuContent onCloseAutoFocus={handleMenuCloseAutoFocus}>
