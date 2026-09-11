@@ -1066,18 +1066,89 @@ describe('appStore - session management', () => {
       expect(state.repositories[0].worktreeSessions[0].customShortcut).toBeDefined();
     });
 
-    it('should allow adding sessions with duplicate IDs (no validation)', () => {
+    it('should reuse the session ID when the same path is added again', () => {
       const repository = createMockRepository({ id: 'repository-1' });
       useAppStore.setState({ repositories: [repository] });
 
-      const session1 = createMockWorktreeSession({ id: 'same-id', label: 'First' });
-      const session2 = createMockWorktreeSession({ id: 'same-id', label: 'Second' });
+      const session1 = createMockWorktreeSession({ id: 'first', path: '/test/worktree' });
+      const session2 = createMockWorktreeSession({ id: 'second', path: '/test/worktree/' });
 
-      useAppStore.getState().addWorktreeSession('repository-1', session1);
-      useAppStore.getState().addWorktreeSession('repository-1', session2);
+      expect(useAppStore.getState().addWorktreeSession('repository-1', session1)).toBe('first');
+      expect(useAppStore.getState().addWorktreeSession('repository-1', session2)).toBe('first');
 
       const state = useAppStore.getState();
-      expect(state.repositories[0].worktreeSessions).toHaveLength(2);
+      expect(state.repositories[0].worktreeSessions).toHaveLength(1);
+    });
+
+    it.each([true, false])(
+      'preserves session state when creation and discovery overlap (discovery first: %s)',
+      (discoveryFirst) => {
+        const repository = createMockRepository({ id: 'repository-1' });
+        useAppStore.setState({ repositories: [repository], isInitialized: true });
+        const created = createMockWorktreeSession({
+          id: 'created',
+          label: 'My Feature',
+          path: 'C:/worktrees/my-feature',
+          branchName: 'my-feature',
+          worktreeName: 'my-feature',
+        });
+        const discovered = createMockWorktreeSession({
+          id: 'discovered',
+          label: 'my-feature',
+          path: 'C:\\worktrees\\my-feature',
+          isExternal: true,
+        });
+        const [first, second] = discoveryFirst ? [discovered, created] : [created, discovered];
+        const store = useAppStore.getState();
+        store.addWorktreeSession(repository.id, first);
+        const original = useAppStore.getState().repositories[0].worktreeSessions[0];
+        const tab = store.createTab(first.id, 'Existing terminal');
+
+        expect(store.addWorktreeSession(repository.id, second)).toBe(first.id);
+
+        const state = useAppStore.getState();
+        expect(state.repositories[0].worktreeSessions).toHaveLength(1);
+        expect(state.repositories[0].worktreeSessions[0]).toMatchObject({
+          id: first.id,
+          label: 'My Feature',
+          branchName: 'my-feature',
+          worktreeName: 'my-feature',
+          isExternal: false,
+          portOffset: original.portOffset,
+          customShortcut: original.customShortcut,
+          createdAt: original.createdAt,
+        });
+        expect(state.worktreeTabs[0]).toMatchObject({
+          worktreeSessionId: first.id,
+          tabs: [tab],
+        });
+        expect(window.storage.saveState).toHaveBeenLastCalledWith(
+          expect.objectContaining({ repositories: state.repositories })
+        );
+      }
+    );
+
+    it('allows the same path in different repositories', () => {
+      useAppStore.setState({
+        repositories: [
+          createMockRepository({ id: 'repository-1' }),
+          createMockRepository({ id: 'repository-2' }),
+        ],
+      });
+      const store = useAppStore.getState();
+      store.addWorktreeSession(
+        'repository-1',
+        createMockWorktreeSession({ id: 'first', path: '/test/worktree' })
+      );
+      expect(
+        store.addWorktreeSession(
+          'repository-2',
+          createMockWorktreeSession({ id: 'second', path: '/test/worktree' })
+        )
+      ).toBe('second');
+      expect(useAppStore.getState().repositories.map((r) => r.worktreeSessions.length)).toEqual([
+        1, 1,
+      ]);
     });
 
     it('should assign incrementing portOffset values to worktree sessions', () => {

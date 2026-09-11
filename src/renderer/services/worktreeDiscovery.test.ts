@@ -30,6 +30,41 @@ describe('worktreeDiscovery', () => {
   });
 
   describe('discoverWorktreesForRepository', () => {
+    it('does not duplicate sessions when discovery calls overlap', async () => {
+      useAppStore.setState({
+        repositories: [createMockRepository({ id: 'proj-1' })],
+      });
+      vi.mocked(window.terminal.listWorktrees).mockResolvedValue([createMockWorktree()]);
+
+      await Promise.all([
+        discoverWorktreesForRepository('proj-1', '/test/project'),
+        discoverWorktreesForRepository('proj-1', '/test/project'),
+      ]);
+
+      expect(useAppStore.getState().repositories[0].worktreeSessions).toHaveLength(1);
+    });
+
+    it('preserves a session added while discovery is pending', async () => {
+      useAppStore.setState({
+        repositories: [createMockRepository({ id: 'proj-1' })],
+      });
+      const worktree = createMockWorktree();
+      vi.mocked(window.terminal.listWorktrees).mockResolvedValue([worktree]);
+      const pendingDiscovery = discoverWorktreesForRepository('proj-1', '/test/project');
+      useAppStore
+        .getState()
+        .addWorktreeSession(
+          'proj-1',
+          createMockWorktreeSession({ id: 'created', path: worktree.path, label: 'My Feature' })
+        );
+
+      await pendingDiscovery;
+
+      expect(useAppStore.getState().repositories[0].worktreeSessions).toEqual([
+        expect.objectContaining({ id: 'created', label: 'My Feature', isExternal: false }),
+      ]);
+    });
+
     it('should skip if project does not exist', async () => {
       useAppStore.setState({ repositories: [] });
 

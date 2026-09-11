@@ -147,7 +147,8 @@ interface AppStore extends AppState {
   updateRepositoryNotes: (repositoryId: string, notes: string) => void;
 
   // Worktree session actions
-  addWorktreeSession: (projectId: string, worktreeSession: WorktreeSession) => void;
+  // Returns the stored session ID, reusing an existing session for the same path.
+  addWorktreeSession: (projectId: string, worktreeSession: WorktreeSession) => string | undefined;
   removeWorktreeSession: (projectId: string, worktreeSessionId: string) => void;
   updateWorktreeSessionShortcut: (
     worktreeSessionId: string,
@@ -810,14 +811,50 @@ export const useAppStore = create<AppStore>((set, get) => ({
 
   // Worktree session actions
   addWorktreeSession: (repositoryId, worktreeSession) => {
+    let sessionId: string | undefined;
     set((state) => {
-      // Find the repository to get existing worktree sessions for port offset calculation
       const repository = state.repositories.find((p) => p.id === repositoryId);
+      if (!repository) return state;
+
+      // Discovery and creation can finish in either order. Check inside the state
+      // update so every caller shares the same path identity and session ID.
+      const normalizedPath = normalizePath(worktreeSession.path);
+      const existingSession = repository.worktreeSessions.find(
+        (session) => normalizePath(session.path) === normalizedPath
+      );
+      if (existingSession) {
+        sessionId = existingSession.id;
+        if (!existingSession.isExternal || worktreeSession.isExternal) return state;
+
+        // Creation completed after discovery. Keep the ID and session state (tabs,
+        // shortcuts, ports, notes), but apply the user's name and creation metadata.
+        return {
+          repositories: state.repositories.map((p) =>
+            p.id === repositoryId
+              ? {
+                  ...p,
+                  worktreeSessions: p.worktreeSessions.map((session) =>
+                    session.id === existingSession.id
+                      ? {
+                          ...session,
+                          label: worktreeSession.label,
+                          branchName: worktreeSession.branchName,
+                          worktreeName: worktreeSession.worktreeName,
+                          isExternal: false,
+                        }
+                      : session
+                  ),
+                }
+              : p
+          ),
+        };
+      }
+
+      sessionId = worktreeSession.id;
 
       // Assign portOffset if not already set
       const portOffset =
-        worktreeSession.portOffset ??
-        (repository ? getNextAvailablePortOffset(repository.worktreeSessions) : 0);
+        worktreeSession.portOffset ?? getNextAvailablePortOffset(repository.worktreeSessions);
 
       // Auto-assign a default shortcut if not provided
       const worktreeSessionWithShortcutAndPort: WorktreeSession = {
@@ -839,6 +876,7 @@ export const useAppStore = create<AppStore>((set, get) => ({
       };
     });
     persistState(get());
+    return sessionId;
   },
 
   removeWorktreeSession: (repositoryId, worktreeSessionId) => {

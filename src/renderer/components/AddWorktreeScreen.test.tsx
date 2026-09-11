@@ -2,6 +2,7 @@ import { render, screen, fireEvent, act, waitFor } from '@testing-library/react'
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { AddWorktreeScreen } from './AddWorktreeScreen';
 import { useAppStore } from '../stores/appStore';
+import { useWorktreeWatchers } from '../hooks/useWorktreeWatchers';
 import { NEW_TERMINAL_PRESET } from '../../shared/types';
 import { resetAllStores, createMockRepository, createMockSettings } from '../../../tests/utils';
 
@@ -105,6 +106,48 @@ describe('AddWorktreeScreen', () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('reuses the watcher session when it arrives before creation completes', async () => {
+    const worktree = {
+      path: '/test/worktrees/test-branch',
+      branch: 'test-branch',
+      head: 'abc123',
+      isMain: false,
+      isBare: false,
+      isLocked: false,
+      prunable: false,
+    };
+    let watcherSessionId: string | undefined;
+    vi.mocked(window.terminal.createWorktree).mockImplementationOnce(async () => {
+      const onAdded = vi.mocked(window.watcher.onWorktreeAdded).mock.calls.at(-1)?.[0];
+      if (!onAdded) throw new Error('Worktree watcher was not subscribed');
+      onAdded('repo-1', worktree);
+      watcherSessionId = useAppStore.getState().repositories[0].worktreeSessions[0].id;
+      return { success: true, path: worktree.path };
+    });
+
+    function ScreenWithWatcher() {
+      useWorktreeWatchers();
+      return <AddWorktreeScreen repositoryId="repo-1" onBack={mockOnBack} />;
+    }
+    render(<ScreenWithWatcher />);
+    fireEvent.change(screen.getByLabelText(/Worktree Name/i), {
+      target: { value: 'Test Branch' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /Create Worktree/i }));
+
+    await waitFor(() => expect(mockOnBack).toHaveBeenCalled());
+    const state = useAppStore.getState();
+    expect(state.repositories[0].worktreeSessions).toHaveLength(1);
+    expect(state.repositories[0].worktreeSessions[0]).toMatchObject({
+      id: watcherSessionId,
+      label: 'Test Branch',
+      isExternal: false,
+    });
+    expect(state.activeTerminalId).toBe(watcherSessionId);
+    expect(state.worktreeTabs).toHaveLength(1);
+    expect(state.worktreeTabs[0].worktreeSessionId).toBe(watcherSessionId);
   });
 
   it.each([
