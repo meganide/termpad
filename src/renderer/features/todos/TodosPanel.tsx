@@ -79,11 +79,7 @@ export function TodosPanel({
   const scope = global ? repositoryScope : worktreeScope;
   const todos = global ? repositoryTodos : worktreeTodos;
   const label = global ? `All: ${repositoryName}` : `Worktree: ${worktreeLabel}`;
-  const moveTargets = onDispatch
-    ? repository?.worktreeSessions
-    : global
-      ? repository?.worktreeSessions.filter((session) => !isGlobalWorkspace(session))
-      : undefined;
+  const moveTargets = repository?.worktreeSessions;
 
   return (
     <div className="h-full flex flex-col" data-testid="todos-panel">

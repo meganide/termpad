@@ -157,6 +157,12 @@ interface AppStore extends AppState {
   updateWorktreeNotes: (worktreeSessionId: string, notes: string) => void;
 
   // Todo actions (scoped to a repository or a worktree session)
+  moveTodo: (
+    scope: TodoScope,
+    todoId: string,
+    targetScope: TodoScope,
+    status?: TodoItem['status']
+  ) => boolean;
   moveTodoToWorktree: (
     scope: TodoScope,
     todoId: string,
@@ -948,6 +954,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
     get().moveTodoToWorktree({ type: 'repository', repositoryId }, todoId, worktreeSessionId),
 
   moveTodoToWorktree: (scope, todoId, targetId, status) => {
+    return get().moveTodo(scope, todoId, { type: 'worktree', worktreeSessionId: targetId }, status);
+  },
+
+  moveTodo: (scope, todoId, targetScope, status) => {
     const state = get();
     const repository = state.repositories.find((item) =>
       scope.type === 'repository'
@@ -960,7 +970,14 @@ export const useAppStore = create<AppStore>((set, get) => ({
         : repository?.worktreeSessions.find((session) => session.id === scope.worktreeSessionId)
             ?.todos;
     const todo = sourceTodos?.find((item) => item.id === todoId);
-    const target = repository?.worktreeSessions.find((session) => session.id === targetId);
+    const target =
+      targetScope.type === 'repository'
+        ? repository?.id === targetScope.repositoryId
+          ? repository
+          : undefined
+        : repository?.worktreeSessions.find(
+            (session) => session.id === targetScope.worktreeSessionId
+          );
     if (
       !repository ||
       !todo ||
@@ -979,8 +996,10 @@ export const useAppStore = create<AppStore>((set, get) => ({
         item.id === repository.id
           ? {
               ...item,
+              todos:
+                targetScope.type === 'repository' ? [moved, ...(item.todos ?? [])] : item.todos,
               worktreeSessions: item.worktreeSessions.map((session) =>
-                session.id === targetId
+                targetScope.type === 'worktree' && session.id === targetScope.worktreeSessionId
                   ? { ...session, todos: [moved, ...(session.todos ?? [])] }
                   : session
               ),

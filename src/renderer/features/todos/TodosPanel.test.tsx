@@ -583,7 +583,7 @@ describe('TodosPanel', () => {
       if (entry === 'dropdown')
         await user.click(screen.getByLabelText('Actions for "Write tests"'));
       else fireEvent.contextMenu(screen.getByTestId('todo-item'));
-      await user.click(await screen.findByRole('menuitem', { name: 'Move to worktree' }));
+      await user.click(await screen.findByRole('menuitem', { name: 'Move to' }));
       fireEvent.click(await screen.findByRole('menuitem', { name: /Feature work/ }));
       const updated = useAppStore.getState().repositories[0];
       expect(updated.todos).toEqual([]);
@@ -592,7 +592,54 @@ describe('TodosPanel', () => {
     }
   );
 
-  it('does not offer moving a worktree todo or reveal global todos there', async () => {
+  it.each([
+    ['list', 'global', 'worktree', 'repository'],
+    ['kanban', 'global', 'worktree', 'repository'],
+    ['list', 'worktree', 'other', 'worktree'],
+    ['kanban', 'worktree', 'other', 'worktree'],
+    ['list', 'worktree', 'global', 'worktree'],
+    ['kanban', 'worktree', 'global', 'worktree'],
+    ['kanban', 'worktree', 'other', 'repository'],
+    ['kanban', 'worktree', 'global', 'repository'],
+  ] as const)(
+    'moves in Planning %s from %s to %s in the %s view without starting work',
+    async (view, source, destination, scopeMode) => {
+      const user = userEvent.setup();
+      const todo = makeTodo({ priority: 'high', status: 'in_progress' });
+      const repository = createMockRepositoryWithWorktreeSessions({ id: REPOSITORY_ID }, 2);
+      if (source === 'global') repository.todos = [todo];
+      else repository.worktreeSessions[0].todos = [todo];
+      useAppStore.setState({ repositories: [repository] });
+      const onDispatch = vi.fn();
+      renderPanel({ defaultView: view, scopeMode, onDispatch });
+      fireEvent.contextMenu(screen.getByTestId('todo-item'));
+      expect(
+        await screen.findByRole('menuitem', { name: 'Start in worktree' })
+      ).toBeInTheDocument();
+      await user.click(await screen.findByRole('menuitem', { name: 'Move to' }));
+      const targetIndex = destination === 'other' ? 1 : 0;
+      fireEvent.click(
+        await screen.findByRole('menuitem', {
+          name: destination === 'global' ? /^Global$/ : new RegExp(`Worktree ${targetIndex}`),
+        })
+      );
+      const updated = useAppStore.getState().repositories[0];
+      expect(updated.todos ?? []).toEqual(destination === 'global' ? [todo] : []);
+      updated.worktreeSessions.forEach((session, index) => {
+        expect(session.todos ?? []).toEqual(
+          destination !== 'global' && index === targetIndex ? [todo] : []
+        );
+      });
+      expect(onDispatch).not.toHaveBeenCalled();
+      if (scopeMode === 'repository') {
+        expect(screen.getByText(todo.text)).toBeVisible();
+        if (destination === 'global') expect(screen.queryByTitle(/^Assigned to/)).toBeNull();
+        else expect(screen.getByTitle(`Assigned to Worktree ${targetIndex}`)).toBeVisible();
+      } else expect(screen.queryByText(todo.text)).not.toBeInTheDocument();
+    }
+  );
+
+  it('moves a worktree todo to Global without revealing other global todos in the worktree', async () => {
     const user = userEvent.setup();
     seedRepository(
       { repository: [makeTodo({ id: 'global', text: 'Global task' })], worktree: [makeTodo()] },
@@ -601,7 +648,15 @@ describe('TodosPanel', () => {
     renderPanel();
     expect(screen.queryByText('Global task')).not.toBeInTheDocument();
     await user.click(screen.getByLabelText('Actions for "Write tests"'));
-    expect(screen.queryByRole('menuitem', { name: 'Move to worktree' })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to' }));
+    expect(await screen.findByRole('menuitem', { name: /Worktree 0/ })).toHaveAttribute(
+      'data-disabled'
+    );
+    fireEvent.click(await screen.findByRole('menuitem', { name: 'Global' }));
+    expect(getStoredTodos().worktree).toEqual([]);
+    expect(getStoredTodos().repository.map((todo) => todo.id)).toEqual(['todo-1', 'global']);
+    expect(screen.queryByText('Write tests')).not.toBeInTheDocument();
+    expect(screen.queryByText('Global task')).not.toBeInTheDocument();
   });
 
   it('offers the same edit action on right-click and focuses the editor', async () => {
@@ -642,13 +697,16 @@ describe('TodosPanel', () => {
     expect(getStoredTodos().repository[0].priority).toBe('high');
   });
 
-  it('explains when there are no worktrees to move a global todo to', async () => {
+  it('disables Global for an unassigned todo and offers the main checkout as a distinct destination', async () => {
     const user = userEvent.setup();
     seedRepository({ repository: [makeTodo()] });
     renderPanel();
     await user.click(screen.getByLabelText('Actions for "Write tests"'));
-    await user.click(await screen.findByRole('menuitem', { name: 'Move to worktree' }));
-    expect(await screen.findByRole('menuitem', { name: 'No worktrees available' })).toHaveAttribute(
+    await user.click(await screen.findByRole('menuitem', { name: 'Move to' }));
+    expect(await screen.findByRole('menuitem', { name: 'Global' })).toHaveAttribute(
+      'data-disabled'
+    );
+    expect(await screen.findByRole('menuitem', { name: /Worktree 0/ })).not.toHaveAttribute(
       'data-disabled'
     );
   });

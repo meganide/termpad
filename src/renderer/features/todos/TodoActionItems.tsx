@@ -1,5 +1,6 @@
 import {
   Circle,
+  ArrowRightLeft,
   Copy,
   Expand,
   Flag,
@@ -33,7 +34,9 @@ interface TodoActionItemsProps {
   onRemove: () => void;
   onPriorityChange: (priority: TodoPriority | undefined) => void;
   moveTargets?: WorktreeSession[];
-  onMove: (id: string) => void;
+  currentWorktreeId?: string;
+  onMove: (id: string | null) => void;
+  onDispatch?: (id: string) => void;
   onStatusChange: (status: TodoStatus) => void;
   onSendToTerminal?: () => void;
   onCreateWorktree?: () => void;
@@ -51,7 +54,9 @@ export function TodoActionItems({
   onRemove,
   onPriorityChange,
   moveTargets,
+  currentWorktreeId,
   onMove,
+  onDispatch,
   onStatusChange,
   onSendToTerminal,
   onCreateWorktree,
@@ -125,27 +130,22 @@ export function TodoActionItems({
           </SubContent>
         </Portal>
       </Sub>
-      {(moveTargets !== undefined || onCreateWorktree) && (
+      {moveTargets !== undefined && (
         <Sub>
           <SubTrigger className="gap-2">
-            <GitBranch />
-            {dispatch || onCreateWorktree ? 'Start in worktree' : 'Move to worktree'}
+            <ArrowRightLeft />
+            Move to
           </SubTrigger>
           <Portal>
             <SubContent className="max-w-80 max-h-64 overflow-y-auto">
-              {onCreateWorktree && (
-                <Item onSelect={onCreateWorktree}>
-                  <Plus />
-                  New…
-                </Item>
-              )}
-              {onCreateWorktree && Boolean(moveTargets?.length) && <Separator />}
-              {!onCreateWorktree && !moveTargets?.length && (
-                <Item disabled>No worktrees available</Item>
-              )}
-              {moveTargets?.map((target) => (
+              <Item disabled={!currentWorktreeId} onSelect={() => onMove(null)}>
+                Global
+              </Item>
+              {moveTargets.length > 0 && <Separator />}
+              {moveTargets.map((target) => (
                 <Item
                   key={target.id}
+                  disabled={target.id === currentWorktreeId}
                   onSelect={() => onMove(target.id)}
                   className="flex-col items-start gap-0.5"
                 >
@@ -155,6 +155,41 @@ export function TodoActionItems({
                   </span>
                 </Item>
               ))}
+            </SubContent>
+          </Portal>
+        </Sub>
+      )}
+      {(onDispatch || onCreateWorktree) && (
+        <Sub>
+          <SubTrigger className="gap-2">
+            <GitBranch />
+            Start in worktree
+          </SubTrigger>
+          <Portal>
+            <SubContent className="max-w-80 max-h-64 overflow-y-auto">
+              {onCreateWorktree && (
+                <Item onSelect={onCreateWorktree}>
+                  <Plus />
+                  New…
+                </Item>
+              )}
+              {onCreateWorktree && onDispatch && Boolean(moveTargets?.length) && <Separator />}
+              {!onCreateWorktree && !moveTargets?.length && (
+                <Item disabled>No worktrees available</Item>
+              )}
+              {onDispatch &&
+                moveTargets?.map((target) => (
+                  <Item
+                    key={target.id}
+                    onSelect={() => onDispatch(target.id)}
+                    className="flex-col items-start gap-0.5"
+                  >
+                    <span className="max-w-full truncate">{target.label}</span>
+                    <span className="max-w-full truncate text-xs text-muted-foreground">
+                      {target.branchName ?? target.path}
+                    </span>
+                  </Item>
+                ))}
             </SubContent>
           </Portal>
         </Sub>

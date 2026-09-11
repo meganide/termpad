@@ -36,13 +36,13 @@ export function TodoList({
   onSendToTerminal,
   onCreateWorktree,
 }: TodoListProps) {
-  const { addTodo, updateTodo, removeTodo, reorderTodos, moveGlobalTodoToWorktree } = useAppStore(
+  const { addTodo, updateTodo, removeTodo, reorderTodos, moveTodo } = useAppStore(
     useShallow((s) => ({
       addTodo: s.addTodo,
       updateTodo: s.updateTodo,
       removeTodo: s.removeTodo,
       reorderTodos: s.reorderTodos,
-      moveGlobalTodoToWorktree: s.moveGlobalTodoToWorktree,
+      moveTodo: s.moveTodo,
     }))
   );
   const savedColumns = useAppStore((s) => getTodoRepository(s.repositories, scope)?.todoColumns);
@@ -83,15 +83,17 @@ export function TodoList({
         onSendToTerminal={onSendToTerminal ? () => onSendToTerminal(todo) : undefined}
         onCreateWorktree={onCreateWorktree ? () => onCreateWorktree(todo) : undefined}
         moveTargets={moveTargets}
+        currentWorktreeId={assignment?.id}
+        onDispatch={onDispatch ? (targetId) => onDispatch(todo, targetId) : undefined}
         onMove={(targetId) => {
-          if (onDispatch) {
-            onDispatch(todo, targetId);
-            return;
-          }
-          if (scope.type !== 'repository') return;
-          if (moveGlobalTodoToWorktree(scope.repositoryId, todo.id, targetId))
+          const repository = getTodoRepository(useAppStore.getState().repositories, scope);
+          if (!repository) return;
+          const targetScope: TodoScope = targetId
+            ? { type: 'worktree', worktreeSessionId: targetId }
+            : { type: 'repository', repositoryId: repository.id };
+          if (moveTodo(scope, todo.id, targetScope))
             toast.success(
-              `Moved to ${moveTargets?.find((target) => target.id === targetId)?.label ?? 'worktree'}`
+              `Moved to ${targetId ? (moveTargets?.find((target) => target.id === targetId)?.label ?? 'worktree') : 'Global'}`
             );
           else toast.error('Could not move todo. The worktree or todo may no longer be available.');
         }}

@@ -123,6 +123,74 @@ describe('moving global todos', () => {
 });
 
 describe('todo status and moving between worktrees', () => {
+  it.each(['repository', 'worktree'] as const)(
+    'moves an assigned todo back to Global from the %s scope atomically and preserves order',
+    (type) => {
+      const repository = fixture();
+      const globalTodo = { ...todo, id: 'global' };
+      const assignedTodo = { ...todo, status: 'done' as const };
+      repository.todos = [globalTodo];
+      repository.worktreeSessions[1].todos = [assignedTodo];
+      repository.todoOrder = [globalTodo.id, assignedTodo.id];
+      useAppStore.setState({ repositories: [repository], isInitialized: true });
+      const states: unknown[] = [];
+      const unsubscribe = useAppStore.subscribe((state) => states.push(state.repositories));
+      expect(
+        useAppStore
+          .getState()
+          .moveTodo(
+            type === 'repository'
+              ? { type, repositoryId: repository.id }
+              : { type, worktreeSessionId: repository.worktreeSessions[1].id },
+            assignedTodo.id,
+            { type: 'repository', repositoryId: repository.id }
+          )
+      ).toBe(true);
+      unsubscribe();
+      const updated = useAppStore.getState().repositories[0];
+      expect(states).toHaveLength(1);
+      expect(updated.todos).toEqual([assignedTodo, globalTodo]);
+      expect(updated.worktreeSessions[1].todos).toEqual([]);
+      expect(updated.todoOrder).toEqual(repository.todoOrder);
+      expect(window.storage.saveState).toHaveBeenCalledExactlyOnceWith(
+        expect.objectContaining({ repositories: [updated] })
+      );
+    }
+  );
+
+  it.each(['missing', 'other-repo', 'duplicate', 'missing-todo', 'missing-source', 'deleting'])(
+    'rejects moving to Global with %s without losing the assigned todo',
+    (kind) => {
+      const repository = fixture();
+      repository.worktreeSessions[1].todos = [todo];
+      if (kind === 'duplicate') repository.todos = [todo];
+      const other = createMockRepositoryWithWorktreeSessions({ id: 'other' }, 1);
+      const repositories = [repository, other];
+      useAppStore.setState({
+        repositories,
+        isInitialized: true,
+        deletingPaths: new Set(kind === 'deleting' ? [repository.path] : []),
+      });
+      expect(
+        useAppStore.getState().moveTodo(
+          {
+            type: 'worktree',
+            worktreeSessionId:
+              kind === 'missing-source' ? 'missing' : repository.worktreeSessions[1].id,
+          },
+          kind === 'missing-todo' ? 'missing' : todo.id,
+          {
+            type: 'repository',
+            repositoryId:
+              kind === 'missing' ? 'missing' : kind === 'other-repo' ? other.id : repository.id,
+          }
+        )
+      ).toBe(false);
+      expect(useAppStore.getState().repositories).toBe(repositories);
+      expect(window.storage.saveState).not.toHaveBeenCalled();
+    }
+  );
+
   it('keeps status and completion in sync and persists status changes', () => {
     const repository = fixture();
     repository.todos = [todo];
